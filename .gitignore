@@ -1,0 +1,19 @@
+node_modules/
+dist/
+.npm-cache/
+.nx-home/
+.npmrc
+*.log
+
+# 测试运行产物（由 test/prep.mjs 等生成）
+test/cases/
+test/_cdn_pyodide.js
+test/_glue_check.py
+test/_mp_runner.py
+test/_mp_glue.py
+test/mp_*_result.txt
+test/*.out
+
+# 编辑器/系统
+.DS_Store
+Thumbs.db
