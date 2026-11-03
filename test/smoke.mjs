@@ -389,6 +389,32 @@ function qa(dom, sel) { return Array.from(dom.window.document.querySelectorAll(s
   ok(!!beforeIdx && !!afterIdx && beforeIdx[1] !== afterIdx[1], '换一题切换了题目编号');
   dom.window.close();
 
+  // ECHO 分支入口：完成第一章的存档下，语法维修站面板应出现挑战入口
+  const bossSave = JSON.parse(saveRaw);
+  bossSave.player.progress.completedLevels = ['tut-1', '1-1', '1-2', '1-3', '1-4', '1-5'];
+  bossSave.player.progress.unlockedServers = ['training', 'syntax'];
+  bossSave.player.progress.flags = { chapter1Done: true, chapter1CinematicShown: true };
+  bossSave.player.progress.currentLevelId = null;
+  bossSave.player.progress.bossesDone = [];
+  dom.window.close();
+  dom = await launch(JSON.stringify(bossSave));
+  await waitFor(() => q(dom, '.boot-wrap'), 15000, 'b10 启动页');
+  clickEl(dom, await waitFor(() => qa(dom, 'button').find(b => b.textContent.includes('跳过初始化')), 8000, 'b10 跳过'));
+  clickEl(dom, await waitFor(() => qa(dom, 'button').find(b => b.textContent.includes('ENTER NEXUS')), 8000, 'b10 ENTER'));
+  await waitFor(() => text(dom).includes('Python 知识库'), 10000, 'b10 主菜单');
+  clickEl(dom, qa(dom, 'button').find(b => b.textContent.includes('继续游戏')));
+  await waitFor(() => text(dom).includes('NEXUS 数字世界 · 服务器网络'), 12000, 'b10 地图');
+  clickEl(dom, qa(dom, '.node-group')[1]); // 语法维修站
+  await waitFor(() => text(dom).includes('ECHO 分支'), 8000, 'b10 服务器面板出现 ECHO 入口');
+  ok(text(dom).includes('回响 · 语法镜像'), '面板显示第一章 ECHO Boss 名称');
+  const bossBtn = qa(dom, 'button').find(b => b.textContent.includes('挑战 ▸'));
+  ok(!!bossBtn, '面板有「挑战 ▸」按钮');
+  if (bossBtn) {
+    clickEl(dom, bossBtn);
+    await waitFor(() => text(dom).includes('章节测试') && text(dom).includes('ECHO'), 12000, 'b10 Boss 页面渲染');
+    ok(text(dom).includes('挑战 ECHO'), 'Boss 页面有挑战按钮');
+  }
+
   server.close();
   if (unhandledCount > 0) console.log('  [注] 忽略 jsdom/Monaco 资源拒绝 ' + unhandledCount + ' 次（非游戏问题）');
   console.log(failures === 0 ? '=== 冒烟测试全部通过 ===' : '=== 冒烟测试失败数: ' + failures + ' ===');
