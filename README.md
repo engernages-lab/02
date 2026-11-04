@@ -33,10 +33,12 @@
 | MIRA 提示 | 三层深度提示 + 错误类型自动解读（无需 API Key，预留 AI 接口） |
 | 单步调试 + 变量监视 | 挑战页「🐞 单步调试」：后台采集执行轨迹（sys.settrace），逐行回放、当前行高亮、变量快照随步更新（最多 500 步，防死循环由超时兜底） |
 | 自由编程实验室 | 主菜单「编程实验室」：10 道跨章节练习题 + 自由编辑 + 真实运行 + 变量快照 + 输出判题 + 草稿自动保存（完成训练终端后解锁） |
+| 奖励与成长系统 | 修复贡献点（首通/零失误/未用提示/评级加成）+ S-A-B-C 关卡评级 + MIRA 信任度（5 阶段）+ 章节奖励（6 章各一份，幂等发放）+ 记忆档案（按碎片数量解锁）+ 兑换中心（14 件商品：外观/道具/特殊），全部自动存档并兼容旧存档 |
+| 全角色语音系统 | Web Speech API 独立语音服务：6 种角色音色（MIRA/系统/ECHO/旁白/R-07/E.S.）+ 逐句播放按钮 + 自动朗读（打字完成后再播）+ 语速/音调/音量（独立于音乐音效）+ 角色音色选择/试听/停止，浏览器不支持时安全降级 |
 | 存档 | localStorage 自动存档（版本化管理）、导出 / 导入 / 重置 |
 | 音效 | Web Audio 实时合成（无音频文件）、背景氛围音乐、各场景音效，可分别调音量/关闭 |
 
-**已通过验证**：判题链路真实 Python 回归测试 71/71（见 `test/`）；实验室题库参考答案 10/10；调试轨迹采集逻辑用 CPython 实测通过（行号/变量/输出增量/500 步截断）；浏览器级冒烟测试 35 项（jsdom 加载构建产物，跑通「启动 → 菜单 → 新游戏 → 剧情 → 地图 → 进入关卡 → 存档 → 刷新恢复 → 第二/三/四/五/六章解锁路径 → 单步调试按钮 → 编程实验室」全流程；`node test/smoke.mjs`）；TypeScript 类型检查 0 错误；生产构建成功。
+**已通过验证**：判题链路真实 Python 回归测试 71/71（CPython 与 MicroPython 双引擎各 71/71）；奖励/语音模块逻辑测试 34/34；Echo Boss 判题 11/11；实验室题库 10/10；调试轨迹采集逻辑用 CPython 实测通过；浏览器级冒烟测试 40+ 项（jsdom 加载构建产物，跑通「启动 → 菜单 → 新游戏 → 剧情 → 地图 → 进入关卡 → 存档 → 刷新恢复 → 第二/三/四/五/六章解锁路径 → 单步调试按钮 → 编程实验室」全流程；`node test/smoke.mjs`）；TypeScript 类型检查 0 错误；生产构建成功。
 
 ---
 
@@ -83,8 +85,8 @@ nexus-game/
 │   │                 # AttackOverlay/RebirthOverlay
 │   ├── pages/        # StartPage/MainMenu/StoryPage/WorldMap/ChallengePage
 │   │                 # ProfilePage/SettingsPage/KnowledgePage/AchievementsPage/ArchivePage/LabPage
-│   ├── game/         # 关卡数据(levels)/剧情(story)/知识库/成就/防御任务/等级成长/实验室题库/类型
-│   ├── services/     # judge(判题引擎)/pythonRunner(MicroPython 运行器)/save/sound/ai(MIRA)
+│   ├── game/         # 关卡数据(levels)/剧情(story)/知识库/成就/防御任务/等级成长/实验室题库/Boss(bosses)/奖励(rewards)/类型
+│   ├── services/     # judge(判题引擎)/pythonRunner(MicroPython 运行器)/voice(语音服务)/save/sound/ai(MIRA)
 │   ├── store/        # gameStore.tsx（统一状态：玩家/事件/存档）
 │   ├── workers/      # pythonWorkerSource.ts（MicroPython Worker 源码）
 │   └── styles/       # global.css（科幻视觉体系）→ public/global.css

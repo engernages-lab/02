@@ -59,6 +59,9 @@ export default function MainMenu() {
             <span className="micon">⌬</span> 编程实验室
             {!g.player.progress.completedLevels.includes('tut-1') && <span className="chip dim" style={{ marginLeft: 'auto', fontSize: 10 }}>🔒</span>}
           </button>
+          <button className="menu-navitem" onClick={() => { play('click'); g.nav('shop'); }}>
+            <span className="micon">◈</span> 奖励兑换中心
+          </button>
           <button className="menu-navitem" onClick={() => { play('click'); g.nav('achievements'); }}>
             <span className="micon">✧</span> 成就系统
           </button>

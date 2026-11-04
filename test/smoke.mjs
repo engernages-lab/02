@@ -415,6 +415,26 @@ function qa(dom, sel) { return Array.from(dom.window.document.querySelectorAll(s
     ok(text(dom).includes('挑战 ECHO'), 'Boss 页面有挑战按钮');
   }
 
+  // ---------- 第十一轮：奖励兑换中心 ----------
+  console.log('=== 第十一轮：奖励兑换中心 ===');
+  const shopSave = JSON.parse(saveRaw);
+  shopSave.player.progress.completedLevels = ['tut-1'];
+  shopSave.player.progress.currentLevelId = null;
+  shopSave.player.rewards = { credits: 500, trust: 42, items: { scan: 2 }, skins: [], equipped: {}, chapterRewards: ['ch1'], cleared: {}, archiveRead: [] };
+  dom = await launch(JSON.stringify(shopSave));
+  await waitFor(() => q(dom, '.boot-wrap'), 15000, 's11 启动页');
+  clickEl(dom, await waitFor(() => qa(dom, 'button').find(b => b.textContent.includes('跳过初始化')), 8000, 's11 跳过'));
+  clickEl(dom, await waitFor(() => qa(dom, 'button').find(b => b.textContent.includes('ENTER NEXUS')), 8000, 's11 ENTER'));
+  await waitFor(() => text(dom).includes('Python 知识库'), 10000, 's11 主菜单');
+  const shopBtn = qa(dom, 'button').find(b => b.textContent.includes('奖励兑换中心'));
+  ok(!!shopBtn, '主菜单有「奖励兑换中心」入口');
+  clickEl(dom, shopBtn);
+  await waitFor(() => text(dom).includes('REWARD NEXUS'), 12000, 's11 兑换中心渲染');
+  ok(text(dom).includes('贡献点') && text(dom).includes('信任度'), '兑换中心显示贡献点与信任度');
+  ok(qa(dom, '.shop-card').length > 0, '兑换中心渲染商品卡片（' + qa(dom, '.shop-card').length + ' 个）');
+  ok(text(dom).includes('记忆档案'), '兑换中心有记忆档案标签');
+  dom.window.close();
+
   server.close();
   if (unhandledCount > 0) console.log('  [注] 忽略 jsdom/Monaco 资源拒绝 ' + unhandledCount + ' 次（非游戏问题）');
   console.log(failures === 0 ? '=== 冒烟测试全部通过 ===' : '=== 冒烟测试失败数: ' + failures + ' ===');

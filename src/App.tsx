@@ -12,6 +12,7 @@ import AchievementsPage from './pages/AchievementsPage';
 import ArchivePage from './pages/ArchivePage';
 import LabPage from './pages/LabPage';
 import BossPage from './pages/BossPage';
+import RewardCenterPage from './pages/RewardCenterPage';
 import AttackOverlay from './components/AttackOverlay';
 import RebirthOverlay from './components/RebirthOverlay';
 import { initAudio, startMusic, isMusicOn } from './services/sound';
@@ -77,6 +78,7 @@ function Shell() {
       {screen === 'archive' && <ArchivePage />}
       {screen === 'lab' && <LabPage />}
       {screen === 'boss' && <BossPage />}
+      {screen === 'shop' && <RewardCenterPage />}
       {(py.status === 'loading' || py.status === 'error') && (
         <div
           className={'engine-badge ' + py.status}

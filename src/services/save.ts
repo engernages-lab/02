@@ -1,5 +1,7 @@
 // 存档服务：localStorage 读写、数据版本管理、导出导入
 import type { PlayerState, SaveData } from '../game/types';
+import { defaultRewards, normalizeRewards } from '../game/rewards';
+import { DEFAULT_VOICE, normalizeVoice } from './voice';
 
 export const SAVE_KEY = 'nexus_code_repair_save_v1';
 export const SAVE_VERSION = 1;
@@ -33,6 +35,7 @@ export function defaultState(): PlayerState {
       currentBossId: null,
       pendingRebirth: false,
     },
+    rewards: defaultRewards(),
     settings: {
       musicVolume: 0.35,
       sfxVolume: 0.6,
@@ -40,6 +43,7 @@ export function defaultState(): PlayerState {
       animLevel: 'high',
       typewriterMs: 26,
       fullscreen: false,
+      voice: { ...DEFAULT_VOICE, roleVoices: {} },
       lang: 'zh',
     },
   };
@@ -84,7 +88,16 @@ export function loadGame(): LoadResult {
     if (!isValidSave(data.player)) {
       return { state: defaultState(), fresh: true, corrupted: '存档数据已损坏，已重置。' };
     }
-    return { state: data.player, fresh: false };
+    // 兼容旧存档：奖励/语音字段缺失时补齐（不覆盖已有数据）
+    const migrated: PlayerState = {
+      ...data.player,
+      rewards: normalizeRewards((data.player as Partial<PlayerState>).rewards),
+      settings: {
+        ...data.player.settings,
+        voice: normalizeVoice((data.player.settings as { voice?: unknown })?.voice),
+      },
+    };
+    return { state: migrated, fresh: false };
   } catch {
     return { state: defaultState(), fresh: true, corrupted: '存档数据已损坏，已重置。' };
   }

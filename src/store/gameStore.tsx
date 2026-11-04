@@ -6,7 +6,16 @@ import { levelForExp, toleranceFor } from '../game/progression';
 import { recalcAchievements, achievementById } from '../game/achievements';
 import { DEFENSE_TASKS } from '../game/defense';
 import { bossById } from '../game/bosses';
+import {
+  computeLevelReward, defaultRewards, normalizeRewards, shopItemById,
+  chapterRewardOf, type RewardState, type RewardBreakdown, type Grade,
+} from '../game/rewards';
 import { play, setVolumes, startMusic, stopMusic, isMusicOn } from '../services/sound';
+
+function chapterIndexForServer(serverId: string): number {
+  const map: Record<string, number> = { syntax: 1, logs: 2, storage: 3, factory: 4, diag: 5, core: 6 };
+  return map[serverId] || 0;
+}
 
 export interface CompletePayload {
   levelId: string;
@@ -17,6 +26,17 @@ export interface CompletePayload {
   newLevel: number;
   stars: number;
   newAchievements: string[];
+  /** 奖励系统结算（旧调用方可忽略） */
+  reward?: {
+    breakdown: RewardBreakdown;
+    fails: number;
+    hints: number;
+    creditsTotal: number;
+    trustTotal: number;
+    trustUp: boolean;
+    chapterReward?: { id: string; title: string; desc: string; credits: number; skins: string[]; items: Record<string, number>; fragment?: string };
+    duplicate: boolean;
+  };
 }
 
 export interface FailPayload { n: number; tolerance: number; triggered: boolean }
@@ -35,6 +55,11 @@ interface GameCtx {
   setCurrentLevel: (id: string | null) => void;
   setCurrentBoss: (id: string | null) => void;
   completeBoss: (bossId: string) => { fragmentId: string; expGained: number; levelUp: boolean; newLevel: number } | null;
+  buyShopItem: (itemId: string) => { ok: boolean; reason?: string };
+  equipItem: (itemId: string) => { ok: boolean; reason?: string };
+  consumeItem: (itemId: string) => boolean;
+  restoreConsciousness: (amount: number) => void;
+  markArchiveRead: (archiveId: string) => void;
   completeLevel: (levelId: string) => CompletePayload | null;
   recordFail: (levelId: string) => FailPayload;
   resetAttempts: (levelId: string) => void;
@@ -157,6 +182,70 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       return next;
     });
     return { fragmentId: boss.fragmentId, expGained: boss.rewardExp, levelUp: newLevel > cur.level, newLevel };
+  }, []);
+
+  /** 兑换中心购买（外观一次性、道具可重复购买） */
+  const buyShopItem = useCallback((itemId: string): { ok: boolean; reason?: string } => {
+    const item = shopItemById(itemId);
+    if (!item) return { ok: false, reason: '商品不存在' };
+    const cur = playerRef.current;
+    const rw = normalizeRewards(cur.rewards);
+    if (item.unique && (rw.skins.includes(itemId) || (item.flag && cur.progress.flags[item.flag] === true))) {
+      return { ok: false, reason: '已拥有该奖励' };
+    }
+    if (rw.credits < item.price) return { ok: false, reason: '贡献点不足（还差 ' + (item.price - rw.credits) + '）' };
+    const next: RewardState = {
+      ...rw,
+      credits: rw.credits - item.price,
+      skins: item.unique ? [...new Set([...rw.skins, itemId])] : rw.skins,
+      items: item.count ? { ...rw.items, [itemId]: (rw.items[itemId] || 0) + item.count } : { ...rw.items },
+    };
+    const flags = { ...cur.progress.flags };
+    if (item.flag) flags[item.flag] = true;
+    setPlayer(p => ({ ...p, rewards: next, progress: { ...p.progress, flags } }));
+    toast('achieve', '兑换成功：' + item.name);
+    play('success');
+    return { ok: true };
+  }, [toast]);
+
+  /** 装备外观 */
+  const equipItem = useCallback((itemId: string): { ok: boolean; reason?: string } => {
+    const item = shopItemById(itemId);
+    if (!item || !item.slot) return { ok: false, reason: '该物品不可装备' };
+    const cur = playerRef.current;
+    const rw = normalizeRewards(cur.rewards);
+    if (!rw.skins.includes(itemId)) return { ok: false, reason: '尚未拥有' };
+    const equipped = { ...rw.equipped, [item.slot]: itemId };
+    setPlayer(p => ({ ...p, rewards: { ...normalizeRewards(p.rewards), equipped } }));
+    toast('success', '已装备：' + item.name);
+    play('click');
+    return { ok: true };
+  }, [toast]);
+
+  /** 消耗一个道具 */
+  const consumeItem = useCallback((itemId: string): boolean => {
+    const cur = playerRef.current;
+    const rw = normalizeRewards(cur.rewards);
+    const have = rw.items[itemId] || 0;
+    if (have <= 0) return false;
+    const items = { ...rw.items, [itemId]: have - 1 };
+    setPlayer(p => ({ ...p, rewards: { ...normalizeRewards(p.rewards), items } }));
+    return true;
+  }, []);
+
+  /** 意识稳定模块 */
+  const restoreConsciousness = useCallback((amount: number) => {
+    setPlayer(p => ({ ...p, consciousness: Math.min(100, p.consciousness + amount) }));
+    play('success');
+  }, []);
+
+  /** 标记记忆档案已读 */
+  const markArchiveRead = useCallback((archiveId: string) => {
+    setPlayer(p => {
+      const rw = normalizeRewards(p.rewards);
+      if (rw.archiveRead.includes(archiveId)) return p;
+      return { ...p, rewards: { ...rw, archiveRead: [...rw.archiveRead, archiveId] } };
+    });
   }, []);
 
   const setFlag = useCallback((key: string, value: boolean | number) => {
@@ -284,7 +373,51 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     const newAch = recalcAchievements(next);
     const gained = newAch.filter(a => !prev.progress.achievements.includes(a));
     next.progress.achievements = newAch;
+    // ---------- 奖励系统结算（与经验/等级并行，互不覆盖；仅在真实判题通过时执行） ----------
+    const prevRewards: RewardState = normalizeRewards(prev.rewards);
+    const hintsUsed = prev.progress.hintLevels[levelId] || 0;
+    const alreadyCleared = !!prevRewards.cleared[levelId];
+    const breakdown = computeLevelReward(level.rewardExp, att, hintsUsed, !alreadyCleared);
+    const rewards: RewardState = {
+      ...prevRewards,
+      credits: prevRewards.credits + breakdown.total,
+      trust: Math.min(100, prevRewards.trust + breakdown.trustGain),
+      cleared: {
+        ...prevRewards.cleared,
+        [levelId]: { grade: breakdown.grade as Grade, fails: att, hints: hintsUsed, credits: breakdown.total, trust: breakdown.trustGain },
+      },
+      skins: [...prevRewards.skins],
+      items: { ...prevRewards.items },
+      chapterRewards: [...prevRewards.chapterRewards],
+    };
+
+    // 章节奖励：整章通关时发放一次（幂等）
+    let chapterRewardPayload: NonNullable<CompletePayload['reward']>['chapterReward'] = undefined;
+    const chapterDef = chapterRewardOf(chapterIndexForServer(level.serverId));
+    const serverDoneAfter = siblings.length > 0 && siblings.every(l => next.progress.completedLevels.includes(l.id));
+    if (chapterDef && serverDoneAfter && !rewards.chapterRewards.includes(chapterDef.id)) {
+      rewards.chapterRewards.push(chapterDef.id);
+      rewards.credits += chapterDef.credits;
+      if (chapterDef.skins && chapterDef.skins.length) rewards.skins = [...new Set([...rewards.skins, ...chapterDef.skins])];
+      if (chapterDef.items) {
+        for (const [k, v] of Object.entries(chapterDef.items)) rewards.items[k] = (rewards.items[k] || 0) + v;
+      }
+      if (chapterDef.fragment && !next.meta.memoryFragments.includes(chapterDef.fragment)) {
+        next.meta.memoryFragments = [...next.meta.memoryFragments, chapterDef.fragment];
+      }
+      chapterRewardPayload = {
+        id: chapterDef.id, title: chapterDef.title, desc: chapterDef.desc,
+        credits: chapterDef.credits, skins: chapterDef.skins || [], items: chapterDef.items || {},
+        fragment: chapterDef.fragment,
+      };
+    }
+    next.rewards = rewards;
+
     setPlayer(next);
+    if (chapterRewardPayload) {
+      toast('achieve', '章节奖励：' + chapterRewardPayload.title + '（+' + chapterRewardPayload.credits + ' 贡献点）');
+      play('unlock');
+    }
 
     gained.forEach(id => {
       const def = achievementById(id);
@@ -300,6 +433,16 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       newLevel: next.level,
       stars,
       newAchievements: gained,
+      reward: {
+        breakdown,
+        fails: att,
+        hints: hintsUsed,
+        creditsTotal: rewards.credits,
+        trustTotal: rewards.trust,
+        trustUp: rewards.trust > prevRewards.trust,
+        chapterReward: chapterRewardPayload,
+        duplicate: alreadyCleared,
+      },
     };
   }, [toast]);
 
@@ -448,6 +591,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     player, screen, event, toasts, saveCorrupted, hasSave,
     tolerance: toleranceFor(player.level),
     nav, toast, startNewGame, setCurrentLevel, setCurrentBoss, completeBoss, completeLevel, recordFail,
+    buyShopItem, equipItem, consumeItem, restoreConsciousness, markArchiveRead,
     resetAttempts, hintUsed, resolveDefense, finishRebirth, startDeath,
     decrementAttackAttempt, triggerPendingDeath, wipeSave,
     markStory, addKnowledge, setFlag, patchSettings, importSaveData, exportSaveString,

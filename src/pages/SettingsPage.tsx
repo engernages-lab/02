@@ -1,6 +1,7 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useGame } from '../store/gameStore';
 import { play } from '../services/sound';
+import { DEFAULT_VOICE, normalizeVoice, ROLE_PROFILES, speech, type VoiceRole } from '../services/voice';
 
 export default function SettingsPage() {
   const g = useGame();
@@ -28,6 +29,26 @@ export default function SettingsPage() {
     const r = g.importSaveData(text);
     setSaveMsg(r.ok ? '存档导入成功。' : '导入失败：' + (r.reason || ''));
     if (r.ok) play('success'); else play('deny');
+  };
+
+  // ---------- 语音设置（独立于音乐/音效音量） ----------
+  const voice = normalizeVoice(s.voice);
+  const [voiceList, setVoiceList] = useState<{ name: string; lang: string; local: boolean }[]>([]);
+  const [testMsg, setTestMsg] = useState('');
+  useEffect(() => {
+    const load = () => setVoiceList(speech.voiceOptions());
+    load();
+    const t = window.setTimeout(load, 900); // 部分浏览器音色异步就绪
+    return () => window.clearTimeout(t);
+  }, []);
+  const patchVoice = (patch: Partial<typeof voice>) => {
+    g.patchSettings({ voice: { ...voice, ...patch } });
+    speech.applySettings({ ...voice, ...patch });
+  };
+  const testVoice = (role: VoiceRole) => {
+    speech.applySettings(voice);
+    const ok = speech.speak('意识同步程序启动。这是 ' + ROLE_PROFILES[role].label + ' 的语音测试。', role);
+    setTestMsg(ok ? '正在播放测试语音（' + ROLE_PROFILES[role].label + '）' : (speech.supported ? '播放失败：可能浏览器限制，请先点击页面任意处再试。' : '当前浏览器不支持语音合成。'));
   };
 
   const doFullscreen = () => { g.patchSettings({ fullscreen: !s.fullscreen }); play('click'); };
@@ -86,6 +107,75 @@ export default function SettingsPage() {
           <div className="set-row">
             <span className="set-label">游戏语言<span className="set-desc">界面语言（当前为简体中文）</span></span>
             <span className="chip dim">简体中文（更多语言预留）</span>
+          </div>
+        </div>
+
+        <div className="panel" style={{ marginBottom: 14 }}>
+          <div className="panel-title">语音设置<span className="panel-tag">{speech.supported ? 'Web Speech API' : '当前浏览器不支持'}</span></div>
+          {!speech.supported && (
+            <div className="result-banner fail" style={{ marginBottom: 10 }}>
+              当前浏览器不支持语音合成，剧情与提示文字不受影响，可正常游玩。
+            </div>
+          )}
+          <div className="set-row">
+            <span className="set-label">语音总开关<span className="set-desc">关闭后所有角色语音静音（不影响背景音乐与音效）</span></span>
+            <label className="toggle">
+              <input type="checkbox" checked={voice.enabled} onChange={e => patchVoice({ enabled: e.target.checked })} />
+              <span className="tk" />
+            </label>
+          </div>
+          <div className="set-row">
+            <span className="set-label">对话自动朗读<span className="set-desc">文字显示完整后自动播放该句语音</span></span>
+            <label className="toggle">
+              <input type="checkbox" checked={voice.autoRead} onChange={e => patchVoice({ autoRead: e.target.checked })} />
+              <span className="tk" />
+            </label>
+          </div>
+          <div className="set-row">
+            <span className="set-label">语音语速<span className="set-desc">仅影响语音朗读速度</span></span>
+            <input type="range" className="nx-range" min={50} max={200} value={Math.round(voice.rate * 100)}
+              onChange={e => patchVoice({ rate: Number(e.target.value) / 100 })} />
+            <span className="mono dim" style={{ width: 46, textAlign: 'right' }}>{voice.rate.toFixed(2)}×</span>
+          </div>
+          <div className="set-row">
+            <span className="set-label">语音音调<span className="set-desc">角色基础音调，各角色另有独立偏移</span></span>
+            <input type="range" className="nx-range" min={0} max={200} value={Math.round(voice.pitch * 100)}
+              onChange={e => patchVoice({ pitch: Number(e.target.value) / 100 })} />
+            <span className="mono dim" style={{ width: 46, textAlign: 'right' }}>{voice.pitch.toFixed(2)}</span>
+          </div>
+          <div className="set-row">
+            <span className="set-label">语音音量<span className="set-desc">与音乐音量、音效音量相互独立</span></span>
+            <input type="range" className="nx-range" min={0} max={100} value={Math.round(voice.volume * 100)}
+              onChange={e => patchVoice({ volume: Number(e.target.value) / 100 })} />
+            <span className="mono dim" style={{ width: 46, textAlign: 'right' }}>{Math.round(voice.volume * 100)}%</span>
+          </div>
+          <div className="set-row">
+            <span className="set-label">角色音色<span className="set-desc">为每个角色指定系统音色（留空 = 自动匹配中文音色）</span></span>
+            <span className="chip dim">{voiceList.length} 个可用音色</span>
+          </div>
+          {(Object.keys(ROLE_PROFILES) as VoiceRole[]).map(role => (
+            <div className="set-row" key={role}>
+              <span className="set-label" style={{ paddingLeft: 10 }}>
+                {ROLE_PROFILES[role].label}
+                <span className="set-desc">{ROLE_PROFILES[role].desc}</span>
+              </span>
+              <select
+                className="nx-select"
+                value={voice.roleVoices[role] || ''}
+                onChange={e => patchVoice({ roleVoices: { ...voice.roleVoices, [role]: e.target.value } })}
+              >
+                <option value="">自动（中文优先）</option>
+                {voiceList.map(v => (
+                  <option key={v.name} value={v.name}>{v.name} · {v.lang}{v.local ? '' : ' · 云端'}</option>
+                ))}
+              </select>
+              <button className="nxbtn small ghost" onClick={() => testVoice(role)}>试听</button>
+            </div>
+          ))}
+          <div className="set-row">
+            <span className="set-label">播放控制</span>
+            <button className="nxbtn small ghost" onClick={() => { speech.stop(); setTestMsg('已停止所有语音。'); }}>停止所有语音</button>
+            <span className="mono dim" style={{ fontSize: 12 }}>{testMsg}</span>
           </div>
         </div>
 

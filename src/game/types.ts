@@ -1,7 +1,10 @@
 // 核心游戏类型定义
+import type { RewardState } from './rewards';
+import type { VoiceSettings } from '../services/voice';
+
 export type Screen =
   | 'boot' | 'menu' | 'story' | 'map' | 'challenge'
-  | 'profile' | 'settings' | 'knowledge' | 'achievements' | 'archive' | 'lab' | 'boss';
+  | 'profile' | 'settings' | 'knowledge' | 'achievements' | 'archive' | 'lab' | 'boss' | 'shop';
 
 export interface GameSettings {
   musicVolume: number;       // 0..1
@@ -11,6 +14,7 @@ export interface GameSettings {
   typewriterMs: number;      // 打字机每字符毫秒数
   fullscreen: boolean;
   lang: 'zh' | 'en';         // 语言（预留）
+  voice?: VoiceSettings;     // 语音设置（v1.1 起；旧存档由 loadGame 补齐）
 }
 
 export interface PlayerMeta {
@@ -46,6 +50,8 @@ export interface PlayerState {
   meta: PlayerMeta;
   progress: Progress;
   settings: GameSettings;
+  /** 奖励系统数据（v1.1 起；旧存档由 loadGame 补齐，不影响原有经验/等级） */
+  rewards?: RewardState;
 }
 
 export interface SaveData {

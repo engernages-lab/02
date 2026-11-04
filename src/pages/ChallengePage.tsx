@@ -12,6 +12,7 @@ import { runPython, onPyStatus, warmUp, type PyState } from '../services/pythonR
 import { knowledgeById } from '../game/knowledge';
 import { achievementById } from '../game/achievements';
 import { play, isMusicOn } from '../services/sound';
+import { GRADE_META } from '../game/rewards';
 
 export default function ChallengePage() {
   const g = useGame();
@@ -559,6 +560,43 @@ export default function ChallengePage() {
             <div className="star-row">
               {[1, 2, 3].map(i => <span key={i} className={'star' + (i <= done.payload.stars ? ' on' : '')} style={{ animationDelay: (0.15 * i) + 's' }}>★</span>)}
             </div>
+            {done.payload.reward && (() => {
+              const rw = done.payload.reward!;
+              const meta = GRADE_META[rw.breakdown.grade];
+              return (
+                <div className="reward-settle">
+                  <div className={'grade-badge g-' + rw.breakdown.grade}>
+                    <span className="gb-letter">{rw.breakdown.grade}</span>
+                    <span className="gb-desc">{meta.desc}</span>
+                  </div>
+                  <div className="settle-grid">
+                    <div className="sg-item"><span className="k">贡献点</span><span className="v gold">+{rw.breakdown.total}</span></div>
+                    <div className="sg-item"><span className="k">失误次数</span><span className="v">{rw.fails}</span></div>
+                    <div className="sg-item"><span className="k">使用提示</span><span className="v">{rw.hints} 次</span></div>
+                    <div className="sg-item"><span className="k">信任度</span><span className="v cyan">{rw.trustUp ? '+' + rw.breakdown.trustGain : '已满'}</span></div>
+                  </div>
+                  <div className="settle-tags">
+                    {rw.breakdown.firstClear > 0 && <span className="chip gold">首通 +{rw.breakdown.firstClear}</span>}
+                    {rw.breakdown.noFail > 0 && <span className="chip green">零失误 +{rw.breakdown.noFail}</span>}
+                    {rw.breakdown.noHint > 0 && <span className="chip green">未用提示 +{rw.breakdown.noHint}</span>}
+                    {rw.breakdown.gradeBonus > 0 && <span className="chip cyan">评级奖励 +{rw.breakdown.gradeBonus}</span>}
+                    {rw.duplicate && <span className="chip dim">重复通关（仅基础奖励）</span>}
+                  </div>
+                  {rw.chapterReward && (
+                    <div className="chapter-reward">
+                      <div className="cr-title">✦ 章节奖励 · {rw.chapterReward.title}</div>
+                      <div className="cr-desc">{rw.chapterReward.desc}</div>
+                      <div className="cr-gain">
+                        +{rw.chapterReward.credits} 贡献点
+                        {rw.chapterReward.skins.length > 0 && ' · 解锁外观'}
+                        {Object.keys(rw.chapterReward.items).length > 0 && ' · 获得道具'}
+                        {rw.chapterReward.fragment && ' · 记忆碎片'}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
             <div className="cp-rewards">
               <div className="cp-reward"><div className="rv">+{done.payload.expGained}</div><div className="rl">经验</div></div>
               <div className="cp-reward"><div className="rv">Lv.{done.payload.newLevel}</div><div className="rl">等级</div></div>

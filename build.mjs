@@ -58,7 +58,9 @@ async function main() {
   cpSync(join(__dirname, 'public'), join(__dirname, 'dist'), { recursive: true });
   const index = readFileSync(join(__dirname, 'index.html'), 'utf8');
   // 把入口脚本指向构建产物（IIFE 经典脚本，jsdom/沙箱/file:// 均兼容）
-  const outIndex = index.replace('<script type="module" src="/src/main.tsx"></script>', '<script src="./assets/game.js"></script>');
+  let outIndex = index.replace('<script type="module" src="/src/main.tsx"></script>', '<script src="./assets/game.js"></script>');
+  // 资源改相对路径：这样部署到任意子路径（如 GitHub Pages 的 /02/）都能正确加载
+  outIndex = outIndex.replace(/(href|src)="\/(?!\/)/g, '$1="./');
   writeFileSync(join(__dirname, 'dist', 'index.html'), outIndex);
 
   console.log('[build] 完成，耗时', ((Date.now() - t0) / 1000).toFixed(1) + 's');
