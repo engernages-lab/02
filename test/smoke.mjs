@@ -113,6 +113,7 @@ function qa(dom, sel) { return Array.from(dom.window.document.querySelectorAll(s
 
   // 序章剧情（frameTitle 为「序章 · 苏醒」，打字机逐字显示）
   await waitFor(() => text(dom).includes('序章 · 苏醒'), 10000, '序章对话渲染');
+  ok(!!q(dom, '.voice-btn'), '剧情对话带语音播放按钮（🔊）');
   const skipStory = await waitFor(() => qa(dom, 'button').find(b => b.textContent.includes('跳过')), 8000, '剧情跳过按钮');
   clickEl(dom, skipStory);
   await sleep(600);
@@ -432,6 +433,17 @@ function qa(dom, sel) { return Array.from(dom.window.document.querySelectorAll(s
   await waitFor(() => text(dom).includes('REWARD NEXUS'), 12000, 's11 兑换中心渲染');
   ok(text(dom).includes('贡献点') && text(dom).includes('信任度'), '兑换中心显示贡献点与信任度');
   ok(qa(dom, '.shop-card').length > 0, '兑换中心渲染商品卡片（' + qa(dom, '.shop-card').length + ' 个）');
+  // 购买流程：点击第一个可购买商品的按钮，贡献点应减少
+  const creditBefore = (text(dom).match(/贡献点 (\d+)/) || [])[1];
+  const buyBtn = qa(dom, '.shop-card button').find(b => /◈\s*\d+/.test(b.textContent || ''));
+  ok(!!buyBtn, '商品卡片有兑换按钮（◈ 价格）');
+  if (buyBtn) {
+    clickEl(dom, buyBtn);
+    await sleep(500);
+    const creditAfter = (text(dom).match(/贡献点 (\d+)/) || [])[1];
+    ok(!!creditBefore && !!creditAfter && Number(creditAfter) < Number(creditBefore), '兑换后贡献点减少（' + creditBefore + ' → ' + creditAfter + '）');
+    ok(text(dom).includes('兑换成功') || text(dom).includes('已拥有') || text(dom).includes('已解锁'), '兑换结果有反馈');
+  }
   ok(text(dom).includes('记忆档案'), '兑换中心有记忆档案标签');
   dom.window.close();
 

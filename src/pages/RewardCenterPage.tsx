@@ -19,6 +19,7 @@ export default function RewardCenterPage() {
   const [tab, setTab] = useState<ShopCategory | 'archive'>('look');
   const [msg, setMsg] = useState<string>('');
   const [openArchive, setOpenArchive] = useState<string | null>(null);
+  const [justBought, setJustBought] = useState<string | null>(null);
 
   const tier = trustTier(rw.trust);
   const fragments = g.player.meta.memoryFragments;
@@ -36,6 +37,8 @@ export default function RewardCenterPage() {
     const res = g.buyShopItem(item.id);
     if (!res.ok) { setMsg(res.reason || '兑换失败'); play('deny'); return; }
     setMsg('兑换成功：' + item.name);
+    setJustBought(item.id);
+    window.setTimeout(() => setJustBought(null), 900);
   };
 
   return (
@@ -82,7 +85,7 @@ export default function RewardCenterPage() {
             const canBuy = rw.credits >= item.price && !isOwned;
             const stock = rw.items[item.id] || 0;
             return (
-              <div key={item.id} className={'shop-card' + (isOwned ? ' owned' : '')}>
+              <div key={item.id} className={'shop-card' + (isOwned ? ' owned' : '') + (justBought === item.id ? ' just-bought' : '')}>
                 <div className="shop-ico">{item.icon}</div>
                 <div className="shop-name">{item.name}</div>
                 <div className="shop-desc">{item.desc}</div>

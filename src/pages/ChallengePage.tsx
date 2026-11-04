@@ -564,7 +564,12 @@ export default function ChallengePage() {
               const rw = done.payload.reward!;
               const meta = GRADE_META[rw.breakdown.grade];
               return (
-                <div className="reward-settle">
+                <div className={'reward-settle grade-' + rw.breakdown.grade}>
+                  <div className="reward-particles" aria-hidden="true">
+                    {Array.from({ length: 14 }).map((_, i) => (
+                      <span key={i} style={{ '--i': i } as React.CSSProperties} />
+                    ))}
+                  </div>
                   <div className={'grade-badge g-' + rw.breakdown.grade}>
                     <span className="gb-letter">{rw.breakdown.grade}</span>
                     <span className="gb-desc">{meta.desc}</span>
