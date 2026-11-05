@@ -26,10 +26,14 @@ export interface RewardState {
     trust: number;
   }>;
   archiveRead: string[];              // 已读的记忆档案 id
+  /** 已领取的章节 Boss 首杀奖励 id（防重复发放） */
+  bossRewards?: string[];
+  /** 已发放的等级解锁 id（防重复发放） */
+  unlocks?: string[];
 }
 
 export function defaultRewards(): RewardState {
-  return { credits: 0, trust: 10, items: {}, skins: [], equipped: {}, chapterRewards: [], cleared: {}, archiveRead: [] };
+  return { credits: 0, trust: 10, items: {}, skins: [], equipped: {}, chapterRewards: [], cleared: {}, archiveRead: [], bossRewards: [], unlocks: [] };
 }
 
 /** 兼容旧存档：缺失字段逐一补齐（不覆盖已有值） */
@@ -46,6 +50,8 @@ export function normalizeRewards(raw: unknown): RewardState {
     chapterRewards: Array.isArray(r.chapterRewards) ? r.chapterRewards.slice() : [],
     cleared: r.cleared && typeof r.cleared === 'object' ? { ...r.cleared } : {},
     archiveRead: Array.isArray(r.archiveRead) ? r.archiveRead.slice() : [],
+    bossRewards: Array.isArray(r.bossRewards) ? r.bossRewards.slice() : [],
+    unlocks: Array.isArray(r.unlocks) ? r.unlocks.slice() : [],
   };
 }
 
@@ -73,6 +79,8 @@ export interface RewardBreakdown {
   noFail: number;      // 零失败奖励
   noHint: number;      // 未用提示奖励
   gradeBonus: number;  // 评级奖励
+  /** 重复通关时评级提升的补偿（首通为 0） */
+  improvement?: number;
   total: number;
   trustGain: number;
 }
@@ -142,6 +150,8 @@ export const SHOP_ITEMS: ShopItem[] = [
   { id: 'title-successor', name: '称号 · 原初继承者', category: 'look', price: 260, desc: '创世主遗留的最终称谓。', icon: '✦', unique: true, slot: 'title' },
   { id: 'login-gold', name: '登录界面 · 黄金协议', category: 'look', price: 150, desc: '启动页换成金色协议风格。', icon: '⧉', unique: true, slot: 'login' },
   { id: 'bg-ark', name: '数字世界背景 · 方舟核心', category: 'look', price: 200, desc: '地图背景换成核心机房的发光脉络。', icon: '◉', unique: true, slot: 'bg' },
+  { id: 'frame-bronze', name: '头像框 · 青铜回路', category: 'look', price: 70, desc: '档案页与状态卡的 R-07 头像外框。', icon: '◯', unique: true, slot: 'avatarFrame' },
+  { id: 'frame-neon', name: '头像框 · 霓虹脉冲', category: 'look', price: 130, desc: '青紫脉冲边框，会随意识值呼吸。', icon: '◎', unique: true, slot: 'avatarFrame' },
   // 道具
   { id: 'scan', name: '错误定位扫描器', category: 'tool', price: 50, count: 1, desc: '在编辑器中标出最可能出错的行范围（不直接给答案）。', icon: '⌖' },
   { id: 'rollback', name: '数据回滚模块', category: 'tool', price: 40, count: 1, desc: '把编辑器恢复到本次修改前的状态。', icon: '↺' },
@@ -165,7 +175,7 @@ export interface MemoryArchive {
 
 export const MEMORY_ARCHIVES: MemoryArchive[] = [
   { id: 'arc-1', need: 2, title: '档案 · 事故前夜', content: '五年前的维护日志显示：核心机房在事故前一小时收到过一次外部同步请求，签名被抹除。' },
-  { id: 'arc-2', need: 4, title: '档案 · MIRA 的诞生', content: 'MIRA 的初始版本由 E.S. 亲手编写。她在日志里写下第一句话：「我会记得所有被修复过的东西。」' },
+  { id: 'arc-2', need: 4, title: '档案 · MIRA 的诞生', content: 'MIRA 的初始版本由恩格尔亲手编写。她在日志里写下第一句话：「我会记得所有被修复过的东西。」' },
   { id: 'arc-3', need: 6, title: '档案 · 被改写的 ECHO', content: 'ECHO 的原始权限与 R-07 同源。事故当天，一段外来代码把它从「观察者」改写成了「清道夫」。' },
   { id: 'arc-4', need: 9, title: '档案 · 原初协议', content: 'ORIGIN PROTOCOL 的真实用途：不是应急重启，而是为「会提问的数字生命」保留一次重新选择的机会。' },
 ];

@@ -62,6 +62,7 @@ export default function RebirthOverlay() {
         <DialogSystem
           nodes={script}
           frameTitle="ORIGIN PROTOCOL · 意识重组"
+          eventId="rebirth"
           speedMs={g.player.settings.typewriterMs}
           animEnabled={g.player.settings.animations}
           onSeen={id => g.markStory('rb_' + id)}

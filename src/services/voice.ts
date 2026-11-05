@@ -1,7 +1,7 @@
 // NEXUS 语音服务：Web Speech API 单例，统一管理播放队列、角色音色与停止逻辑。
 // 不依赖任何外部 API，音量与背景音乐/音效完全分离。
 
-export type VoiceRole = 'mira' | 'system' | 'echo' | 'narrator' | 'r07' | 'engel';
+export type VoiceRole = 'mira' | 'system' | 'echo' | 'narrator' | 'r07' | 'engel' | 'k0';
 
 export interface VoiceSettings {
   enabled: boolean;                       // 语音总开关
@@ -45,7 +45,8 @@ export const ROLE_PROFILES: Record<VoiceRole, { label: string; rate: number; pit
   echo:     { label: 'ECHO',      rate: 0.88, pitch: 0.62, desc: '低沉、压迫、缓慢' },
   narrator: { label: '旁白',      rate: 0.95, pitch: 1.00, desc: '平稳、自然' },
   r07:      { label: 'R-07',      rate: 1.00, pitch: 1.06, desc: '玩家本人' },
-  engel:    { label: 'E.S. 记录', rate: 0.92, pitch: 0.94, desc: '沉稳、怀旧' },
+  engel:    { label: '恩格尔', rate: 0.92, pitch: 0.94, desc: '沉稳、怀旧' },
+  k0:       { label: 'K-0', rate: 0.86, pitch: 0.55, desc: '极低音、冷静、无情绪起伏' },
 };
 
 export type VoiceState = 'idle' | 'speaking' | 'paused';
@@ -140,7 +141,7 @@ class SpeechService {
     const matched = pool.find(v => keys.some(k => v.name.toLowerCase().includes(k)));
     if (matched) return matched;
     // 退化为按角色索引取一个，保证不同角色尽量不同音色
-    const order: VoiceRole[] = ['mira', 'system', 'echo', 'narrator', 'r07', 'engel'];
+    const order: VoiceRole[] = ['mira', 'system', 'echo', 'narrator', 'r07', 'engel', 'k0'];
     const idx = Math.max(0, order.indexOf(role));
     return pool[idx % pool.length] || pool[0];
   }
@@ -185,6 +186,19 @@ class SpeechService {
     if (this.state !== 'idle') { this.state = 'idle'; }
   }
 
+  /** 是否存在可用的中文音色 */
+  hasChineseVoice(): boolean {
+    return this.voices().some(v => (v.lang || '').toLowerCase().startsWith('zh'));
+  }
+
+  /** 中文音色缺失时的友好提示（正常返回 null） */
+  chineseVoiceHint(): string | null {
+    if (!this.synth) return '当前浏览器不支持语音合成——剧情会以文字正常继续。';
+    if (this.voices().length === 0) return '尚未加载到系统音色：首次播放可能没有声音，稍后再试一次即可。';
+    if (!this.hasChineseVoice()) return '当前设备没有中文音色，朗读发音可能不准——可在系统里安装中文语音包。';
+    return null;
+  }
+
   /** 停止（切换对话/离开页面时调用） */
   stop(): void {
     if (!this.synth) return;
@@ -211,6 +225,7 @@ class SpeechService {
       case 'echo': return 'echo';
       case 'r07': return 'r07';
       case 'engel': return 'engel';
+      case 'k0': return 'k0';
       default: return 'narrator';
     }
   }

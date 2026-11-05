@@ -1,0 +1,36 @@
+﻿代码修复局：NEXUS 虚拟终端故障营救 —— 完整备份
+========================================================
+备份时间：2026-11-04
+备份来源：C:\Users\12813\Documents\deepseek-harness\default-workspace\nexus-game
+备份内容：全部源码、构建产物、测试、依赖（node_modules）、版本历史（.git）
+
+【最快运行方式（无需联网、无需安装）】
+  方式一：直接双击 dist\index.html 之外的启动脚本
+    - 需要本地 HTTP 服务（浏览器安全限制），在“命令行”里执行：
+        cd /d "本文件夹路径"
+        node server.mjs
+      然后浏览器打开： http://127.0.0.1:4173
+  方式二：用任意静态服务器指向 dist 目录
+
+【开发/重新构建】
+  cd /d "本文件夹路径"
+  npm run build          # 生成 dist
+  npm run serve          # 启动本地服务器（127.0.0.1:4173）
+
+【在线版（无需本机环境）】
+  https://engernages-lab.github.io/02/
+
+【已实现内容速览】
+  · 6 章 + 序章 + 训练终端，共 31 个可通关关卡
+  · 判题：真实 Python（内置 MicroPython WebAssembly，启动约 14ms，完全离线）
+  · 容错 / 纠错者攻击 / 防御 / 意识崩解 / ORIGIN PROTOCOL 重生
+  · 单步调试（行号 + 每步变量快照）+ 自由编程实验室（10 道练习题）
+  · Echo 分支 Boss（每章通关后解锁，综合章节知识点，掉落记忆碎片与剧情）
+  · 奖励系统：修复贡献点 / S-A-B-C 评级 / MIRA 信任度 / 章节奖励 / 兑换中心（14 件商品）/ 记忆档案
+  · 全角色语音：Web Speech API，6 种角色音色，逐句播放 + 可选自动朗读
+  · 存档：浏览器 localStorage（键 nexus_code_repair_save_v1），设置页可导出/导入 JSON
+
+【存档迁移提示】
+  换设备或换浏览器时，请在 设置 → 存档管理 导出存档，在新环境导入。
+  本备份根目录的 demo-save-ch1-5.json 是“前五章已通关”的演示存档，可直接导入体验。
+

@@ -112,7 +112,7 @@ function qa(dom, sel) { return Array.from(dom.window.document.querySelectorAll(s
   clickEl(dom, confirmNew);
 
   // 序章剧情（frameTitle 为「序章 · 苏醒」，打字机逐字显示）
-  await waitFor(() => text(dom).includes('序章 · 苏醒'), 10000, '序章对话渲染');
+  await waitFor(() => text(dom).includes('序章 · 沉睡的意识'), 10000, '序章演出渲染');
   ok(!!q(dom, '.voice-btn'), '剧情对话带语音播放按钮（🔊）');
   const skipStory = await waitFor(() => qa(dom, 'button').find(b => b.textContent.includes('跳过')), 8000, '剧情跳过按钮');
   clickEl(dom, skipStory);
@@ -144,7 +144,10 @@ function qa(dom, sel) { return Array.from(dom.window.document.querySelectorAll(s
   ok(!!saveRaw, 'localStorage 已写入存档');
   if (saveRaw) {
     const save = JSON.parse(saveRaw);
-    ok(save.version === 1, '存档版本 v1');
+    ok(save.version === 7, '存档版本 v7');
+    ok(save.player.identity && save.player.identity.displayName === 'R-07', '存档含玩家身份（默认显示名 R-07）');
+    ok(save.player.identity && save.player.identity.originCode === 'R-07', '存档保留原始实验编号 R-07');
+    ok(save.player.progress.story && Array.isArray(save.player.progress.story.unlocked), '存档含剧情事件状态');
     ok(save.player.progress.currentLevelId === 'tut-1', '存档记录当前关卡 tut-1');
     ok(typeof save.player.consciousness === 'number', '存档含意识完整度');
     ok(typeof save.player.progress.storySeen === 'object' && save.player.progress.storySeen !== null, '存档含剧情进度');
@@ -198,7 +201,7 @@ function qa(dom, sel) { return Array.from(dom.window.document.querySelectorAll(s
   const ch1Save = JSON.parse(saveRaw);
   ch1Save.player.progress.completedLevels = ['tut-1', '1-1', '1-2', '1-3', '1-4', '1-5'];
   ch1Save.player.progress.unlockedServers = ['training', 'syntax', 'logs'];
-  ch1Save.player.progress.flags = { chapter1Done: true, chapter1CinematicShown: true, chapter2CinematicShown: false };
+  ch1Save.player.progress.flags = { chapter1Done: true, chapter1CinematicShown: true, chapter1ArrivalSeen: true, chapter1RestoreSeen: true, chapter2ArrivalSeen: true, chapter2RestoreSeen: true, chapter2CinematicShown: false };
   ch1Save.player.progress.currentLevelId = null;
   ch1Save.player.level = 3;
   ch1Save.player.exp = 390;
@@ -226,7 +229,7 @@ function qa(dom, sel) { return Array.from(dom.window.document.querySelectorAll(s
   ch2Save.player.progress.completedLevels = ['tut-1', '1-1', '1-2', '1-3', '1-4', '1-5', '2-1', '2-2', '2-3', '2-4', '2-5'];
   ch2Save.player.progress.unlockedServers = ['training', 'syntax', 'logs', 'storage'];
   ch2Save.player.progress.flags = {
-    chapter1Done: true, chapter1CinematicShown: true,
+    chapter1Done: true, chapter1CinematicShown: true, chapter1ArrivalSeen: true, chapter1RestoreSeen: true, chapter2ArrivalSeen: true, chapter2RestoreSeen: true,
     chapter2Done: true, chapter2CinematicShown: true,
     chapter3CinematicShown: false,
   };
@@ -260,7 +263,7 @@ function qa(dom, sel) { return Array.from(dom.window.document.querySelectorAll(s
   ];
   ch3Save.player.progress.unlockedServers = ['training', 'syntax', 'logs', 'storage', 'factory'];
   ch3Save.player.progress.flags = {
-    chapter1Done: true, chapter1CinematicShown: true,
+    chapter1Done: true, chapter1CinematicShown: true, chapter1ArrivalSeen: true, chapter1RestoreSeen: true, chapter2ArrivalSeen: true, chapter2RestoreSeen: true,
     chapter2Done: true, chapter2CinematicShown: true,
     chapter3Done: true, chapter3CinematicShown: true,
     chapter4CinematicShown: false,
@@ -296,7 +299,7 @@ function qa(dom, sel) { return Array.from(dom.window.document.querySelectorAll(s
   ];
   ch4Save.player.progress.unlockedServers = ['training', 'syntax', 'logs', 'storage', 'factory', 'diag'];
   ch4Save.player.progress.flags = {
-    chapter1Done: true, chapter1CinematicShown: true,
+    chapter1Done: true, chapter1CinematicShown: true, chapter1ArrivalSeen: true, chapter1RestoreSeen: true, chapter2ArrivalSeen: true, chapter2RestoreSeen: true,
     chapter2Done: true, chapter2CinematicShown: true,
     chapter3Done: true, chapter3CinematicShown: true,
     chapter4Done: true, chapter4CinematicShown: true,
@@ -335,7 +338,7 @@ function qa(dom, sel) { return Array.from(dom.window.document.querySelectorAll(s
   ];
   ch5Save.player.progress.unlockedServers = ['training', 'syntax', 'logs', 'storage', 'factory', 'diag', 'core'];
   ch5Save.player.progress.flags = {
-    chapter1Done: true, chapter1CinematicShown: true,
+    chapter1Done: true, chapter1CinematicShown: true, chapter1ArrivalSeen: true, chapter1RestoreSeen: true, chapter2ArrivalSeen: true, chapter2RestoreSeen: true,
     chapter2Done: true, chapter2CinematicShown: true,
     chapter3Done: true, chapter3CinematicShown: true,
     chapter4Done: true, chapter4CinematicShown: true,
@@ -394,7 +397,7 @@ function qa(dom, sel) { return Array.from(dom.window.document.querySelectorAll(s
   const bossSave = JSON.parse(saveRaw);
   bossSave.player.progress.completedLevels = ['tut-1', '1-1', '1-2', '1-3', '1-4', '1-5'];
   bossSave.player.progress.unlockedServers = ['training', 'syntax'];
-  bossSave.player.progress.flags = { chapter1Done: true, chapter1CinematicShown: true };
+  bossSave.player.progress.flags = { chapter1Done: true, chapter1CinematicShown: true, chapter1ArrivalSeen: true, chapter1RestoreSeen: true, chapter2ArrivalSeen: true, chapter2RestoreSeen: true };
   bossSave.player.progress.currentLevelId = null;
   bossSave.player.progress.bossesDone = [];
   dom.window.close();
@@ -406,14 +409,23 @@ function qa(dom, sel) { return Array.from(dom.window.document.querySelectorAll(s
   clickEl(dom, qa(dom, 'button').find(b => b.textContent.includes('继续游戏')));
   await waitFor(() => text(dom).includes('NEXUS 数字世界 · 服务器网络'), 12000, 'b10 地图');
   clickEl(dom, qa(dom, '.node-group')[1]); // 语法维修站
-  await waitFor(() => text(dom).includes('ECHO 分支'), 8000, 'b10 服务器面板出现 ECHO 入口');
-  ok(text(dom).includes('回响 · 语法镜像'), '面板显示第一章 ECHO Boss 名称');
+  await waitFor(() => text(dom).includes('GATE-01'), 8000, 'b10 服务器面板出现章节 Boss 入口');
+  ok(text(dom).includes('数据港守卫'), '面板显示第一章 GATE-01 名称');
   const bossBtn = qa(dom, 'button').find(b => b.textContent.includes('挑战 ▸'));
   ok(!!bossBtn, '面板有「挑战 ▸」按钮');
   if (bossBtn) {
     clickEl(dom, bossBtn);
-    await waitFor(() => text(dom).includes('章节测试') && text(dom).includes('ECHO'), 12000, 'b10 Boss 页面渲染');
-    ok(text(dom).includes('挑战 ECHO'), 'Boss 页面有挑战按钮');
+    await sleep(500);
+    // 首次进入会先播战前演出
+    if (q(dom, '.cine-root')) {
+      const sk = qa(dom, 'button').find(b => b.textContent.includes('跳过'));
+      if (sk) clickEl(dom, sk);
+      await sleep(400);
+    }
+    await waitFor(() => q(dom, '.boss-arena'), 15000, 'b10 Boss 战斗界面渲染');
+    ok(!!q(dom, '.boss-avatar svg'), 'Boss 战渲染立绘');
+    ok(text(dom).includes('提交攻击'), 'Boss 战有提交攻击按钮');
+    ok(text(dom).includes('能源启动程序'), 'Boss 战显示第一阶段');
   }
 
   // ---------- 第十一轮：奖励兑换中心 ----------

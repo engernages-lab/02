@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import CodeEditor from '../components/CodeEditor';
 import Terminal, { type TermLine } from '../components/Terminal';
 import MiraPanel from '../components/MiraPanel';
@@ -13,6 +13,7 @@ import { knowledgeById } from '../game/knowledge';
 import { achievementById } from '../game/achievements';
 import { play, isMusicOn } from '../services/sound';
 import { GRADE_META } from '../game/rewards';
+import { codexForError } from '../game/codex';
 
 export default function ChallengePage() {
   const g = useGame();
@@ -37,6 +38,8 @@ export default function ChallengePage() {
   const [dbg, setDbg] = useState<{ steps: { line: number; vars: Record<string, string>; out?: string }[]; idx: number; done: boolean; failed?: boolean } | null>(null);
   const [debugLine, setDebugLine] = useState<number | null>(null);
   const [loadElapsed, setLoadElapsed] = useState(0);
+  const [scanLines, setScanLines] = useState<number[]>([]);
+  const historyRef = useRef<string[]>([]);
 
   const locked = g.event.kind !== 'none';
 
@@ -106,6 +109,55 @@ export default function ChallengePage() {
 
   if (!level) return null;
 
+  /** 记录一次代码快照（回滚道具用） */
+  const snapshot = useCallback((current: string) => {
+    historyRef.current.push(current);
+    if (historyRef.current.length > 12) historyRef.current.shift();
+  }, []);
+
+  /** 代码扫描器：标出与初始版本不同的行（只定位，不给答案） */
+  const useScan = () => {
+    if (!level) return;
+    if (!g.consumeItem('scan')) {
+      g.toast('warn', '扫描器库存不足——可在兑换中心补充。');
+      play('deny');
+      return;
+    }
+    const base = level.initialCode.split('\n');
+    const cur = code.split('\n');
+    const changed: number[] = [];
+    cur.forEach((l, i) => { if ((base[i] ?? '') !== l && l.trim()) changed.push(i + 1); });
+    const fallback = cur.map((l, i) => (l.trim() && !l.trim().startsWith('#') ? i + 1 : 0)).filter(Boolean);
+    const picked = (changed.length ? changed : fallback).slice(0, 3);
+    setScanLines(picked);
+    setMiraTag('扫描器');
+    setMiraMsg(picked.length
+      ? '扫描完成：已高亮第 ' + picked.join('、') + ' 行。这些是你改动过 / 最需要复核的区域——结论要你自己判断。'
+      : '扫描完成：没有发现可定位的行。先写几行代码再试试。');
+    play('unlock');
+  };
+
+  /** 数据回滚模块：恢复到上一个代码快照 */
+  const useRollback = () => {
+    if (!g.consumeItem('rollback')) {
+      g.toast('warn', '回滚模块库存不足——可在兑换中心补充。');
+      play('deny');
+      return;
+    }
+    const prev = historyRef.current.pop();
+    if (prev === undefined) {
+      g.toast('warn', '没有可回滚的快照。');
+      play('deny');
+      return;
+    }
+    setCode(prev);
+    setScanLines([]);
+    setVerdict(null);
+    setErrorLine(null);
+    pushLines([{ kind: 'sys', text: '数据回滚：已恢复到上一次代码快照。' }]);
+    play('click');
+  };
+
   const run = async () => {
     if (!level || running || submitting || locked) return;
     const ck = checkUserCode(code);
@@ -119,9 +171,11 @@ export default function ChallengePage() {
       play('deny');
       return;
     }
+    snapshot(code);
     setRunning(true);
     setVerdict(null);
     setErrorLine(null);
+    setScanLines([]);
     pushLines([{ kind: 'cmd', text: 'python task.py' }]);
     if (pyState.status !== 'ready') {
       pushLines([{ kind: 'sys', text: 'Python 引擎初始化中（本地加载，通常 2~5 秒）——代码已排队，就绪后自动执行。' }]);
@@ -156,9 +210,11 @@ export default function ChallengePage() {
       play('deny');
       return;
     }
+    snapshot(code);
     setSubmitting(true);
     setVerdict(null);
     setErrorLine(null);
+    setScanLines([]);
     play('run');
     const codeLines = code.split('\n').length;
     const combined = level.judge.judgeKind === 'python'
@@ -247,6 +303,7 @@ export default function ChallengePage() {
       ]);
       setVerdict(v);
       setMiraTag('判题反馈');
+      g.recordBug(codexForError(r.error?.type)?.id || 'logic');
       const fp = g.recordFail(level.id);
       if (fp.triggered) {
         setMiraTag('紧急警告');
@@ -274,7 +331,9 @@ export default function ChallengePage() {
 
   const resetCode = () => {
     if (resetArmed) {
+      snapshot(code);
       setCode(level.initialCode);
+      setScanLines([]);
       setResetArmed(false);
       setVerdict(null);
       setErrorLine(null);
@@ -464,6 +523,14 @@ export default function ChallengePage() {
               title="采集执行轨迹并逐行回放，右侧变量监视器实时更新">
               🐞 单步调试
             </button>
+            <button className="nxbtn ghost small" disabled={running || submitting || locked} onClick={useScan}
+              title="消耗 1 个扫描器：高亮可疑行，只定位不给答案">
+              ⌖ 扫描 ×{player.rewards?.items?.scan || 0}
+            </button>
+            <button className="nxbtn ghost small" disabled={running || submitting || locked} onClick={useRollback}
+              title="消耗 1 个回滚模块：恢复上一次代码快照">
+              ↺ 回滚 ×{player.rewards?.items?.rollback || 0}
+            </button>
             <div className="sp" />
             <span className="chip">运行不增加失败次数</span>
             {locked && <span className="chip red warn-flash">紧急事件进行中——主线提交已锁定</span>}
@@ -474,6 +541,7 @@ export default function ChallengePage() {
               onChange={setCode}
               errorLine={errorLine}
               debugLine={debugLine}
+              markLines={scanLines}
               onRun={run}
               readOnly={running || submitting}
               fontSize={player.settings.animLevel === 'low' ? 15 : 15.5}
@@ -585,7 +653,8 @@ export default function ChallengePage() {
                     {rw.breakdown.noFail > 0 && <span className="chip green">零失误 +{rw.breakdown.noFail}</span>}
                     {rw.breakdown.noHint > 0 && <span className="chip green">未用提示 +{rw.breakdown.noHint}</span>}
                     {rw.breakdown.gradeBonus > 0 && <span className="chip cyan">评级奖励 +{rw.breakdown.gradeBonus}</span>}
-                    {rw.duplicate && <span className="chip dim">重复通关（仅基础奖励）</span>}
+                    {(rw.breakdown.improvement || 0) > 0 && <span className="chip cyan">星级提升 +{rw.breakdown.improvement}</span>}
+                    {rw.duplicate && <span className="chip dim">重复通关：仅星级提升有补偿</span>}
                   </div>
                   {rw.chapterReward && (
                     <div className="chapter-reward">
@@ -612,7 +681,12 @@ export default function ChallengePage() {
                 ⬆ 等级提升！Lv.{done.payload.oldLevel} → Lv.{done.payload.newLevel} 容错次数 +{g.tolerance - Math.min(g.tolerance, 3) < 0 ? 0 : 0}（当前 {g.tolerance}）
               </div>
             )}
-            {!done.payload.firstTime && <div className="dim" style={{ fontSize: 12.5, marginBottom: 8 }}>已通关关卡，不重复发放经验。</div>}
+            {!done.payload.firstTime && <div className="dim" style={{ fontSize: 12.5, marginBottom: 8 }}>已通关关卡：不再发放经验与基础贡献点（仅星级提升给少量补偿）。</div>}
+            {(done.payload.unlocks || []).length > 0 && (
+              <div className="result-banner ok" style={{ marginBottom: 8 }}>
+                ✦ 等级解锁：{done.payload.unlocks!.join('、')}（已自动装备）
+              </div>
+            )}
             {done.payload.newAchievements.length > 0 && (
               <div className="dim" style={{ fontSize: 13, marginBottom: 8 }}>
                 成就：{done.payload.newAchievements.map(id => achievementById(id)?.name).join('、')}

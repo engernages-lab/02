@@ -9,7 +9,7 @@ export interface BossDef {
   serverId: string;          // 该章所属服务器（用于展示与触发）
   title: string;
   codename: string;
-  intro: StoryLine[];        // 遭遇剧情
+  intro?: StoryLine[];       // 遭遇剧情（章节 Boss 用独立演出界面时可省略）
   fault: string;
   goal: string;
   behavior: string;
@@ -19,70 +19,88 @@ export interface BossDef {
   summary: string;
   judge: LevelJudgeSpec;
   fragmentId: string;        // 掉落的记忆碎片
-  echoStory: StoryLine[];    // 掉落的 Echo 来源剧情
+  /** 对手显示名（缺省 ECHO；章节 Boss 用自己的代号） */
+  opponentName?: string;
+  echoStory?: StoryLine[];   // 掉落的来源剧情（可省略）
   rewardExp: number;
 }
 
 export const BOSSES: BossDef[] = [
   {
-    id: 'echo-01', chapter: 1, serverId: 'syntax',
-    title: '回响 · 语法镜像', codename: 'ECHO-01',
-    intro: [
-      { id: 'e1-1', speaker: 'NEXUS 系统', kind: 'system', text: '检测到异常数据流：某个存在正在复刻你的修复手法……' },
-      { id: 'e1-2', speaker: '？？？', kind: 'echo', text: '第一个把这台终端修好的人……手法很干净。让我看看，你能不能修好"我"。' },
-      { id: 'e1-3', speaker: 'MIRA', kind: 'mira', text: 'R-07，是 ECHO，它把自己伪装成一个镜像任务。它复制了你刚学的东西——也是它给我们设的第一道章节测验。' },
-    ],
-    fault: '语法镜像被 ECHO 改写：字符串拼接时把方法本身当成了值，终端直接报类型错误。',
-    goal: '修复 mirror，让 print(mirror("echo")) 输出 REPAIR-ECHO。',
-    behavior: '调用字符串方法要加括号：name.upper()。',
-    initialCode: 'def mirror(name):\n    return "REPAIR-" + name.upper\n\nprint(mirror("echo"))',
-    knowledge: ['string', 'return', 'print'],
+    id: 'gate-01', chapter: 1, serverId: 'syntax',
+    title: '数据港守卫', codename: 'GATE-01',
+    opponentName: 'GATE-01',
+    fault: '能源闸门把「临界值」当成了「不合格」：3 级能源被判定为离线，闸门拒绝开启。',
+    goal: '修复 power：能源等级 ≥ 3 输出 ONLINE，否则输出 OFFLINE；report 负责把多个等级拼成状态串。',
+    behavior: '把 if level > 3 改成 if level >= 3——临界值 3 属于合格。',
+    initialCode: 'def power(level):\n    if level > 3:\n        return "ONLINE"\n    else:\n        return "OFFLINE"\n\ndef report(levels):\n    out = ""\n    for lv in levels:\n        out = out + power(lv) + " "\n    return out\n\nprint(report([3, 1, 5]))',
+    knowledge: ['if', 'compare', 'for', 'return', 'string'],
     hints: [
-      '报错说不能把字符串和"内置方法"相加——你拼进去的不是值，而是方法本身。',
-      '字符串方法 name.upper 是"方法对象"；要拿到大写结果必须调用它。',
-      '把 name.upper 改成 name.upper()——加上括号才是调用。',
+      '闸门只认「大于 3」的能源。可是能源等级正好是 3 的时候，它明明够用。',
+      '边界值要算合格：>= 3 才是「达到阈值」。',
+      '把 if level > 3 改成 if level >= 3。',
     ],
-    summary: '区分「方法对象」与「方法调用」：name.upper 是方法本身，name.upper() 才返回大写结果。ECHO 就是利用这种细微差别来破坏输出。',
-    judge: { judgeKind: 'stdout', stdoutChecks: [{ name: '镜像输出正确', contains: ['REPAIR-ECHO'] }] },
-    fragmentId: 'f3',
-    echoStory: [
-      { id: 'es1-1', speaker: 'ECHO 残片', kind: 'echo', text: '……这段代码我见过。五年前，有人用同样的写法修复过一台老终端。' },
-      { id: 'es1-2', speaker: 'MIRA', kind: 'mira', text: 'ECHO 提到"五年前"。这和你记忆里那次事故的时间点完全一致。' },
-    ],
-    rewardExp: 150,
-  },
-  {
-    id: 'echo-02', chapter: 2, serverId: 'logs',
-    title: '回响 · 逻辑断层', codename: 'ECHO-02',
-    intro: [
-      { id: 'e2-1', speaker: '？？？', kind: 'echo', text: '条件判断……人类最喜欢在这上面偷懒。边界值，是你们永远的破绽。' },
-      { id: 'e2-2', speaker: 'MIRA', kind: 'mira', text: '它把评分器的边界改坏了。90 分本该是最高等级——现在会被判成第二档。' },
-    ],
-    fault: '评分边界的比较符号被改写：恰好 90 分的记录被错判为 B 等级。',
-    goal: '修复 grade：90 分及以上返回 A，60 分及以上返回 B，其余返回 C。',
-    behavior: '边界要用 >=：score >= 90 返回 "A"。',
-    initialCode: 'def grade(score):\n    if score > 90:\n        return "A"\n    elif score >= 60:\n        return "B"\n    else:\n        return "C"\n\nprint(grade(90))',
-    knowledge: ['if', 'elif', 'compare'],
-    hints: [
-      '把 90 分传进去，输出的是 B——说明第一个条件没接住它。',
-      '本题的边界是"包含"关系：90 分属于 A 档。',
-      '把 if score > 90 改成 if score >= 90。',
-    ],
-    summary: '边界条件是条件判断最容易出错的地方：> 与 >= 只差一个等号，却决定了边界值归属。',
+    summary: '闸门类逻辑的破绽几乎都在边界：> 与 >= 只差一个等号，却决定 3 级能源算不算合格。',
     judge: {
       judgeKind: 'python',
       pythonChecks: [
-        { name: '90 分属于 A 档', expr: 'grade(90) == "A"' },
-        { name: '60 分属于 B 档', expr: 'grade(60) == "B"' },
-        { name: '59 分属于 C 档', expr: 'grade(59) == "C"' },
+        { name: '临界值 3 级能源判定为在线', expr: 'power(3) == "ONLINE"' },
+        { name: '低于阈值 2 级判定为离线', expr: 'power(2) == "OFFLINE"' },
+        { name: '高等级能源判定为在线', expr: 'power(5) == "ONLINE"' },
       ],
     },
-    fragmentId: 'f4',
-    echoStory: [
-      { id: 'es2-1', speaker: 'ECHO 残片', kind: 'echo', text: '边界……我记得有人在我身上也设过边界。那是被注入之前的事了。' },
-      { id: 'es2-2', speaker: 'MIRA', kind: 'mira', text: '"被注入之前"——ECHO 在暗示它原本不是现在这个样子。' },
+    fragmentId: 'frag-01',
+    rewardExp: 150,
+  },
+  {
+    id: 'somnia', chapter: 2, serverId: 'logs',
+    title: '记忆吞噬体', codename: 'SOMNIA',
+    opponentName: 'SOMNIA',
+    fault: '记忆分流被改写：warn 级记忆被静默吞掉，越界节点混入重建结果。',
+    goal: '修复记忆分流、逻辑校验与循环筛查，把 SOMNIA 从记忆花园里赶出去。',
+    behavior: '逐阶段修复：= → ==、or → and、elif 分支返回值、区间两侧判定。',
+    initialCode: 'def classify(tag):\n    if tag = "error":\n        return "ALERT"\n    else:\n        return "PASS"\n\nprint(classify("error"))',
+    knowledge: ['if', 'elif', 'compare', 'logic', 'for', 'list'],
+    hints: [
+      '它靠改写判断来吞记忆。先看清楚每个条件想表达什么。',
+      '等号、and/or、elif 分支——第二章学过的三样东西都在这里。',
+      '逐阶段修：== 比较、and 连接、elif 返回 WARN、区间用 and。',
     ],
-    rewardExp: 170,
+    summary: '记忆可以被改写，但逻辑不会说谎：条件写对，真相就还在。',
+    judge: {
+      judgeKind: 'python',
+      pythonChecks: [
+        { name: 'error 判为 ALERT', expr: 'classify("error") == "ALERT"' },
+        { name: 'ok 判为 PASS', expr: 'classify("ok") == "PASS"' },
+      ],
+    },
+    fragmentId: 'frag-02',
+    rewardExp: 180,
+  },
+  {
+    id: 'index-0', chapter: 3, serverId: 'storage',
+    title: '数据索引吞噬者', codename: 'INDEX-0',
+    opponentName: 'INDEX-0',
+    fault: '索引程序把「比较」写成了「赋值」：身份记录无法建立索引，档案被反复吞噬。',
+    goal: '修复 find_id：按顺序查找名字，找到返回下标，找不到返回 -1。',
+    behavior: '吞噬身份记录；索引错乱时会把无关档案一并抹除。',
+    initialCode: 'def find_id(name, names):\n    for i in range(len(names)):\n        if names[i] = name:\n            return i\n    return -1\n\nprint(find_id("carol", ["anna", "bob", "carol"]))',
+    knowledge: ['list', 'for', 'len', 'if', 'compare', 'return'],
+    hints: [
+      '索引程序第一行就崩了：if 后面用的是赋值号。',
+      '比较两个值是否相等要用 ==。',
+      '把 if names[i] = name 改成 if names[i] == name。',
+    ],
+    summary: '索引程序崩溃的根因是比较运算符写错；修好它，档案才有重新被读出来的可能。',
+    judge: {
+      judgeKind: 'python',
+      pythonChecks: [
+        { name: '找到 carol 返回下标 2', expr: 'find_id("carol", ["anna", "bob", "carol"]) == 2' },
+        { name: '找不到返回 -1', expr: 'find_id("zed", ["anna", "bob"]) == -1' },
+      ],
+    },
+    fragmentId: 'frag-03',
+    rewardExp: 320,
   },
   {
     id: 'echo-03', chapter: 3, serverId: 'storage',
@@ -118,6 +136,24 @@ export const BOSSES: BossDef[] = [
     rewardExp: 190,
   },
   {
+    id: 'judgment-4', chapter: 4, serverId: 'factory',
+    title: '裁决执行体', codename: 'JUDGMENT-4',
+    opponentName: 'JUDGMENT-4',
+    fault: '安全裁决把「同时满足」写成了「任一满足」，大量异常程序被误放行。',
+    goal: '修复 unlock：三个权限码必须全部正确才返回 True。',
+    behavior: '多层权限验证；误放行时会把异常程序当作合法维护单元。',
+    initialCode: 'def unlock(a, b, c):\n    if a == "root" or b == "root" or c == "root":\n        return True\n    return False',
+    knowledge: ['def', 'parameter', 'compare', 'logic', 'return'],
+    hints: ['只提供一个正确权限码就能进入。', '多层验证必须同时满足。', '把 or 改成 and。'],
+    summary: 'or 是权限漏洞，and 才是同时满足。',
+    judge: { judgeKind: 'python', pythonChecks: [
+      { name: '三码全对才通过', expr: 'unlock("root", "root", "root") == True' },
+      { name: '缺一码不通过', expr: 'unlock("root", "root", "guest") == False' },
+    ] },
+    fragmentId: 'frag-04',
+    rewardExp: 380,
+  },
+  {
     id: 'echo-04', chapter: 4, serverId: 'factory',
     title: '回响 · 折扣陷阱', codename: 'ECHO-04',
     intro: [
@@ -151,6 +187,24 @@ export const BOSSES: BossDef[] = [
     rewardExp: 210,
   },
   {
+    id: 'entropy', chapter: 5, serverId: 'diag',
+    title: '熵潮核心', codename: 'ENTROPY',
+    opponentName: 'ENTROPY',
+    fault: '熵潮核心把无效记录直接写入索引，导致键缺失与类型错误连锁崩溃。',
+    goal: '修复 lookup：从字典安全取值，缺失键返回 0。',
+    behavior: '聚合错误数据；无独立人格，只会不断吞并记录。',
+    initialCode: 'def lookup(table, key):\n    return table[key]',
+    knowledge: ['dict', 'parameter', 'return'],
+    hints: ['键不存在时直接崩溃。', '字典要用 get 安全取值。', '把 table[key] 改成 table.get(key, 0)。'],
+    summary: '默认值让缺失键不再中断整条修复链。',
+    judge: { judgeKind: 'python', pythonChecks: [
+      { name: '存在的键返回值', expr: 'lookup({1: 10}, 1) == 10' },
+      { name: '缺失的键返回 0', expr: 'lookup({1: 10}, 9) == 0' },
+    ] },
+    fragmentId: 'frag-05',
+    rewardExp: 440,
+  },
+  {
     id: 'echo-05', chapter: 5, serverId: 'diag',
     title: '回响 · 异常深渊', codename: 'ECHO-05',
     intro: [
@@ -182,6 +236,24 @@ export const BOSSES: BossDef[] = [
       { id: 'es5-2', speaker: 'MIRA', kind: 'mira', text: 'R-07，ECHO 不是敌人。它是另一个受害者。核心机房里，有你想要的答案。' },
     ],
     rewardExp: 240,
+  },
+  {
+    id: 'k0', chapter: 6, serverId: 'core',
+    title: '零号裁决者', codename: 'K-0',
+    opponentName: 'K-0',
+    fault: '安全放行逻辑用了 or，任何一道验证通过都会放行。',
+    goal: '修复 pass_gate：三道验证必须全部通过。',
+    behavior: '绝对秩序的执行者；不认为自己是恶意的。',
+    initialCode: 'def pass_gate(a, b, c):\n    if a or b or c:\n        return True\n    return False',
+    knowledge: ['parameter', 'logic', 'return'],
+    hints: ['任意一道通过就放行。', '必须全部通过。', '把 or 改成 and。'],
+    summary: '多条件放行必须同时成立。',
+    judge: { judgeKind: 'python', pythonChecks: [
+      { name: '三道全通过才放行', expr: 'pass_gate(True, True, True) == True' },
+      { name: '缺一道不放行', expr: 'pass_gate(True, True, False) == False' },
+    ] },
+    fragmentId: 'frag-06',
+    rewardExp: 600,
   },
 ];
 

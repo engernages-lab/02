@@ -48,6 +48,20 @@ export default function MainMenu() {
           <button className="menu-navitem" onClick={() => { play('click'); g.nav('archive'); }}>
             <span className="micon">◎</span> 剧情档案
           </button>
+          <button className="menu-navitem" onClick={() => { play('click'); g.nav('endings'); }}>
+            <span className="micon">✧</span> 结局档案
+          </button>
+          <button className="menu-navitem" onClick={() => { play('click'); g.nav('journal'); }}>
+            <span className="micon">▤</span> 探索档案（时间线 / Bug 图鉴）
+          </button>
+          <button className="menu-navitem" onClick={() => { play('click'); g.nav('vault'); }}>
+            <span className="micon">◇</span> 创世主记忆档案馆
+            <span className="chip gold" style={{ marginLeft: 'auto', fontSize: 10 }}>
+              {(g.player.meta.memoryFragments || []).filter(id => ['frag-01','frag-02','frag-03','frag-04','frag-05','frag-06','f1','f2','f3','f4','f5','f6','f7','f8'].includes(id)).length > 6
+                ? 6
+                : (g.player.meta.memoryFragments || []).filter(id => ['frag-01','frag-02','frag-03','frag-04','frag-05','frag-06','f1','f2','f3','f4','f5','f6','f7','f8'].includes(id)).length} / 6
+            </span>
+          </button>
           <button className="menu-navitem" onClick={() => { play('click'); g.nav('knowledge'); }}>
             <span className="micon">◈</span> Python 知识库
           </button>

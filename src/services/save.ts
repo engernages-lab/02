@@ -1,14 +1,20 @@
-// 存档服务：localStorage 读写、数据版本管理、导出导入
+// 存档服务：localStorage 读写、版本迁移、导出导入
 import type { PlayerState, SaveData } from '../game/types';
+import { defaultIdentity, normalizeIdentity } from '../game/identity';
+import { normalizeStoryReadState, defaultStoryReadState } from '../game/lore/events';
+import { normalizeStoryVars } from '../game/lore/vars';
 import { defaultRewards, normalizeRewards } from '../game/rewards';
 import { DEFAULT_VOICE, normalizeVoice } from './voice';
+import { CURRENT_SAVE_VERSION, migrateSave } from './migrations';
 
+/** 存储键保持不变，确保旧存档仍能被读取（改名会导致所有玩家进度丢失） */
 export const SAVE_KEY = 'nexus_code_repair_save_v1';
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = CURRENT_SAVE_VERSION;
 
 export function defaultState(): PlayerState {
   return {
     name: 'R-07',
+    identity: defaultIdentity(),
     level: 1,
     exp: 0,
     consciousness: 100,
@@ -18,6 +24,7 @@ export function defaultState(): PlayerState {
       lastDeathLevel: null,
       lastDeathReason: null,
       memoryFragments: [],
+      fragmentLog: {},
       backupLevel: 1,
     },
     progress: {
@@ -30,6 +37,10 @@ export function defaultState(): PlayerState {
       achievements: [],
       knowledge: [],
       storySeen: {},
+      story: defaultStoryReadState(),
+      vault: { read: [], finalSeen: false, lastOpened: null },
+      endings: [],
+      ending: null,
       flags: {},
       bossesDone: [],
       currentBossId: null,
@@ -61,11 +72,67 @@ function isValidSave(x: unknown): x is PlayerState {
     typeof p.progress?.completedLevels === 'object' &&
     p.progress.completedLevels !== null &&
     typeof p.settings?.sfxVolume === 'number' &&
-    Array.isArray(p.progress.completedLevels) 
+    Array.isArray(p.progress.completedLevels)
   );
 }
 
-export type LoadResult = { state: PlayerState; fresh: boolean; corrupted?: string };
+/**
+ * 字段级自愈：所有新增字段都必须是「缺失即可补」的。
+ * 名称/身份以 identity 为准，并把 name 同步为显示名（兼容旧组件）。
+ */
+export function normalizePlayerState(raw: PlayerState): PlayerState {
+  const identity = normalizeIdentity((raw as Partial<PlayerState>).identity, raw.name);
+  const progress = raw.progress;
+  const storySeen = progress.storySeen && typeof progress.storySeen === 'object' ? progress.storySeen : {};
+  return {
+    ...raw,
+    name: identity.displayName,
+    identity,
+    meta: {
+      ...raw.meta,
+      memoryFragments: Array.isArray(raw.meta?.memoryFragments) ? raw.meta.memoryFragments : [],
+      fragmentLog: raw.meta?.fragmentLog && typeof raw.meta.fragmentLog === 'object' ? raw.meta.fragmentLog : {},
+      bugCodex: raw.meta?.bugCodex && typeof raw.meta.bugCodex === 'object' ? raw.meta.bugCodex : {},
+    },
+    progress: {
+      ...progress,
+      storySeen,
+      story: normalizeStoryReadState(progress.story, storySeen),
+      endings: Array.isArray(progress.endings) ? progress.endings : [],
+      ending: typeof progress.ending === 'string' ? progress.ending : null,
+      vault: {
+        read: Array.isArray(progress.vault?.read) ? progress.vault.read : [],
+        finalSeen: progress.vault?.finalSeen === true,
+        lastOpened: typeof progress.vault?.lastOpened === 'string' ? progress.vault.lastOpened : null,
+      },
+      flags: normalizeStoryVars(progress.flags),
+    },
+    rewards: normalizeRewards((raw as Partial<PlayerState>).rewards),
+    settings: {
+      ...raw.settings,
+      voice: normalizeVoice((raw.settings as { voice?: unknown })?.voice),
+    },
+  };
+}
+
+export type LoadResult = {
+  state: PlayerState;
+  fresh: boolean;
+  corrupted?: string;
+  /** 本次读取执行了版本迁移 */
+  migrated?: boolean;
+  fromVersion?: number;
+  notes?: string[];
+};
+
+/** 损坏存档先备份，绝不直接丢弃原始数据 */
+function backupCorrupted(raw: string): void {
+  try {
+    localStorage.setItem('nexus_save_corrupt_' + Date.now(), raw);
+  } catch {
+    // 存储不可用时忽略
+  }
+}
 
 export function saveGame(p: PlayerState): void {
   try {
@@ -77,28 +144,27 @@ export function saveGame(p: PlayerState): void {
 }
 
 export function loadGame(): LoadResult {
+  let raw: string | null = null;
   try {
-    const raw = localStorage.getItem(SAVE_KEY);
+    raw = localStorage.getItem(SAVE_KEY);
     if (!raw) return { state: defaultState(), fresh: true };
     const data = JSON.parse(raw) as SaveData;
-    if (data.version !== SAVE_VERSION) {
-      // 版本迁移预留：未来升级时在此按 version 迁移
-      return { state: defaultState(), fresh: true, corrupted: '存档数据版本（v' + data.version + '）与本版本（v' + SAVE_VERSION + '）不一致，已重置。' };
+    const m = migrateSave(data);
+    if (!isValidSave(m.player)) {
+      backupCorrupted(raw);
+      return { state: defaultState(), fresh: true, corrupted: '存档数据已损坏，已重置（原始数据已备份）。' };
     }
-    if (!isValidSave(data.player)) {
-      return { state: defaultState(), fresh: true, corrupted: '存档数据已损坏，已重置。' };
-    }
-    // 兼容旧存档：奖励/语音字段缺失时补齐（不覆盖已有数据）
-    const migrated: PlayerState = {
-      ...data.player,
-      rewards: normalizeRewards((data.player as Partial<PlayerState>).rewards),
-      settings: {
-        ...data.player.settings,
-        voice: normalizeVoice((data.player.settings as { voice?: unknown })?.voice),
-      },
+    const player = normalizePlayerState(m.player);
+    const notes = m.future ? [...m.notes, '存档来自更高版本（v' + m.from + '），已按兼容模式读取'] : m.notes;
+    return {
+      state: player,
+      fresh: false,
+      migrated: notes.length > 0,
+      fromVersion: m.from,
+      notes,
     };
-    return { state: migrated, fresh: false };
   } catch {
+    if (raw) backupCorrupted(raw);
     return { state: defaultState(), fresh: true, corrupted: '存档数据已损坏，已重置。' };
   }
 }
@@ -108,12 +174,14 @@ export function exportSave(p: PlayerState): string {
   return JSON.stringify(data, null, 2);
 }
 
-export function importSave(text: string): { ok: boolean; state?: PlayerState; reason?: string } {
+export function importSave(text: string): { ok: boolean; state?: PlayerState; reason?: string; notes?: string[] } {
   try {
     const data = JSON.parse(text) as SaveData;
-    if (!data || data.version !== SAVE_VERSION) return { ok: false, reason: '存档版本不匹配（需要 v' + SAVE_VERSION + '）。' };
-    if (!isValidSave(data.player)) return { ok: false, reason: '存档内容不完整或已损坏。' };
-    return { ok: true, state: data.player };
+    if (!data || typeof data !== 'object') return { ok: false, reason: '无法解析该文件，不是有效的 NEXUS 存档。' };
+    const m = migrateSave(data);
+    if (!isValidSave(m.player)) return { ok: false, reason: '存档内容不完整或已损坏。' };
+    const notes = m.future ? [...m.notes, '该存档来自更高版本（v' + m.from + '），已按兼容模式导入'] : m.notes;
+    return { ok: true, state: normalizePlayerState(m.player), notes };
   } catch {
     return { ok: false, reason: '无法解析该文件，不是有效的 NEXUS 存档。' };
   }

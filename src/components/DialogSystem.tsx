@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { StoryLine } from '../game/story';
 import { useGame } from '../store/gameStore';
+import { applyPlayerName, displayNameOf } from '../game/identity';
 import { normalizeVoice, speech, speakLine, type VoiceState } from '../services/voice';
+import VoiceBar from './VoiceBar';
 
 export interface DialogSystemProps {
   nodes: StoryLine[];
@@ -10,16 +12,29 @@ export interface DialogSystemProps {
   speedMs?: number;
   animEnabled?: boolean;
   frameTitle?: string;
+  /** 剧情事件 id：进入对话即标记该事件已解锁（用于档案/回顾） */
+  eventId?: string;
 }
 
-export default function DialogSystem({ nodes, onDone, onSeen, speedMs = 26, animEnabled = true, frameTitle = 'NEXUS 剧情记录' }: DialogSystemProps) {
+export default function DialogSystem({ nodes, onDone, onSeen, speedMs = 26, animEnabled = true, frameTitle = 'NEXUS 剧情记录', eventId }: DialogSystemProps) {
   const g = useGame();
   const voice = useMemo(() => normalizeVoice(g.player.settings.voice), [g.player.settings.voice]);
   const index = useRef(0);
   const [chars, setChars] = useState(0);
   const [vState, setVState] = useState<VoiceState>('idle');
   const node = nodes[Math.min(index.current, nodes.length - 1)];
-  const typing = chars < node.text.length;
+
+  // 玩家显示名：说话人标签与正文统一走身份系统（原始编号仍固定为 R-07）
+  const displayName = displayNameOf(g.player);
+  const speakerName = node.speaker === 'R-07' ? displayName : node.speaker;
+  const fullText = applyPlayerName(node.text, displayName);
+  const typing = chars < fullText.length;
+
+  // 进入对话 = 该剧情事件已解锁
+  useEffect(() => {
+    if (eventId) g.unlockStoryEvent(eventId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [eventId]);
 
   // 语音状态订阅（用于按钮动画/角色高亮）
   useEffect(() => {
@@ -33,7 +48,7 @@ export default function DialogSystem({ nodes, onDone, onSeen, speedMs = 26, anim
     if (!voice.enabled || !voice.autoRead) return;
     if (typing) return;
     if (!speech.supported) return;
-    speakLine(node.text, node.kind);
+    speakLine(fullText, node.kind);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [typing, node.id, voice.enabled, voice.autoRead]);
 
@@ -42,13 +57,13 @@ export default function DialogSystem({ nodes, onDone, onSeen, speedMs = 26, anim
 
   useEffect(() => {
     if (!animEnabled || speedMs <= 0) {
-      setChars(node.text.length);
+      setChars(fullText.length);
       return;
     }
     setChars(0);
     const iv = window.setInterval(() => {
       setChars(c => {
-        if (c >= node.text.length) {
+        if (c >= fullText.length) {
           window.clearInterval(iv);
           return c;
         }
@@ -57,15 +72,15 @@ export default function DialogSystem({ nodes, onDone, onSeen, speedMs = 26, anim
     }, speedMs);
     return () => window.clearInterval(iv);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [node.id, animEnabled, speedMs]);
+  }, [node.id, animEnabled, speedMs, fullText]);
 
   const speakCurrent = () => {
     if (vState === 'speaking') { speech.stop(); return; }
-    speakLine(node.text, node.kind);
+    speakLine(fullText, node.kind);
   };
 
   const advance = () => {
-    if (typing) { setChars(node.text.length); return; }
+    if (typing) { setChars(fullText.length); return; }
     if (node.choices) return;
     speech.stop();
     onSeen?.(node.id);
@@ -75,9 +90,10 @@ export default function DialogSystem({ nodes, onDone, onSeen, speedMs = 26, anim
     setChars(0);
   };
 
-  const choose = (next?: string) => {
+  const choose = (next?: string, label?: string) => {
     speech.stop();
     onSeen?.(node.id);
+    if (label) g.recordStoryChoice(node.id, label);
     if (!next) { index.current += 1; setChars(0); return; }
     const ni = nodes.findIndex(n => n.id === next);
     if (ni < 0) { onDone(); return; }
@@ -91,7 +107,7 @@ export default function DialogSystem({ nodes, onDone, onSeen, speedMs = 26, anim
     onDone();
   };
 
-  const text = useMemo(() => node.text.slice(0, chars), [node.text, chars]);
+  const text = useMemo(() => fullText.slice(0, chars), [fullText, chars]);
 
   return (
     <div className="dlg-root" onClick={advance}>
@@ -111,25 +127,17 @@ export default function DialogSystem({ nodes, onDone, onSeen, speedMs = 26, anim
           <button className="nxbtn ghost small" onClick={skipAll}>跳过 ▸▸</button>
         </div>
         <div className="dlg-main">
-          <div className={'dlg-avatar kind-' + node.kind}>{node.speaker.slice(0, 1)}</div>
+          <div className={'dlg-avatar kind-' + node.kind}>{speakerName.slice(0, 1)}</div>
           <div className="dlg-body">
             <div className='dlg-name-row'>
-              <div className={'dlg-name kind-' + node.kind + (vState === 'speaking' ? ' speaking' : '')}>{node.speaker}</div>
-              <button
-                className={'voice-btn' + (vState === 'speaking' ? ' on' : '')}
-                title={speech.supported ? (vState === 'speaking' ? '停止朗读' : '朗读这句') : '当前浏览器不支持语音'}
-                disabled={!speech.supported || !voice.enabled}
-                onClick={e => { e.stopPropagation(); speakCurrent(); }}
-              >
-                {vState === 'speaking' ? '◼' : '🔊'}
-                {vState === 'speaking' && <span className="wave"><i /><i /><i /></span>}
-              </button>
+              <div className={'dlg-name kind-' + node.kind + (vState === 'speaking' ? ' speaking' : '')}>{speakerName}</div>
+              <VoiceBar text={fullText} kind={node.kind} />
             </div>
             <div className={'dlg-text' + (typing ? ' dlg-cursor' : '')}>{text}</div>
             {!typing && node.choices && (
               <div className="dlg-choices">
                 {node.choices.map((c, i) => (
-                  <button key={i} className="dlg-choice" onClick={() => choose(c.next)}>{c.label}</button>
+                  <button key={i} className="dlg-choice" onClick={() => choose(c.next, c.label)}>{c.label}</button>
                 ))}
               </div>
             )}

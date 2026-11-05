@@ -1,5 +1,7 @@
 import { useGame } from '../store/gameStore';
 import { milestone, titleForLevel } from '../game/progression';
+import { displayNameOf, originCodeOf, normalizeIdentity } from '../game/identity';
+import { equippedTitleName, equippedFrameClass } from '../game/cosmetics';
 
 export default function PlayerStatus({ showTolerance = false, compact = false }: { showTolerance?: boolean; compact?: boolean }) {
   const { player, tolerance, event } = useGame();
@@ -8,15 +10,24 @@ export default function PlayerStatus({ showTolerance = false, compact = false }:
   const cZone = c >= 81 ? 'green' : c >= 61 ? '' : c >= 41 ? 'orange' : c >= 21 ? 'orange' : 'red';
   const level = player.progress.currentLevelId;
   const att = level ? player.progress.failedAttempts[level] || 0 : 0;
+  const identity = normalizeIdentity(player.identity, player.name);
+  const shownName = displayNameOf(player);
+  const equippedTitle = equippedTitleName(player.rewards);
+  const frameClass = equippedFrameClass(player.rewards);
 
   return (
     <div className="pl-card">
       {!compact && (
         <div className="pl-top">
-          <div className="pl-core">R</div>
+          <div className={'pl-core' + (frameClass ? ' ' + frameClass : '')}>R</div>
           <div>
-            <div className="pl-name">{player.name}</div>
-            <div className="pl-level">Lv.{player.level} · {titleForLevel(player.level)}</div>
+            <div className="pl-name">{shownName}</div>
+            <div className="pl-level">Lv.{player.level} · {equippedTitle || titleForLevel(player.level)}</div>
+            {identity.renamed && (
+              <div className="pl-level" style={{ opacity: 0.75, fontSize: 11 }}>
+                编号 {originCodeOf(player)} · 原始实验体
+              </div>
+            )}
           </div>
           <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
             <div className="chip cyan">容错 {tolerance}</div>

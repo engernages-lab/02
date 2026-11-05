@@ -1,4 +1,4 @@
-// 验证 5 个 Echo Boss 的判题（正确版应通过、原始故障版应失败）+ 实验室判题路径
+// 验证 5 个章节 Boss（GATE-01 + ECHO-02~05）的判题（正确版应通过、原始故障版应失败）+ 实验室判题路径
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -41,8 +41,8 @@ function runCode(code) {
 }
 
 const FIXED = {
-  'echo-01': 'def mirror(name):\n    return "REPAIR-" + name.upper()\n\nprint(mirror("echo"))',
-  'echo-02': 'def grade(score):\n    if score >= 90:\n        return "A"\n    elif score >= 60:\n        return "B"\n    else:\n        return "C"',
+  'gate-01': 'def power(level):\n    if level >= 3:\n        return "ONLINE"\n    else:\n        return "OFFLINE"\n\ndef report(levels):\n    out = ""\n    for lv in levels:\n        out = out + power(lv) + " "\n    return out\n\nprint(report([3, 1, 5]))',
+  'somnia': 'def classify(tag):\n    if tag == "error":\n        return "ALERT"\n    else:\n        return "PASS"',
   'echo-03': 'def highest(nums):\n    best = nums[0]\n    for n in nums:\n        if n > best:\n            best = n\n    return best',
   'echo-04': 'def total_after_discount(prices, rate):\n    total = 0\n    for p in prices:\n        total = total + p\n    return total * (1 - rate)',
   'echo-05': 'def safe_sum(records):\n    total = 0\n    for k in records:\n        try:\n            total = total + int(records[k])\n        except ValueError:\n            pass\n    return total',

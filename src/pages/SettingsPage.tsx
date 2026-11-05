@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useGame } from '../store/gameStore';
 import { play } from '../services/sound';
 import { DEFAULT_VOICE, normalizeVoice, ROLE_PROFILES, speech, type VoiceRole } from '../services/voice';
+import { SAVE_VERSION } from '../services/save';
 
 export default function SettingsPage() {
   const g = useGame();
@@ -203,7 +204,7 @@ export default function SettingsPage() {
         </div>
 
         <div className="dim" style={{ fontSize: 12, textAlign: 'center' }}>
-          存档自动保存至浏览器 localStorage（nexus_code_repair_save_v1）· 数据版本 v1，未来升级自动迁移
+          存档自动保存至浏览器 localStorage（nexus_code_repair_save_v1）· 数据版本 v{SAVE_VERSION}，旧版本存档会在读取时自动迁移
         </div>
       </div>
     </div>

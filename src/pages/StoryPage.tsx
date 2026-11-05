@@ -1,17 +1,16 @@
-import DialogSystem from '../components/DialogSystem';
-import { PROLOGUE } from '../game/story';
+import CinematicStage from '../components/CinematicStage';
+import { PROLOGUE_SCENES } from '../game/lore/prologue';
 import { useGame } from '../store/gameStore';
 import { play } from '../services/sound';
 
 export default function StoryPage() {
   const g = useGame();
   return (
-    <DialogSystem
-      nodes={PROLOGUE}
-      frameTitle="序章 · 苏醒"
-      speedMs={g.player.settings.typewriterMs}
-      animEnabled={g.player.settings.animations}
-      onSeen={(id) => g.markStory('prologue_' + id)}
+    <CinematicStage
+      scenes={PROLOGUE_SCENES}
+      eventId="prologue"
+      frameTitle="序章 · 沉睡的意识"
+      onRename={name => g.renamePlayer(name)}
       onDone={() => {
         play('unlock');
         g.setFlag('prologueDone', true);

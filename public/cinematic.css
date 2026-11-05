@@ -1,0 +1,151 @@
+/* 剧情演出样式（CinematicStage · 第二阶段）
+   独立文件：与 global.css 分离，便于后续继续扩展章节演出。 */
+
+/* 覆盖 global.css 里 .dlg-root 的居中卡片布局：演出是全屏舞台 */
+.cine-root {
+  position: fixed; inset: 0; z-index: 900;
+  display: block; background: #050A10; overflow: hidden;
+  backdrop-filter: none; -webkit-backdrop-filter: none;
+}
+.cine-bg { position: absolute; inset: 0; }
+.cine-bg.bg-underground {
+  background:
+    radial-gradient(ellipse at 50% 118%, rgba(24,74,84,.55) 0%, rgba(7,17,27,.9) 58%, #03070C 100%),
+    repeating-linear-gradient(90deg, rgba(66,214,208,.055) 0 1px, transparent 1px 96px),
+    repeating-linear-gradient(0deg, rgba(66,214,208,.03) 0 1px, transparent 1px 72px);
+}
+.cine-bg.bg-corridor {
+  background:
+    linear-gradient(180deg, #061019 0%, #0A1B2C 55%, #050C14 100%),
+    repeating-linear-gradient(90deg, rgba(143,221,227,.06) 0 2px, transparent 2px 120px);
+}
+.cine-bg.bg-dataport {
+  background:
+    radial-gradient(ellipse at 50% 8%, rgba(66,214,208,.20) 0%, transparent 55%),
+    radial-gradient(ellipse at 50% 110%, rgba(57,134,200,.35) 0%, rgba(7,17,27,.95) 60%, #04090F 100%),
+    repeating-linear-gradient(90deg, rgba(66,214,208,.07) 0 1px, transparent 1px 64px),
+    repeating-linear-gradient(0deg, rgba(66,214,208,.05) 0 1px, transparent 1px 64px);
+}
+.cine-bg.bg-core {
+  background:
+    radial-gradient(ellipse at 50% 45%, rgba(201,167,255,.22) 0%, transparent 58%),
+    radial-gradient(ellipse at 50% 120%, rgba(243,183,92,.18) 0%, rgba(10,6,20,.96) 62%, #05030A 100%);
+}
+.cine-bg.bg-void {
+  background:
+    radial-gradient(ellipse at 50% 40%, rgba(57,134,200,.20) 0%, transparent 60%),
+    radial-gradient(ellipse at 18% 82%, rgba(66,214,208,.10) 0%, transparent 55%),
+    #04080E;
+}
+.cine-bg.bg-memory {
+  background:
+    radial-gradient(ellipse at 50% 30%, rgba(243,183,92,.18) 0%, transparent 55%),
+    radial-gradient(ellipse at 50% 120%, rgba(201,167,255,.20) 0%, rgba(8,6,16,.96) 62%, #04030A 100%);
+}
+.cine-bg.bg-terminal { background: linear-gradient(180deg, #04120C 0%, #061A12 60%, #030A07 100%); }
+
+.cine-fx { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.cine-fx.fx-scan::after {
+  content: ''; position: absolute; left: 0; right: 0; height: 22%;
+  background: linear-gradient(180deg, transparent, rgba(66,214,208,.12), transparent);
+  animation: cineScan 4.5s linear infinite;
+}
+.cine-fx.fx-alarm { animation: cineAlarm 1.7s ease-in-out infinite; background: radial-gradient(ellipse at 50% 50%, rgba(255,91,100,.16), transparent 66%); }
+.cine-fx.fx-flicker { animation: cineFlicker 5.5s infinite; background: radial-gradient(ellipse at 50% 50%, rgba(66,214,208,.05), transparent 70%); }
+.cine-fx.fx-glitch::before {
+  content: ''; position: absolute; inset: 0;
+  background: repeating-linear-gradient(0deg, rgba(201,167,255,.05) 0 2px, transparent 2px 5px);
+  animation: cineFlicker 2.4s infinite;
+}
+.cine-fx.fx-particles::before {
+  content: ''; position: absolute; inset: -40%;
+  background-image:
+    radial-gradient(rgba(143,221,227,.55) 1px, transparent 1px),
+    radial-gradient(rgba(243,183,92,.45) 1px, transparent 1px);
+  background-size: 120px 120px, 180px 180px;
+  background-position: 0 0, 40px 60px;
+  opacity: .5;
+  animation: cineDrift 22s linear infinite;
+}
+
+.cine-stage { position: relative; z-index: 2; width: 100%; height: 100%; display: flex; flex-direction: column; padding: 16px 26px 20px; box-sizing: border-box; }
+.cine-top { display: flex; align-items: center; gap: 12px; padding-bottom: 6px; border-bottom: 1px solid rgba(66,214,208,.16); }
+.cine-brand { font-size: 12.5px; color: #8FDDE3; letter-spacing: 1.5px; }
+.cine-titlecard { margin: 10px 0 2px; animation: cineTitle 2.2s ease forwards; }
+.cine-titlecard .ct-main { font-size: 19px; font-weight: 800; color: #EAF3FA; letter-spacing: 3px; text-shadow: 0 0 20px rgba(66,214,208,.45); }
+.cine-titlecard .ct-sub { font-size: 12.5px; color: #6FB7E8; letter-spacing: 3px; margin-top: 5px; }
+
+.cine-main { flex: 1; display: flex; align-items: flex-end; gap: 24px; padding: 12px 0 8px; min-height: 0; }
+.cine-portrait {
+  position: relative; width: 128px; height: 128px; flex: 0 0 128px; border-radius: 18px;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(10,22,34,.55); border: 1px solid rgba(66,214,208,.32);
+  box-shadow: 0 0 42px rgba(66,214,208,.16), inset 0 0 28px rgba(66,214,208,.12);
+}
+.cine-portrait .cp-glyph { font-size: 50px; font-weight: 800; color: #BDF7E1; text-shadow: 0 0 24px currentColor; }
+.cine-portrait .cp-ring { position: absolute; inset: -7px; border-radius: 22px; border: 1px solid rgba(66,214,208,.20); animation: ringPulse 3.4s infinite; }
+.cine-portrait.kind-mira { border-color: rgba(143,221,227,.5); box-shadow: 0 0 42px rgba(143,221,227,.22), inset 0 0 28px rgba(143,221,227,.14); }
+.cine-portrait.kind-mira .cp-glyph { color: #CFF3F7; }
+.cine-portrait.kind-system { border-color: rgba(66,214,208,.28); }
+.cine-portrait.kind-system .cp-glyph { color: #7FE8C4; }
+.cine-portrait.kind-k0 { border-color: rgba(201,167,255,.55); box-shadow: 0 0 46px rgba(201,167,255,.28), inset 0 0 28px rgba(201,167,255,.16); }
+.cine-portrait.kind-k0 .cp-glyph { color: #E4D3FF; }
+.cine-portrait.kind-engel { border-color: rgba(243,183,92,.55); box-shadow: 0 0 46px rgba(243,183,92,.26), inset 0 0 28px rgba(243,183,92,.14); }
+.cine-portrait.kind-engel .cp-glyph { color: #FFE0A8; }
+.cine-portrait.kind-r07 { border-color: rgba(66,214,208,.6); }
+.cine-portrait.speaking { animation: corePulse 1.5s ease-in-out infinite; }
+
+.cine-body {
+  flex: 1; min-width: 0; align-self: stretch;
+  background: linear-gradient(180deg, rgba(9,20,30,.72), rgba(6,14,22,.92));
+  border: 1px solid rgba(66,214,208,.22); border-radius: 14px; padding: 15px 18px;
+  backdrop-filter: blur(6px); box-shadow: 0 18px 50px rgba(0,0,0,.45);
+  display: flex; flex-direction: column; justify-content: flex-end;
+}
+.cine-text { font-size: 16.5px; line-height: 1.95; color: #EAF3FA; min-height: 88px; white-space: pre-wrap; }
+.cine-input { margin-top: 12px; border-top: 1px dashed rgba(66,214,208,.2); padding-top: 12px; }
+.cine-input input {
+  width: min(320px, 100%); box-sizing: border-box; background: rgba(13,27,40,.9);
+  border: 1px solid rgba(66,214,208,.35); color: #EAF3FA; border-radius: 8px;
+  padding: 8px 12px; outline: none; font-size: 14px;
+}
+.cine-input input:focus { border-color: #42D6D0; box-shadow: 0 0 0 2px rgba(66,214,208,.16); }
+.cine-input-row { display: flex; gap: 8px; margin-top: 9px; flex-wrap: wrap; }
+.cine-err { color: #FF9BA2; font-size: 12.5px; margin-top: 7px; }
+.cine-hint { color: #6B8CA3; font-size: 12px; margin-top: 7px; }
+.cine-rec { font-family: Consolas, monospace; font-size: 11px; color: #4A6E85; }
+
+@keyframes cineTitle {
+  0% { opacity: 0; transform: translateY(-8px); letter-spacing: 10px; }
+  22% { opacity: 1; transform: none; letter-spacing: 3px; }
+  100% { opacity: .86; letter-spacing: 3px; }
+}
+@keyframes cineAlarm {
+  0%, 100% { background: radial-gradient(ellipse at 50% 50%, rgba(255,91,100,.18), transparent 66%); }
+  50% { background: radial-gradient(ellipse at 50% 50%, rgba(255,91,100,.04), transparent 66%); }
+}
+@keyframes cineFlicker {
+  0%, 100% { opacity: 1; }
+  46% { opacity: .92; }
+  49% { opacity: .52; }
+  52% { opacity: .96; }
+  68% { opacity: .74; }
+  71% { opacity: 1; }
+}
+@keyframes cineScan {
+  0% { transform: translateY(-120%); }
+  100% { transform: translateY(560%); }
+}
+@keyframes cineDrift {
+  0% { background-position: 0 0, 40px 60px; }
+  100% { background-position: 0 -600px, -40px -540px; }
+}
+
+@media (max-width: 820px) {
+  .cine-stage { padding: 12px 14px 14px; }
+  .cine-main { flex-direction: column; align-items: stretch; gap: 10px; }
+  .cine-portrait { width: 72px; height: 72px; flex: 0 0 72px; }
+  .cine-portrait .cp-glyph { font-size: 30px; }
+  .cine-text { font-size: 15px; min-height: 72px; }
+  .cine-titlecard .ct-main { font-size: 16px; letter-spacing: 2px; }
+}

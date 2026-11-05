@@ -23,7 +23,7 @@ loader.config({
 let themeReady = false;
 let edSeq = 0;
 
-export const ERR_STYLE = '.nx-error-line { background: rgba(255, 91, 100, 0.13) !important; box-shadow: inset 3px 0 0 var(--red); } .nx-error-gutter { border-left: 3px solid var(--red); } .nx-debug-line { background: rgba(243, 183, 92, 0.16) !important; box-shadow: inset 3px 0 0 var(--orange); } .nx-debug-gutter { border-left: 3px solid var(--orange); }';
+export const ERR_STYLE = '.nx-error-line { background: rgba(255, 91, 100, 0.13) !important; box-shadow: inset 3px 0 0 var(--red); } .nx-error-gutter { border-left: 3px solid var(--red); } .nx-debug-line { background: rgba(243, 183, 92, 0.16) !important; box-shadow: inset 3px 0 0 var(--orange); } .nx-debug-gutter { border-left: 3px solid var(--orange); } .nx-scan-line { background: rgba(66, 214, 208, 0.14) !important; box-shadow: inset 3px 0 0 #42D6D0; } .nx-scan-gutter { border-left: 3px solid #42D6D0; }';
 
 export interface CodeEditorProps {
   value: string;
@@ -33,13 +33,15 @@ export interface CodeEditorProps {
   readOnly?: boolean;
   errorLine?: number | null;
   debugLine?: number | null;
+  /** 扫描器定位到的可疑行（1 基） */
+  markLines?: number[];
   onRun?: () => void;
   placeholder?: string;
 }
 
 export default function CodeEditor({
   value, onChange, height = '100%', fontSize = 15, readOnly = false,
-  errorLine, debugLine, onRun, placeholder,
+  errorLine, debugLine, markLines, onRun, placeholder,
 }: CodeEditorProps) {
   const edRef = useRef<MonacoNS.editor.IStandaloneCodeEditor | null>(null);
   const monRef = useRef<typeof MonacoNS | null>(null);
@@ -65,24 +67,29 @@ export default function CodeEditor({
     if (!ed || !mon) return;
     if (!decRef.current) decRef.current = ed.createDecorationsCollection();
     const model = ed.getModel();
-    const marks: { line: number; kind: 'error' | 'debug' }[] = [];
+    const marks: { line: number; kind: 'error' | 'debug' | 'scan' }[] = [];
     if (errorLine != null && model && errorLine >= 1 && errorLine <= model.getLineCount()) {
       marks.push({ line: errorLine, kind: 'error' });
     }
     if (debugLine != null && debugLine >= 1 && model && debugLine <= model.getLineCount()) {
       marks.push({ line: debugLine, kind: 'debug' });
     }
+    if (markLines && model) {
+      for (const ln of markLines) {
+        if (ln >= 1 && ln <= model.getLineCount()) marks.push({ line: ln, kind: 'scan' });
+      }
+    }
     decRef.current.set(marks.map(m => ({
       range: new mon.Range(m.line, 1, m.line, model!.getLineMaxColumn(m.line)),
       options: {
         isWholeLine: true,
-        className: m.kind === 'error' ? 'nx-error-line' : 'nx-debug-line',
-        linesDecorationsClassName: m.kind === 'error' ? 'nx-error-gutter' : 'nx-debug-gutter',
+        className: m.kind === 'error' ? 'nx-error-line' : m.kind === 'debug' ? 'nx-debug-line' : 'nx-scan-line',
+        linesDecorationsClassName: m.kind === 'error' ? 'nx-error-gutter' : m.kind === 'debug' ? 'nx-debug-gutter' : 'nx-scan-gutter',
       },
     })));
     const top = marks[0]?.line;
     if (top) ed.revealLineInCenter(top);
-  }, [errorLine, debugLine]);
+  }, [errorLine, debugLine, markLines]);
 
   return (
     <div style={{ width: '100%', height }} className="code-editor-host">

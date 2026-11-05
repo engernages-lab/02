@@ -10,6 +10,9 @@ import SettingsPage from './pages/SettingsPage';
 import KnowledgePage from './pages/KnowledgePage';
 import AchievementsPage from './pages/AchievementsPage';
 import ArchivePage from './pages/ArchivePage';
+import VaultPage from './pages/VaultPage';
+import JournalPage from './pages/JournalPage';
+import EndingsPage from './pages/EndingsPage';
 import LabPage from './pages/LabPage';
 import BossPage from './pages/BossPage';
 import RewardCenterPage from './pages/RewardCenterPage';
@@ -76,6 +79,9 @@ function Shell() {
       {screen === 'knowledge' && <KnowledgePage />}
       {screen === 'achievements' && <AchievementsPage />}
       {screen === 'archive' && <ArchivePage />}
+      {screen === 'vault' && <VaultPage />}
+      {screen === 'journal' && <JournalPage />}
+      {screen === 'endings' && <EndingsPage />}
       {screen === 'lab' && <LabPage />}
       {screen === 'boss' && <BossPage />}
       {screen === 'shop' && <RewardCenterPage />}

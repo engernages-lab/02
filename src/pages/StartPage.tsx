@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import ParticlesField from '../components/ParticlesField';
 import { useGame } from '../store/gameStore';
+import { displayNameOf } from '../game/identity';
 import { initAudio, play, startMusic, isMusicOn } from '../services/sound';
 
 const BOOT_LINES = [
@@ -17,27 +18,32 @@ export default function StartPage() {
   const [ch, setCh] = useState(0);          // 当前行已输入字符
   const [ready, setReady] = useState(false);
   const entered = useRef(false);
+  // 启动握手最后一行使用玩家显示名（默认 R-07；原始编号另在档案页固定展示）
+  const lines = useMemo(
+    () => BOOT_LINES.map(l => (l === 'WELCOME, R-07.' ? 'WELCOME, ' + displayNameOf(g.player) + '.' : l)),
+    [g.player.identity?.displayName, g.player.name],
+  );
 
   useEffect(() => {
-    if (!g.player.settings.animations) { setStep(BOOT_LINES.length); setCh(0); return; }
+    if (!g.player.settings.animations) { setStep(lines.length); setCh(0); return; }
     const iv = window.setInterval(() => {
       setCh(c => {
-        const target = BOOT_LINES[step] || '';
+        const target = lines[step] || '';
         if (c < target.length) return c + 2;
         return c;
       });
     }, 24);
     return () => window.clearInterval(iv);
-  }, [step, g.player.settings.animations]);
+  }, [step, g.player.settings.animations, lines]);
 
   useEffect(() => {
-    if (step >= BOOT_LINES.length) { setReady(true); return; }
-    const target = BOOT_LINES[step] || '';
+    if (step >= lines.length) { setReady(true); return; }
+    const target = lines[step] || '';
     if (ch >= target.length) {
       const t = window.setTimeout(() => setStep(s => s + 1), 260);
       return () => window.clearTimeout(t);
     }
-  }, [ch, step]);
+  }, [ch, step, lines]);
 
   const enter = () => {
     if (entered.current) return;
@@ -48,7 +54,7 @@ export default function StartPage() {
     g.nav('menu');
   };
 
-  const skipped = step >= BOOT_LINES.length;
+  const skipped = step >= lines.length;
 
   return (
     <div className="boot-wrap">
@@ -58,13 +64,13 @@ export default function StartPage() {
         <div className="orb" />
       </div>
       <div className="boot-lines">
-        {BOOT_LINES.slice(0, step).map((l, i) => (
+        {lines.slice(0, step).map((l, i) => (
           <div key={i} style={{ opacity: 0.9 }}>{l}</div>
         ))}
-        {step < BOOT_LINES.length && <div className="dlg-cursor">{BOOT_LINES[step].slice(0, ch)}</div>}
+        {step < lines.length && <div className="dlg-cursor">{lines[step].slice(0, ch)}</div>}
       </div>
       {!skipped && (
-        <button className="nxbtn ghost small" style={{ position: 'absolute', top: 26, right: 30 }} onClick={() => { setStep(BOOT_LINES.length); setCh(0); play('click'); }}>
+        <button className="nxbtn ghost small" style={{ position: 'absolute', top: 26, right: 30 }} onClick={() => { setStep(lines.length); setCh(0); play('click'); }}>
           跳过初始化 ⏭
         </button>
       )}

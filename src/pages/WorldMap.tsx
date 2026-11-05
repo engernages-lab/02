@@ -1,23 +1,31 @@
 import { useEffect, useMemo, useState } from 'react';
 import { SERVERS, serverById, levelsOfServer, levelUnlockState, levelById, type LevelDef } from '../game/levels';
-import { CHAPTER1_COMPLETE, CHAPTER2_COMPLETE, CHAPTER3_COMPLETE, CHAPTER4_COMPLETE, CHAPTER5_COMPLETE, CHAPTER6_COMPLETE, TUTORIAL_DONE } from '../game/story';
+import { CHAPTER3_COMPLETE, CHAPTER4_COMPLETE, CHAPTER5_COMPLETE, CHAPTER6_COMPLETE, TUTORIAL_DONE } from '../game/story';
+import { CHAPTER2_ARRIVAL_SCENES, CHAPTER2_RESTORED_SCENES } from '../game/lore/chapter2';
+import { CHAPTER3_ARRIVAL_SCENES, CHAPTER3_VICTORY_SCENES } from '../game/lore/chapter3';
+import { CHAPTER4_ARRIVAL_SCENES, CHAPTER4_VICTORY_SCENES } from '../game/lore/chapter4';
+import { CHAPTER5_ARRIVAL_SCENES, CHAPTER5_TRUTH_SCENES, CHAPTER5_VICTORY_SCENES } from '../game/lore/chapter5';
+import { CHAPTER6_ARRIVAL_SCENES, CHAPTER6_ENGEL_SCENES, CHAPTER6_VICTORY_SCENES } from '../game/lore/chapter6';
+import { CHAPTER1_ARRIVAL_SCENES, CHAPTER1_RESTORED_SCENES } from '../game/lore/chapter1';
 import { bossForChapter } from '../game/bosses';
+import { chapterByServer } from '../game/lore/chapters';
 import DialogSystem from '../components/DialogSystem';
+import CinematicStage from '../components/CinematicStage';
 import { useGame } from '../store/gameStore';
 import { play } from '../services/sound';
 import ParticlesField from '../components/ParticlesField';
 
-type NodeStatus = 'online' | 'damaged' | 'locked' | 'sealed';
+type NodeStatus = 'online' | 'restored' | 'damaged' | 'locked' | 'sealed';
 
 const HUB = { x: 620, y: 365 };
 const CHIP_COLOR: Record<NodeStatus, string> = {
-  online: '#35D39A', damaged: '#FF5B64', locked: '#4A6E85', sealed: '#F3B75C',
+  online: '#35D39A', restored: '#35D39A', damaged: '#FF5B64', locked: '#4A6E85', sealed: '#F3B75C',
 };
 const CHIP_TEXT: Record<NodeStatus, string> = {
-  online: 'ONLINE', damaged: 'DAMAGED', locked: 'LOCKED', sealed: 'SEALED',
+  online: 'ONLINE', restored: 'RESTORED', damaged: 'DAMAGED', locked: 'LOCKED', sealed: 'SEALED',
 };
 const ICON_COLOR: Record<NodeStatus, string> = {
-  online: '#7FE8C4', damaged: '#FF8B92', locked: '#5E7C96', sealed: '#F5CE8E',
+  online: '#7FE8C4', restored: '#9FE8C8', damaged: '#FF8B92', locked: '#5E7C96', sealed: '#F5CE8E',
 };
 
 export default function WorldMap() {
@@ -25,7 +33,7 @@ export default function WorldMap() {
   const p = g.player.progress;
   const [sel, setSel] = useState<string | null>(null);
   const [shakeId, setShakeId] = useState<string | null>(null);
-  const [cinema, setCinema] = useState<'tut' | 'ch1' | 'ch2' | 'ch3' | 'ch4' | 'ch5' | 'ch6' | null>(null);
+  const [cinema, setCinema] = useState<'tut' | 'ch1arrive' | 'ch1restore' | 'ch2arrive' | 'ch2restore' | 'ch3arrive' | 'ch3' | 'ch4arrive' | 'ch4' | 'ch5arrive' | 'ch5truth' | 'ch5' | 'ch6arrive' | 'ch6engel' | 'ch6' | null>(null);
   const [briefServer, setBriefServer] = useState<string | null>(null);
 
   const tutDone = p.completedLevels.includes('tut-1');
@@ -44,16 +52,25 @@ export default function WorldMap() {
   const ch6Cin = p.flags.chapter6CinematicShown === true;
 
   useEffect(() => {
-    if (ch6Done && !ch6Cin) setCinema('ch6');
+    if (ch6Done && !p.flags.chapter6EngelSeen) setCinema('ch6engel');
+    else if (ch6Done && !ch6Cin) setCinema('ch6');
+    else if (ch5Done && !p.flags.chapter6ArrivalSeen) setCinema('ch6arrive');
+    else if (ch4Done && !p.flags.chapter5ArrivalSeen) setCinema('ch5arrive');
+    else if (ch5Done && !p.flags.chapter5TruthSeen) setCinema('ch5truth');
     else if (ch5Done && !ch5Cin) setCinema('ch5');
+    else if (ch3Done && !p.flags.chapter4ArrivalSeen) setCinema('ch4arrive');
     else if (ch4Done && !ch4Cin) setCinema('ch4');
+    else if (ch2Done && !p.flags.chapter3ArrivalSeen) setCinema('ch3arrive');
     else if (ch3Done && !ch3Cin) setCinema('ch3');
-    else if (ch2Done && !ch2Cin) setCinema('ch2');
-    else if (ch1Done && !ch1Cin) setCinema('ch1');
+    else if (ch2Done && p.flags.chapter2RestoreSeen !== true) setCinema('ch2restore');
+    else if (ch1Done && p.flags.chapter1RestoreSeen !== true) setCinema('ch1restore');
     else if (tutDone && !tutCin && !ch1Done) setCinema('tut');
-  }, [ch6Done, ch6Cin, ch5Done, ch5Cin, ch4Done, ch4Cin, ch3Done, ch3Cin, ch2Done, ch2Cin, ch1Done, ch1Cin, tutDone, tutCin]);
+    else if (!ch1Done && p.unlockedServers.includes('syntax') && p.flags.chapter1ArrivalSeen !== true) setCinema('ch1arrive');
+    else if (!ch2Done && p.unlockedServers.includes('logs') && p.flags.chapter2ArrivalSeen !== true) setCinema('ch2arrive');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ch6Done, ch6Cin, ch5Done, ch5Cin, ch4Done, ch4Cin, ch3Done, ch3Cin, ch2Done, ch2Cin, ch1Done, ch1Cin, tutDone, tutCin, p.flags.chapter1RestoreSeen, p.flags.chapter1ArrivalSeen, p.flags.chapter2RestoreSeen, p.flags.chapter2ArrivalSeen, p.unlockedServers]);
 
-  const statusOf = useMemo(() => (id: string): NodeStatus => {
+  const baseStatusOf = useMemo(() => (id: string): NodeStatus => {
     if (id === 'training') return tutDone ? 'online' : 'damaged';
     if (id === 'syntax') {
       if (!p.unlockedServers.includes('syntax')) return 'locked';
@@ -89,9 +106,18 @@ export default function WorldMap() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tutDone, ch1Done, ch2Done, ch3Done, ch4Done, ch5Done, p.unlockedServers, p.completedLevels]);
 
+  /** Boss 击败后，该章服务器视为「完整恢复」 */
+  const statusOf = (id: string): NodeStatus => {
+    const st = baseStatusOf(id);
+    if (st !== 'online') return st;
+    const ch = chapterByServer(id || '');
+    return ch && ch.currentBossId && (p.bossesDone || []).includes(ch.currentBossId) ? 'restored' : 'online';
+  };
+
   const clickNode = (id: string) => {
     const s = serverById(id);
     const st = statusOf(id);
+  // Boss 击败后该服务器视为「完整恢复」
     if (st === 'locked' || st === 'sealed') {
       play('deny');
       setShakeId(id);
@@ -183,7 +209,25 @@ export default function WorldMap() {
               <div className="panel-title">{selServer.name}
                 <span className="panel-tag">{selServer.codename}</span>
               </div>
-              <div style={{ fontSize: 13, color: '#C6D9E6', marginBottom: 10 }}>{selServer.desc}</div>
+              <div style={{ fontSize: 13, color: '#C6D9E6', marginBottom: 8 }}>{selServer.desc}</div>
+              {(() => {
+                const ch = chapterByServer(selServer.id);
+                if (!ch) return null;
+                return (
+                  <div className="chip cyan" style={{ marginBottom: 10 }}>
+                    第 {ch.order} 章 · {ch.title}
+                  </div>
+                );
+              })()}
+              {selServer.id === 'syntax' && (() => {
+                const done = selLevels.filter(l => p.completedLevels.includes(l.id)).length;
+                return (
+                  <div className="pf-kv" style={{ marginBottom: 8 }}>
+                    <span className="k">数据港能源节点</span>
+                    <span className="v">{done} / {selLevels.length}</span>
+                  </div>
+                );
+              })()}
               {(() => {
                 const boss = bossForChapter(selServer.id);
                 if (!boss) return null;
@@ -192,10 +236,10 @@ export default function WorldMap() {
                 const cleared = (p.bossesDone ?? []).includes(boss.id);
                 return (
                   <div className="boss-entry">
-                    <span className="chip echo">⚡ ECHO 分支</span>
+                    <span className="chip echo">⚡ {boss.codename}</span>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 14, fontWeight: 700, color: '#C9A7FF' }}>{boss.title}</div>
-                      <div className="dim" style={{ fontSize: 12 }}>章节测试 · 综合本服务器全部知识点{cleared ? ' · 已击破' : ''}</div>
+                      <div className="dim" style={{ fontSize: 12 }}>章节 Boss · 综合本服务器全部知识点{cleared ? ' · 已击破' : ''}</div>
                     </div>
                     {cleared
                       ? <span className="chip green">已击破</span>
@@ -264,75 +308,126 @@ export default function WorldMap() {
           nodes={TUTORIAL_DONE}
           speedMs={g.player.settings.typewriterMs}
           animEnabled={g.player.settings.animations}
+          eventId="tutorial-done"
           frameTitle="训练终端 · 任务完成"
           onSeen={id => g.markStory(id)}
           onDone={() => { g.setFlag('tutorialCinematicShown', true); setCinema(null); play('unlock'); }}
         />
       )}
-      {cinema === 'ch1' && (
-        <DialogSystem
-          nodes={CHAPTER1_COMPLETE}
-          speedMs={g.player.settings.typewriterMs}
-          animEnabled={g.player.settings.animations}
-          frameTitle="第一章 · 完成"
-          onSeen={id => g.markStory(id)}
-          onDone={() => { g.setFlag('chapter1CinematicShown', true); setCinema(null); play('levelup'); }}
+      {cinema === 'ch1arrive' && (
+        <CinematicStage
+          scenes={CHAPTER1_ARRIVAL_SCENES}
+          eventId="chapter-1"
+          frameTitle="第一章 · 失落的数据港"
+          onDone={() => { g.setFlag('chapter1ArrivalSeen', true); setCinema(null); play('unlock'); }}
         />
       )}
-      {cinema === 'ch2' && (
-        <DialogSystem
-          nodes={CHAPTER2_COMPLETE}
-          speedMs={g.player.settings.typewriterMs}
-          animEnabled={g.player.settings.animations}
-          frameTitle="第二章 · 完成"
-          onSeen={id => g.markStory(id)}
-          onDone={() => { g.setFlag('chapter2CinematicShown', true); setCinema(null); play('levelup'); }}
+      {cinema === 'ch1restore' && (
+        <CinematicStage
+          scenes={CHAPTER1_RESTORED_SCENES}
+          eventId="chapter-1"
+          frameTitle="第一章 · 失落的数据港"
+          onDone={() => {
+            g.setFlag('chapter1RestoreSeen', true);
+            g.setFlag('chapter1CinematicShown', true);
+            setCinema(null);
+            play('levelup');
+            g.toast('warn', 'GATE-01 数据港守卫已部署——回到语法维修站挑战它。');
+          }}
+        />
+      )}
+      {cinema === 'ch2arrive' && (
+        <CinematicStage
+          scenes={CHAPTER2_ARRIVAL_SCENES}
+          eventId="chapter-2"
+          frameTitle="第二章 · 破碎的记忆花园"
+          onDone={() => { g.setFlag('chapter2ArrivalSeen', true); setCinema(null); play('unlock'); }}
+        />
+      )}
+      {cinema === 'ch2restore' && (
+        <CinematicStage
+          scenes={CHAPTER2_RESTORED_SCENES}
+          eventId="chapter-2"
+          frameTitle="第二章 · 破碎的记忆花园"
+          onDone={() => {
+            g.setFlag('chapter2RestoreSeen', true);
+            g.setFlag('chapter2CinematicShown', true);
+            setCinema(null);
+            play('levelup');
+            g.toast('warn', 'SOMNIA 已盘踞记忆花园核心——回到数据日志中心挑战它。');
+          }}
+        />
+      )}
+      {cinema === 'ch3arrive' && (
+        <CinematicStage
+          scenes={CHAPTER3_ARRIVAL_SCENES}
+          eventId="chapter-3"
+          frameTitle="第三章 · 被遗忘的实验档案"
+          onDone={() => { g.setFlag('chapter3ArrivalSeen', true); setCinema(null); play('unlock'); }}
         />
       )}
       {cinema === 'ch3' && (
-        <DialogSystem
-          nodes={CHAPTER3_COMPLETE}
-          speedMs={g.player.settings.typewriterMs}
-          animEnabled={g.player.settings.animations}
-          frameTitle="第三章 · 完成"
-          onSeen={id => g.markStory(id)}
-          onDone={() => { g.setFlag('chapter3CinematicShown', true); setCinema(null); play('levelup'); }}
+        <CinematicStage
+          scenes={CHAPTER3_VICTORY_SCENES}
+          eventId="chapter-3"
+          frameTitle="第三章 · 被遗忘的实验档案"
+          onDone={() => {
+            g.setFlag('chapter3CinematicShown', true);
+            setCinema(null);
+            play('levelup');
+            g.toast('warn', 'K-0 已发出威胁——第四章入口已解锁。');
+          }}
+        />
+      )}
+      {cinema === 'ch4arrive' && (
+        <CinematicStage
+          scenes={CHAPTER4_ARRIVAL_SCENES}
+          eventId="chapter-4"
+          frameTitle="第四章 · 失控的核心工坊"
+          onDone={() => { g.setFlag('chapter4ArrivalSeen', true); setCinema(null); play('unlock'); }}
         />
       )}
       {cinema === 'ch4' && (
-        <DialogSystem
-          nodes={CHAPTER4_COMPLETE}
-          speedMs={g.player.settings.typewriterMs}
-          animEnabled={g.player.settings.animations}
-          frameTitle="第四章 · 完成"
-          onSeen={id => g.markStory(id)}
-          onDone={() => { g.setFlag('chapter4CinematicShown', true); setCinema(null); play('levelup'); }}
+        <CinematicStage
+          scenes={CHAPTER4_VICTORY_SCENES}
+          eventId="chapter-4"
+          frameTitle="第四章 · 失控的核心工坊"
+          onDone={() => {
+            g.setFlag('chapter4CinematicShown', true);
+            setCinema(null);
+            play('levelup');
+            g.toast('warn', 'MIRA 已定位事故现场——第五章入口已解锁。');
+          }}
         />
+      )}
+      {cinema === 'ch5arrive' && (
+        <CinematicStage scenes={CHAPTER5_ARRIVAL_SCENES} eventId="chapter-5" frameTitle="第五章 · 黎明崩塌的真相"
+          onDone={() => { g.setFlag('chapter5ArrivalSeen', true); setCinema(null); play('unlock'); }} />
+      )}
+      {cinema === 'ch5truth' && (
+        <CinematicStage scenes={CHAPTER5_TRUTH_SCENES} eventId="chapter-5" frameTitle="第五章 · 黎明崩塌"
+          onDone={() => { g.setFlag('chapter5TruthSeen', true); setCinema(null); play('levelup'); }} />
       )}
       {cinema === 'ch5' && (
-        <DialogSystem
-          nodes={CHAPTER5_COMPLETE}
-          speedMs={g.player.settings.typewriterMs}
-          animEnabled={g.player.settings.animations}
-          frameTitle="第五章 · 完成"
-          onSeen={id => g.markStory(id)}
-          onDone={() => { g.setFlag('chapter5CinematicShown', true); setCinema(null); play('levelup'); }}
-        />
+        <CinematicStage scenes={CHAPTER5_VICTORY_SCENES} eventId="chapter-5" frameTitle="第五章 · 黎明崩塌的真相"
+          onDone={() => { g.setFlag('chapter5CinematicShown', true); setCinema(null); play('levelup'); g.toast('warn', '原初核心坐标已解锁——第六章入口开放。'); }} />
+      )}
+      {cinema === 'ch6arrive' && (
+        <CinematicStage scenes={CHAPTER6_ARRIVAL_SCENES} eventId="chapter-6" frameTitle="第六章 · 起源之外"
+          onDone={() => { g.setFlag('chapter6ArrivalSeen', true); setCinema(null); play('unlock'); }} />
+      )}
+      {cinema === 'ch6engel' && (
+        <CinematicStage scenes={CHAPTER6_ENGEL_SCENES} eventId="chapter-6" frameTitle="第六章 · 最后的意识回声"
+          onDone={() => { g.setFlag('chapter6EngelSeen', true); setCinema(null); play('levelup'); }} />
       )}
       {cinema === 'ch6' && (
-        <DialogSystem
-          nodes={CHAPTER6_COMPLETE}
-          speedMs={g.player.settings.typewriterMs}
-          animEnabled={g.player.settings.animations}
-          frameTitle="终章 · NEXUS 复苏"
-          onSeen={id => g.markStory(id)}
+        <CinematicStage scenes={CHAPTER6_VICTORY_SCENES} eventId="chapter-6" frameTitle="第六章 · 起源之外"
           onDone={() => {
             g.setFlag('chapter6CinematicShown', true);
             setCinema(null);
-            play('unlock');
-            g.toast('success', 'NEXUS 全部服务器已复原——感谢游玩！');
-          }}
-        />
+            play('levelup');
+            g.toast('warn', '最终裁决结束——前往结局档案做出你的选择。');
+          }} />
       )}
     </div>
   );

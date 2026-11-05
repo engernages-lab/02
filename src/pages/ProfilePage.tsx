@@ -1,9 +1,11 @@
+import { useState } from 'react';
 import { useGame } from '../store/gameStore';
 import { milestone, titleForLevel, toleranceFor } from '../game/progression';
+import { normalizeIdentity, ORIGIN_CODE, DISPLAY_NAME_MAX } from '../game/identity';
 import { levelsOfServer, levelById } from '../game/levels';
 import { KNOWLEDGE, knowledgeById } from '../game/knowledge';
 import { ACHIEVEMENTS } from '../game/achievements';
-import { MEMORY_FRAGMENTS } from '../game/story';
+import { CREATOR_FRAGMENTS, fragmentProgress, hasFragment } from '../game/lore/fragments';
 import PlayerStatus from '../components/PlayerStatus';
 import { play } from '../services/sound';
 
@@ -11,6 +13,22 @@ export default function ProfilePage() {
   const g = useGame();
   const p = g.player;
   const ms = milestone(p.exp);
+  const identity = normalizeIdentity(p.identity, p.name);
+  const [editingName, setEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState('');
+  const [nameError, setNameError] = useState('');
+
+  const startRename = () => {
+    setNameDraft(identity.displayName);
+    setNameError('');
+    setEditingName(true);
+  };
+  const saveName = () => {
+    const r = g.renamePlayer(nameDraft);
+    if (!r.ok) { setNameError(r.reason || '该名称不可用。'); return; }
+    setEditingName(false);
+    setNameError('');
+  };
 
   const allLevels = levelsOfServer('training')
     .concat(levelsOfServer('syntax'), levelsOfServer('logs'), levelsOfServer('storage'), levelsOfServer('factory'), levelsOfServer('diag'), levelsOfServer('core'));
@@ -30,8 +48,33 @@ export default function ProfilePage() {
 
         <div className="pf-grid">
           <div className="panel">
-            <div className="panel-title">身份信息</div>
+            <div className="panel-title">身份信息<span className="panel-tag">IDENTITY</span></div>
             <PlayerStatus />
+            <div className="pf-kv" style={{ marginTop: 8 }}><span className="k">显示名称</span><span className="v">{identity.displayName}</span></div>
+            <div className="pf-kv"><span className="k">原始实验编号</span><span className="v">{ORIGIN_CODE}（固定不可更改）</span></div>
+            <div className="pf-kv"><span className="k">命名状态</span><span className="v">{identity.renamed ? '已自定义显示名' : '默认名称'}</span></div>
+            {editingName ? (
+              <div style={{ marginTop: 10 }}>
+                <input
+                  value={nameDraft}
+                  maxLength={DISPLAY_NAME_MAX}
+                  onChange={e => setNameDraft(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') saveName(); }}
+                  placeholder={'1–' + DISPLAY_NAME_MAX + ' 个字符'}
+                  style={{ background: 'rgba(13,27,40,0.8)', border: '1px solid var(--line)', color: '#EAF3FA', borderRadius: 8, padding: '7px 12px', outline: 'none', width: '100%', boxSizing: 'border-box' }}
+                />
+                <div className="row" style={{ marginTop: 8 }}>
+                  <button className="nxbtn small primary" onClick={saveName}>保存名称</button>
+                  <button className="nxbtn small ghost" onClick={() => { setEditingName(false); setNameError(''); }}>取消</button>
+                </div>
+                {nameError && <div className="red" style={{ fontSize: 12.5, marginTop: 6 }}>{nameError}</div>}
+              </div>
+            ) : (
+              <button className="nxbtn small ghost" style={{ marginTop: 10 }} onClick={startRename}>修改显示名称</button>
+            )}
+            <div className="hint-note" style={{ marginTop: 8 }}>
+              只修改显示名称。R-07 是永久实验编号，不会随改名改变。
+            </div>
             <div className="pf-kv" style={{ marginTop: 8 }}><span className="k">修复师称号</span><span className="v">{titleForLevel(p.level)}</span></div>
             <div className="pf-kv"><span className="k">累计经验</span><span className="v">{p.exp}（{ms.maxed ? 'MAX' : '距 Lv.' + (ms.level + 1) + ' 还差 ' + Math.max(0, ms.need - ms.into) + ' 经验'}）</span></div>
             <div className="pf-kv"><span className="k">当前容错次数</span><span className="v">{toleranceFor(p.level)} 次 / 关</span></div>
@@ -86,14 +129,16 @@ export default function ProfilePage() {
           </div>
 
           <div className="panel">
-            <div className="panel-title">创世主记忆碎片<span className="panel-tag">已收集 {p.meta.memoryFragments.length}</span></div>
-            {MEMORY_FRAGMENTS.map(f => p.meta.memoryFragments.includes(f.id) ? (
+            <div className="panel-title">创世主碎片<span className="panel-tag">{fragmentProgress(p.meta.memoryFragments).owned} / {fragmentProgress(p.meta.memoryFragments).total}</span></div>
+            {CREATOR_FRAGMENTS.map(f => hasFragment(p.meta.memoryFragments, f.id) ? (
               <div className="frag-card" key={f.id}>
                 <div className="fc-title">◇ {f.title}</div>
                 <div className="fc-body">{f.content}</div>
               </div>
             ) : (
-              <div className="empty-hint" key={f.id} style={{ padding: '18px 0', fontSize: 12.5 }}>？？？ —— 尚未发现（提示：与重生次数有关）</div>
+              <div className="empty-hint" key={f.id} style={{ padding: '16px 0', fontSize: 12.5 }}>
+                第 {f.order} 枚 —— 尚未获得（对应第 {f.order} 章章节 Boss）
+              </div>
             ))}
           </div>
         </div>
