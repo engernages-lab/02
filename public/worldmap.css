@@ -72,3 +72,53 @@
 @media (prefers-reduced-motion: reduce) {
   .hub-ring, .hub-core, .hub-aura, .map-link-flow, .node-ring, .node-alarm { animation: none !important; }
 }
+
+/* ---------- V2.0 中枢精细结构 ---------- */
+.hub-ticks { animation: spinCW 90s linear infinite; transform-box: fill-box; transform-origin: center; }
+.hub-tick { stroke: rgba(66,214,208,.5); stroke-width: 1; }
+.hub-seg { animation: spinCCW 34s linear infinite; transform-box: fill-box; transform-origin: center; }
+.hub-seg-arc { fill: none; stroke: rgba(159,247,239,.65); stroke-width: 2.4; stroke-linecap: round; }
+.hub-gear { animation: spinCW 40s linear infinite; transform-box: fill-box; transform-origin: center; }
+.hub-spoke { stroke: rgba(66,214,208,.45); stroke-width: 1.2; }
+.hub-inner { fill: rgba(8,32,42,.85); stroke: rgba(159,247,239,.55); stroke-width: 1.4; }
+.hub-core-2 { fill: rgba(66,214,208,.18); stroke: rgba(159,247,239,.7); stroke-width: 1.2; animation: hubPulse 3s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+.hub-sat { fill: #9FF7EF; filter: drop-shadow(0 0 6px rgba(159,247,239,.9)); }
+.hub-sat.amber { fill: #F3B75C; filter: drop-shadow(0 0 6px rgba(243,183,92,.85)); }
+.hub-wave { fill: none; stroke: rgba(66,214,208,.4); stroke-width: 1.2; transform-box: fill-box; transform-origin: center; opacity: 0; }
+.hub-wave.w1 { animation: hubWave 4.8s ease-out infinite; }
+.hub-wave.w2 { animation: hubWave 4.8s ease-out 2.4s infinite; }
+@keyframes hubWave { 0% { transform: scale(.55); opacity: .55; } 100% { transform: scale(1.5); opacity: 0; } }
+.map-hub.pulse .hub-core { animation: hubFlash .9s ease-out 1; }
+@keyframes hubFlash { 0% { r: 12; fill: #FFFFFF; } 60% { fill: #EAFDFF; } 100% { fill: #7FF3EA; } }
+.map-hub:hover .hub-core { filter: drop-shadow(0 0 34px rgba(159,247,239,1)); }
+
+/* ---------- 节点专属图标 ---------- */
+.node-icon { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; filter: drop-shadow(0 0 8px currentColor); }
+.node-group:hover .node-icon { stroke-width: 2; }
+
+/* ---------- 数据包方向 ---------- */
+.map-packet.out { fill: #9FF7EF; }
+.map-packet.back { fill: #C9A7FF; opacity: .75; }
+.map-packet.broken { fill: #FF5B64; }
+
+/* ---------- 网络监控条 ---------- */
+.net-monitor { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 8px; }
+.nm-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: #9FB9C8; background: rgba(8,18,26,.65); border: 1px solid rgba(66,214,208,.16); border-radius: 999px; padding: 4px 10px; }
+.nm-chip b { color: #DCEEF6; font-family: Rajdhani, Consolas, monospace; }
+.nm-chip b.ok { color: #35D39A; }
+.nm-chip b.warn { color: #F3B75C; }
+.nm-chip.dim { color: #5E7F94; }
+.nm-chip .dot { width: 7px; height: 7px; border-radius: 50%; background: #4A6E85; }
+.nm-chip .dot.ok { background: #35D39A; box-shadow: 0 0 8px rgba(53,211,154,.7); }
+.nm-chip .dot.bad { background: #FF5B64; box-shadow: 0 0 8px rgba(255,91,100,.7); }
+.nm-chip .dot.lock { background: #4A6E85; }
+
+/* ---------- 悬停卡 ---------- */
+.node-hover-card { position: absolute; right: 14px; bottom: 56px; width: 250px; z-index: 5; padding: 10px 12px; border-radius: 12px; border: 1px solid rgba(66,214,208,.35); background: rgba(6,14,22,.94); backdrop-filter: blur(8px); box-shadow: 0 10px 30px rgba(0,0,0,.45); pointer-events: none; }
+.nh-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 13.5px; color: #EAF3FA; }
+.nh-head span { font-family: Consolas, monospace; font-size: 10.5px; }
+.nh-code { font-family: Consolas, monospace; font-size: 10.5px; color: #5E7F94; margin-top: 2px; }
+.nh-desc { font-size: 11.5px; color: #A9C6D4; line-height: 1.7; margin: 6px 0; }
+.nh-metrics { display: flex; flex-wrap: wrap; gap: 8px; font-size: 10.5px; color: #6E93A8; border-top: 1px dashed rgba(255,255,255,.08); padding-top: 6px; }
+.nh-metrics b { color: #DCEEF6; }
+@media (max-width: 760px) { .node-hover-card { display: none; } }

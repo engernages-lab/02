@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { SERVERS, serverById, levelsOfServer, levelUnlockState, levelById, type LevelDef } from '../game/levels';
 import { CHAPTER3_COMPLETE, CHAPTER4_COMPLETE, CHAPTER5_COMPLETE, CHAPTER6_COMPLETE, TUTORIAL_DONE } from '../game/story';
 import { CHAPTER2_ARRIVAL_SCENES, CHAPTER2_RESTORED_SCENES } from '../game/lore/chapter2';
@@ -28,6 +28,18 @@ const ICON_COLOR: Record<NodeStatus, string> = {
   online: '#7FE8C4', restored: '#9FE8C8', damaged: '#FF8B92', locked: '#5E7C96', sealed: '#F5CE8E',
 };
 
+
+/** 各服务器专属线条图标（32x32 视框，统一 1.6 描边） */
+const NET_ICON: Record<string, JSX.Element> = {
+  training: (<g><rect x={-11} y={-8} width={22} height={15} rx={2} /><path d="M-6 -3 L-2 0 L-6 3" /><path d="M0 3 H7" /></g>),
+  syntax: (<g><circle r={10} /><path d="M-5 -3 L-1 0 L-5 3" /><path d="M2 -3 L6 0 L2 3" /></g>),
+  logs: (<g><rect x={-10} y={-9} width={20} height={18} rx={2} /><path d="M-6 -4 H6 M-6 0 H6 M-6 4 H2" /></g>),
+  storage: (<g><rect x={-10} y={-9} width={20} height={18} rx={2} /><path d="M-10 -3 H10 M-10 3 H10" /><circle cx={6} cy={-6} r={1.4} /><circle cx={6} cy={6} r={1.4} /></g>),
+  factory: (<g><circle r={5} /><path d="M-10 8 L-10 0 L-4 3 L-4 -2 L2 1 L2 8 Z" /><path d="M6 -9 L10 -9 L10 -5" /></g>),
+  diag: (<g><circle r={10} /><path d="M-6 0 H-2 L0 -5 L3 5 L5 0 H6" /></g>),
+  core: (<g><circle r={4} /><ellipse rx={11} ry={5} /><ellipse rx={11} ry={5} transform="rotate(60)" /><ellipse rx={11} ry={5} transform="rotate(120)" /></g>),
+};
+
 export default function WorldMap() {
   const g = useGame();
   const p = g.player.progress;
@@ -41,6 +53,8 @@ export default function WorldMap() {
   const [drag, setDrag] = useState<{ x: number; y: number; px: number; py: number } | null>(null);
   const [showLinks, setShowLinks] = useState(true);
   const [statusFilter, setStatusFilter] = useState<Record<string, boolean>>({ online: true, restored: true, damaged: true, locked: true, sealed: true });
+  const [corePulse, setCorePulse] = useState(0);
+  const prevStatusRef = useRef<Record<string, NodeStatus>>({});
 
   const tutDone = p.completedLevels.includes('tut-1');
   const ch1Done = p.flags.chapter1Done === true;
@@ -120,6 +134,22 @@ export default function WorldMap() {
     return ch && ch.currentBossId && (p.bossesDone || []).includes(ch.currentBossId) ? 'restored' : 'online';
   };
 
+  useEffect(() => {
+    const prev = prevStatusRef.current;
+    let changed = false;
+    SERVERS.forEach(s => {
+      const st = statusOf(s.id);
+      if (prev[s.id] && prev[s.id] !== st) {
+        if ((prev[s.id] === 'damaged' || prev[s.id] === 'locked') && (st === 'online' || st === 'restored')) {
+          g.toast('success', s.name + ' 已修复 · 节点重新上线');
+          changed = true;
+        }
+      }
+      prev[s.id] = st;
+    });
+    if (changed) setCorePulse(v => v + 1);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [p.completedLevels.length, p.bossesDone?.length]);
   const clickNode = (id: string) => {
     const s = serverById(id);
     const st = statusOf(id);
@@ -171,12 +201,31 @@ export default function WorldMap() {
           <button className="nxbtn small ghost" onClick={() => { play('click'); g.nav('menu'); }}>◀ 主菜单</button>
         </div>
 
+        {(() => {
+          const counts = { online: 0, restored: 0, damaged: 0, locked: 0, sealed: 0 } as Record<NodeStatus, number>;
+          SERVERS.forEach(s => { counts[statusOf(s.id)] += 1; });
+          const total = SERVERS.length;
+          const stable = Math.round(((counts.online + counts.restored) / total) * 100);
+          const netState = stable >= 90 ? 'STABLE' : counts.damaged > 0 ? 'DEGRADED' : 'SYNCING';
+          return (
+            <div className="net-monitor">
+              <span className="nm-chip"><i className="dot ok" />在线 {counts.online + counts.restored}</span>
+              <span className="nm-chip"><i className="dot bad" />损坏 {counts.damaged}</span>
+              <span className="nm-chip"><i className="dot lock" />锁定 {counts.locked + counts.sealed}</span>
+              <span className="nm-chip">网络稳定度 <b>{stable}%</b></span>
+              <span className="nm-chip">状态 <b className={stable >= 90 ? 'ok' : 'warn'}>{netState}</b></span>
+              <span className="nm-chip dim">最近事件：{p.bossesDone?.length ? 'Boss 击破 · 节点重建' : p.completedLevels.length ? '修复任务完成' : '等待接入'}</span>
+            </div>
+          );
+        })()}
         <div className="map-wrap">
           <div className="map-toolbar">
             <button className="mt-btn" onClick={() => { play('click'); setZoom(z => Math.min(1.8, +(z + 0.15).toFixed(2))); }} title="放大">＋</button>
             <button className="mt-btn" onClick={() => { play('click'); setZoom(z => Math.max(0.65, +(z - 0.15).toFixed(2))); }} title="缩小">－</button>
             <button className="mt-btn" onClick={() => { play('click'); setZoom(1); setPan({ x: 0, y: 0 }); }} title="重置视角">⟲</button>
             <button className={'mt-btn' + (showLinks ? ' on' : '')} onClick={() => { play('click'); setShowLinks(v => !v); }} title="显示连接线路">⇄</button>
+            <button className="mt-btn" onClick={() => { play('click'); setZoom(1); setPan({ x: 0, y: 0 }); }} title="适应屏幕">⤢</button>
+            <button className="mt-btn" onClick={() => { play('click'); setStatusFilter({ online: true, restored: true, damaged: true, locked: true, sealed: true }); }} title="显示全部节点">◉</button>
           </div>
 
           <div className="map-legend">
@@ -209,30 +258,79 @@ export default function WorldMap() {
                 </filter>
               </defs>
 
-              {showLinks && SERVERS.map(s => {
+              {showLinks && SERVERS.map((s, si) => {
                 const st = statusOf(s.id);
                 const cls = st === 'damaged' ? 'ln-bad' : st === 'locked' || st === 'sealed' ? 'ln-off' : 'ln-ok';
+                const dx = s.x - HUB.x, dy = s.y - HUB.y, len = Math.hypot(dx, dy) || 1;
+                const ux = dx / len, uy = dy / len;
+                const x1 = HUB.x + ux * 84, y1 = HUB.y + uy * 84;
+                const x2 = s.x - ux * 52, y2 = s.y - uy * 52;
+                const path = 'M' + x1 + ',' + y1 + ' L' + x2 + ',' + y2;
                 return (
                   <g key={'ln' + s.id} className={'map-link-g ' + cls}>
-                    <line className="map-link-base" x1={HUB.x} y1={HUB.y} x2={s.x} y2={s.y} />
-                    <line className="map-link-flow" x1={HUB.x} y1={HUB.y} x2={s.x} y2={s.y} />
+                    <line className="map-link-base" x1={x1} y1={y1} x2={x2} y2={y2} />
+                    <line className="map-link-flow" x1={x1} y1={y1} x2={x2} y2={y2} />
                     {(st === 'online' || st === 'restored') && (
-                      <circle r={2.6} className="map-packet">
-                        <animateMotion dur={(2.6 + (s.x % 5) * 0.3).toFixed(2) + 's'} repeatCount="indefinite"
-                          path={'M' + HUB.x + ',' + HUB.y + ' L' + s.x + ',' + s.y} />
+                      <>
+                        <circle r={2.4} className="map-packet out">
+                          <animateMotion dur={(2.8 + (si % 4) * 0.45).toFixed(2) + 's'} repeatCount="indefinite" path={path} />
+                        </circle>
+                        <circle r={1.8} className="map-packet back">
+                          <animateMotion dur={(3.6 + (si % 3) * 0.5).toFixed(2) + 's'} repeatCount="indefinite" path={'M' + x2 + ',' + y2 + ' L' + x1 + ',' + y1} />
+                        </circle>
+                      </>
+                    )}
+                    {st === 'damaged' && (
+                      <circle r={1.8} className="map-packet broken">
+                        <animateMotion dur="1.6s" repeatCount="indefinite" path={path} />
                       </circle>
                     )}
                   </g>
                 );
               })}
 
-              <g className="map-hub" onClick={() => { play('click'); setHoverId(null); g.toast('info', 'NEXUS CORE RELAY · 全服务器同步核心'); }}>
-                <circle cx={HUB.x} cy={HUB.y} r={92} fill="url(#hubGlow)" className="hub-aura" />
-                <circle className="hub-ring r1" cx={HUB.x} cy={HUB.y} r={74} />
-                <circle className="hub-ring r2" cx={HUB.x} cy={HUB.y} r={60} />
-                <circle className="hub-ring r3" cx={HUB.x} cy={HUB.y} r={46} />
-                <circle className="hub-core" cx={HUB.x} cy={HUB.y} r={30} />
-                <text x={HUB.x} y={HUB.y} textAnchor="middle" dominantBaseline="central" fontSize={22} fill="#04121A" fontWeight={800}>◉</text>
+              <g className={'map-hub' + (corePulse ? ' pulse' : '')} key={'hub' + corePulse}
+                onClick={() => { play('click'); g.toast('info', 'NEXUS CORE RELAY · 全服务器同步核心'); }}>
+                <circle cx={HUB.x} cy={HUB.y} r={104} fill="url(#hubGlow)" className="hub-aura" />
+                <circle cx={HUB.x} cy={HUB.y} r={96} className="hub-wave w1" />
+                <circle cx={HUB.x} cy={HUB.y} r={96} className="hub-wave w2" />
+                <g className="hub-ticks">
+                  {Array.from({ length: 48 }).map((_, i) => {
+                    const a = (i / 48) * Math.PI * 2;
+                    const r1 = 80, r2 = i % 4 === 0 ? 88 : 84;
+                    return <line key={i} x1={HUB.x + Math.cos(a) * r1} y1={HUB.y + Math.sin(a) * r1}
+                      x2={HUB.x + Math.cos(a) * r2} y2={HUB.y + Math.sin(a) * r2} className="hub-tick" />;
+                  })}
+                </g>
+                <g className="hub-seg">
+                  {Array.from({ length: 12 }).map((_, i) => {
+                    const a0 = (i / 12) * Math.PI * 2, a1 = a0 + Math.PI / 22;
+                    const R = 74;
+                    return <path key={i} className="hub-seg-arc"
+                      d={'M' + (HUB.x + Math.cos(a0) * R) + ',' + (HUB.y + Math.sin(a0) * R) + ' A' + R + ',' + R + ' 0 0 1 ' + (HUB.x + Math.cos(a1) * R) + ',' + (HUB.y + Math.sin(a1) * R)} />;
+                  })}
+                </g>
+                <circle className="hub-ring r2" cx={HUB.x} cy={HUB.y} r={62} />
+                <circle className="hub-ring r3" cx={HUB.x} cy={HUB.y} r={48} />
+                <g className="hub-gear">
+                  {Array.from({ length: 12 }).map((_, i) => {
+                    const a = (i / 12) * Math.PI * 2;
+                    return <line key={i} className="hub-spoke"
+                      x1={HUB.x + Math.cos(a) * 20} y1={HUB.y + Math.sin(a) * 20}
+                      x2={HUB.x + Math.cos(a) * 40} y2={HUB.y + Math.sin(a) * 40} />;
+                  })}
+                </g>
+                <circle className="hub-inner" cx={HUB.x} cy={HUB.y} r={34} />
+                <circle className="hub-core-2" cx={HUB.x} cy={HUB.y} r={22} />
+                <circle className="hub-core" cx={HUB.x} cy={HUB.y} r={12} />
+                <g className="hub-orbit">
+                  <circle cx={HUB.x + 54} cy={HUB.y} r={2.6} className="hub-sat" />
+                  <animateTransform attributeName="transform" type="rotate" from={'0 ' + HUB.x + ' ' + HUB.y} to={'360 ' + HUB.x + ' ' + HUB.y} dur="16s" repeatCount="indefinite" />
+                </g>
+                <g className="hub-orbit rev">
+                  <circle cx={HUB.x} cy={HUB.y - 40} r={2} className="hub-sat amber" />
+                  <animateTransform attributeName="transform" type="rotate" from={'0 ' + HUB.x + ' ' + HUB.y} to={'-360 ' + HUB.x + ' ' + HUB.y} dur="11s" repeatCount="indefinite" />
+                </g>
                 <text x={HUB.x} y={HUB.y + 78} textAnchor="middle" fontSize={15} fontWeight={700} fill="#8FDDE3">修复局中枢</text>
                 <text x={HUB.x} y={HUB.y + 95} textAnchor="middle" fontSize={10} fill="#4A6E85" fontFamily="Consolas, monospace">NEXUS CORE RELAY</text>
               </g>
@@ -251,7 +349,9 @@ export default function WorldMap() {
                     <circle className="node-ring" cx={s.x} cy={s.y} r={58} fill="none" strokeWidth={1.5} />
                     {damaged && <circle className="node-alarm" cx={s.x} cy={s.y} r={58} fill="none" strokeWidth={1.2} />}
                     <circle className="node-circle" cx={s.x} cy={s.y} r={46} strokeWidth={1.8} />
-                    <text x={s.x} y={s.y} textAnchor="middle" dominantBaseline="central" fontSize={24} fill={ICON_COLOR[st]}>{s.icon}</text>
+                    <g className="node-icon" transform={'translate(' + s.x + ',' + s.y + ')'} style={{ color: ICON_COLOR[st] }}>
+                      {NET_ICON[s.id] || <circle r={6} />}
+                    </g>
                     <text x={s.x} y={s.y + 66} textAnchor="middle" fontSize={15} fontWeight={700} fill="#EAF3FA">{s.name}</text>
                     <text x={s.x} y={s.y + 82} textAnchor="middle" fontSize={10.5} fill="#4A6E85" fontFamily="Consolas, monospace">{s.codename}</text>
                     <text x={s.x} y={s.y - 62} textAnchor="middle" fontSize={11} fill={CHIP_COLOR[st]} fontFamily="Consolas, monospace" letterSpacing={1.5}>{CHIP_TEXT[st]}</text>
@@ -260,6 +360,26 @@ export default function WorldMap() {
               })}
           </svg>
           </div>
+
+          {hoverId && (() => {
+            const s = serverById(hoverId);
+            if (!s) return null;
+            const st = statusOf(hoverId);
+            const lv = levelsOfServer(hoverId);
+            const doneN = lv.filter(l => p.completedLevels.includes(l.id)).length;
+            return (
+              <div className="node-hover-card">
+                <div className="nh-head"><b>{s.name}</b><span style={{ color: CHIP_COLOR[st] }}>{CHIP_TEXT[st]}</span></div>
+                <div className="nh-code">{s.codename}</div>
+                <div className="nh-desc">{s.desc}</div>
+                <div className="nh-metrics">
+                  <span>稳定度 <b>{st === 'damaged' ? Math.max(12, 100 - (lv.length - doneN) * 18) : 100}%</b></span>
+                  <span>任务 <b>{lv.length - doneN} 待修复</b></span>
+                  <span>探索 <b>{lv.length ? Math.round((doneN / lv.length) * 100) : 0}%</b></span>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* 选中服务器的关卡面板 */}
           {selServer && (
