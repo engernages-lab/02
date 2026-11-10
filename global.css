@@ -998,3 +998,33 @@ input[type="range"].nx-range::-webkit-slider-thumb {
 }
 .trust-fill { animation: trust-rise 0.9s ease both; }
 @keyframes trust-rise { 0% { filter: brightness(1.6); } 100% { filter: brightness(1); } }
+
+/* ---------- 响应式（第十阶段补充） ---------- */
+@media (max-width: 1100px) {
+  .chlg-grid { grid-template-columns: 260px minmax(0, 1fr) 320px; }
+  .hud { flex-wrap: wrap; gap: 8px; }
+}
+@media (max-width: 900px) {
+  .chlg-grid { grid-template-columns: 1fr; }
+  .chlg-left, .chlg-right { display: none; }
+  .toolbar { flex-wrap: wrap; }
+  .hud-title { font-size: 15px; }
+  .menu-nav { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 640px) {
+  .page-inner { padding: 10px; }
+  .menu-nav { grid-template-columns: 1fr; }
+  .hud-chip { font-size: 10px; }
+  .dlg-text { font-size: 14px; }
+}
+
+/* 移动端可用性（第十阶段补充） */
+@supports (padding: env(safe-area-inset-bottom)) {
+  .page-inner { padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
+}
+@media (max-width: 640px) {
+  input, textarea, select { font-size: 16px !important; }
+  .nxbtn, .menu-navitem, .dlg-choice, .shop-tab { min-height: 40px; }
+  .dlg-box, .panel { max-height: 76vh; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  .code-editor-host { min-height: 46vh; }
+}

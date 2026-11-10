@@ -526,10 +526,226 @@
 	var reactExports = requireReact();
 	var We = /*@__PURE__*/getDefaultExportFromCjs(reactExports);
 
+	// 玩家身份：显示名可自定义，原始实验编号永久固定
+	// 规范约束：R-07 是固定实验编号；玩家修改的只是「显示名称」。
+	const ORIGIN_CODE = 'R-07';
+	const DEFAULT_DISPLAY_NAME = 'R-07';
+	const DISPLAY_NAME_MAX = 12;
+	/** 其他核心角色的名字，避免玩家改成与剧情角色同名造成混淆 */
+	const RESERVED_NAMES = ['MIRA', '恩格尔', 'ENGER', 'K-0', 'K0', 'NEXUS'];
+	function defaultIdentity(now = Date.now()) {
+	    return { displayName: DEFAULT_DISPLAY_NAME, originCode: ORIGIN_CODE, renamed: false, createdAt: now };
+	}
+	/** 清洗显示名：去控制字符、合并空白、限长（不改变原始编号） */
+	function sanitizeDisplayName(raw) {
+	    if (typeof raw !== 'string')
+	        return '';
+	    return raw
+	        .replace(/[\r\n\t\u0000-\u001f\u007f]/g, ' ')
+	        .replace(/\s+/g, ' ')
+	        .trim()
+	        .slice(0, DISPLAY_NAME_MAX);
+	}
+	function validateDisplayName(raw) {
+	    const name = sanitizeDisplayName(raw);
+	    if (!name)
+	        return { ok: false, name, reason: '显示名称不能为空。' };
+	    if (name.length > DISPLAY_NAME_MAX) {
+	        return { ok: false, name, reason: '显示名称最多 ' + DISPLAY_NAME_MAX + ' 个字符。' };
+	    }
+	    const upper = name.toUpperCase().replace(/\s+/g, '');
+	    if (RESERVED_NAMES.some(n => n.toUpperCase().replace(/\s+/g, '') === upper)) {
+	        return { ok: false, name, reason: '该名称属于 NEXUS 的核心角色，请换一个。' };
+	    }
+	    return { ok: true, name };
+	}
+	/** 旧存档兼容：缺失/损坏的身份信息补齐，且强制 originCode = R-07 */
+	function normalizeIdentity(raw, fallbackName) {
+	    const now = Date.now();
+	    const r = (raw && typeof raw === 'object' ? raw : {});
+	    const fallback = sanitizeDisplayName(fallbackName);
+	    const displayName = sanitizeDisplayName(r.displayName) || fallback || DEFAULT_DISPLAY_NAME;
+	    const renamed = typeof r.renamed === 'boolean' ? r.renamed : displayName !== DEFAULT_DISPLAY_NAME;
+	    return {
+	        displayName,
+	        originCode: ORIGIN_CODE,
+	        renamed,
+	        createdAt: typeof r.createdAt === 'number' && isFinite(r.createdAt) ? r.createdAt : now,
+	    };
+	}
+	/** 全游戏统一读取显示名（永不返回空串） */
+	function displayNameOf(p) {
+	    if (!p)
+	        return DEFAULT_DISPLAY_NAME;
+	    const fromIdentity = sanitizeDisplayName(p.identity?.displayName);
+	    if (fromIdentity)
+	        return fromIdentity;
+	    return sanitizeDisplayName(p.name) || DEFAULT_DISPLAY_NAME;
+	}
+	/** 全游戏统一读取原始编号（常量，不受改名影响） */
+	function originCodeOf(_p) {
+	    return ORIGIN_CODE;
+	}
+	/** 台词里显式指代「实验编号」的占位符：永远渲染为 R-07，不受改名影响 */
+	const CODE_TOKEN = '{{code}}';
+	const CODE_SENTINEL = '\u0001';
+	/**
+	 * 对话文本中的名称替换：
+	 * - `{player}` → 玩家显示名（称呼）
+	 * - `{{code}}` → 固定实验编号 R-07（无论玩家是否改名）
+	 * - 玩家改过名时，正文里裸写的 R-07 也按显示名处理（兼容旧台词）
+	 */
+	function applyPlayerName(text, displayName) {
+	    if (!text)
+	        return '';
+	    const dn = sanitizeDisplayName(displayName) || DEFAULT_DISPLAY_NAME;
+	    let out = text.split(CODE_TOKEN).join(CODE_SENTINEL);
+	    out = out.split('{player}').join(dn);
+	    if (dn !== ORIGIN_CODE)
+	        out = out.split(ORIGIN_CODE).join(dn);
+	    return out.split(CODE_SENTINEL).join(ORIGIN_CODE);
+	}
+
+	const STORY_EVENTS = [
+	    { id: 'prologue', kind: 'prologue', title: '序章 · 沉睡的意识' },
+	    { id: 'tutorial-done', kind: 'tutorial', title: '训练终端 · 接驳完成' },
+	    { id: 'chapter-1', kind: 'chapter', chapter: 'ch1', title: '第一章 · 失落的数据港', requireFlag: 'chapter1Done' },
+	    { id: 'chapter-2', kind: 'chapter', chapter: 'ch2', title: '第二章 · 破碎的记忆花园', requireFlag: 'chapter2Done' },
+	    { id: 'chapter-3', kind: 'chapter', chapter: 'ch3', title: '第三章 · 被遗忘的实验档案', requireFlag: 'chapter3Done' },
+	    { id: 'chapter-4', kind: 'chapter', chapter: 'ch4', title: '第四章 · 失控的核心工坊', requireFlag: 'chapter4Done' },
+	    { id: 'chapter-5', kind: 'chapter', chapter: 'ch5', title: '第五章 · 黎明崩塌的真相', requireFlag: 'chapter5Done' },
+	    { id: 'chapter-6', kind: 'chapter', chapter: 'ch6', title: '第六章 · 起源之外', requireFlag: 'chapter6Done' },
+	    { id: 'boss-gate-01', kind: 'boss', chapter: 'ch1', title: '章节 Boss · GATE-01 数据港守卫' },
+	    { id: 'boss-echo-02', kind: 'boss', chapter: 'ch2', title: 'Boss 遭遇 · ECHO-02' },
+	    { id: 'boss-echo-03', kind: 'boss', chapter: 'ch3', title: 'Boss 遭遇 · ECHO-03' },
+	    { id: 'boss-echo-04', kind: 'boss', chapter: 'ch4', title: 'Boss 遭遇 · ECHO-04' },
+	    { id: 'boss-echo-05', kind: 'boss', chapter: 'ch5', title: 'Boss 遭遇 · ECHO-05' },
+	    { id: 'rebirth', kind: 'rebirth', title: 'ORIGIN PROTOCOL · 意识重组' },
+	];
+	function defaultStoryReadState() {
+	    return { unlocked: [], seen: {}, choices: {}, lastEventId: null };
+	}
+	/** 清洗阅读状态；legacySeen 为旧存档的 progress.storySeen */
+	function normalizeStoryReadState(raw, legacySeen) {
+	    const r = (raw && typeof raw === 'object' ? raw : {});
+	    const seen = {};
+	    if (r.seen && typeof r.seen === 'object') {
+	        for (const [k, v] of Object.entries(r.seen)) {
+	            if (!k)
+	                continue;
+	            const n = typeof v === 'number' && isFinite(v) ? Math.max(0, Math.floor(v)) : v === true ? 1 : 0;
+	            if (n > 0)
+	                seen[k] = Math.min(999, n);
+	        }
+	    }
+	    if (legacySeen && typeof legacySeen === 'object') {
+	        for (const [k, v] of Object.entries(legacySeen)) {
+	            if (!k || v !== true)
+	                continue;
+	            if (!seen[k])
+	                seen[k] = 1;
+	        }
+	    }
+	    const unlocked = Array.isArray(r.unlocked)
+	        ? [...new Set(r.unlocked.filter((x) => typeof x === 'string' && x.length > 0))]
+	        : [];
+	    const choices = {};
+	    if (r.choices && typeof r.choices === 'object') {
+	        for (const [k, v] of Object.entries(r.choices)) {
+	            if (k && typeof v === 'string')
+	                choices[k] = v;
+	        }
+	    }
+	    return {
+	        unlocked,
+	        seen,
+	        choices,
+	        lastEventId: typeof r.lastEventId === 'string' ? r.lastEventId : null,
+	    };
+	}
+	/** 记录一个对话节点被阅读（幂等累加次数） */
+	function markNodeSeen(state, nodeId) {
+	    if (!nodeId)
+	        return state;
+	    const n = state.seen[nodeId] || 0;
+	    if (n >= 999)
+	        return state;
+	    return { ...state, seen: { ...state.seen, [nodeId]: n + 1 } };
+	}
+	/** 解锁剧情事件（幂等） */
+	function unlockEvent(state, eventId) {
+	    if (!eventId || state.unlocked.includes(eventId))
+	        return state;
+	    return { ...state, unlocked: [...state.unlocked, eventId], lastEventId: eventId };
+	}
+	/** 记录分支选择（同一节点重复选择时保留最新一次） */
+	function recordChoice(state, nodeId, label) {
+	    if (!nodeId || !label)
+	        return state;
+	    return { ...state, choices: { ...state.choices, [nodeId]: label } };
+	}
+	/** 某事件的阅读进度（按节点统计） */
+	function eventReadProgress(state, nodeIds) {
+	    const total = nodeIds.length;
+	    const read = nodeIds.filter(id => (state.seen[id] || 0) > 0).length;
+	    return { read, total };
+	}
+
+	const STORY_VARS = [
+	    { key: 'prologueDone', type: 'boolean', def: false, desc: '序章剧情已看完' },
+	    { key: 'tutorialCinematicShown', type: 'boolean', def: false, desc: '训练终端完成过场已播放' },
+	    { key: 'chapter1Done', type: 'boolean', def: false, desc: '第一章 5 个修复任务全部完成', chapter: 'ch1' },
+	    { key: 'chapter2Done', type: 'boolean', def: false, desc: '第二章全部完成', chapter: 'ch2' },
+	    { key: 'chapter3Done', type: 'boolean', def: false, desc: '第三章全部完成', chapter: 'ch3' },
+	    { key: 'chapter4Done', type: 'boolean', def: false, desc: '第四章全部完成', chapter: 'ch4' },
+	    { key: 'chapter5Done', type: 'boolean', def: false, desc: '第五章全部完成', chapter: 'ch5' },
+	    { key: 'chapter6Done', type: 'boolean', def: false, desc: '终章全部完成', chapter: 'ch6' },
+	    { key: 'chapter1CinematicShown', type: 'boolean', def: false, desc: '第一章完成过场已播放', chapter: 'ch1' },
+	    { key: 'chapter2ArrivalSeen', type: 'boolean', def: false, desc: '第二章「进入记忆花园」演出已播放', chapter: 'ch2' },
+	    { key: 'chapter2RestoreSeen', type: 'boolean', def: false, desc: '第二章「花园恢复 + SOMNIA 登场」演出已播放', chapter: 'ch2' },
+	    { key: 'chapter2CinematicShown', type: 'boolean', def: false, desc: '第二章完成过场已播放', chapter: 'ch2' },
+	    { key: 'chapter3CinematicShown', type: 'boolean', def: false, desc: '第三章完成过场已播放', chapter: 'ch3' },
+	    { key: 'chapter4CinematicShown', type: 'boolean', def: false, desc: '第四章完成过场已播放', chapter: 'ch4' },
+	    { key: 'chapter5CinematicShown', type: 'boolean', def: false, desc: '第五章完成过场已播放', chapter: 'ch5' },
+	    { key: 'chapter6CinematicShown', type: 'boolean', def: false, desc: '终章过场已播放', chapter: 'ch6' },
+	    { key: 'pendingChapterUnlock', type: 'boolean', def: false, desc: '第一章完成，等待开放下一章', chapter: 'ch1' },
+	    { key: 'pendingChapter3Unlock', type: 'boolean', def: false, desc: '第二章完成，等待开放第三章', chapter: 'ch2' },
+	    { key: 'pendingChapter4Unlock', type: 'boolean', def: false, desc: '第三章完成，等待开放第四章', chapter: 'ch3' },
+	    { key: 'pendingChapter5Unlock', type: 'boolean', def: false, desc: '第四章完成，等待开放第五章', chapter: 'ch4' },
+	    { key: 'pendingChapter6Unlock', type: 'boolean', def: false, desc: '第五章完成，等待开放终章', chapter: 'ch5' },
+	    { key: 'chapter1ArrivalSeen', type: 'boolean', def: false, desc: '第一章「前往数据港」演出已播放', chapter: 'ch1' },
+	    { key: 'chapter1RestoreSeen', type: 'boolean', def: false, desc: '第一章「数据港恢复 + K-0 警告」演出已播放', chapter: 'ch1' },
+	    { key: 'chapter1ZeroFail', type: 'boolean', def: false, desc: '第一章全程零失败（完美修复成就）', chapter: 'ch1' },
+	    { key: 'defenseWon', type: 'boolean', def: false, desc: '成功击退过一次纠错者攻击' },
+	    { key: 'gameCompleted', type: 'boolean', def: false, desc: '全网络复原（六章通关）' },
+	    { key: 'secretArchive', type: 'boolean', def: false, desc: '已解锁五年前事故机密档案' },
+	    { key: 'miraExtraTalk', type: 'boolean', def: false, desc: '已解锁 MIRA 专属对话' },
+	    { key: 'fxRepair', type: 'boolean', def: false, desc: '已解锁数据重构特效' },
+	];
+	STORY_VARS.map(v => v.key);
+	/**
+	 * 清洗剧情变量：只保留 boolean / 有限数字，未知 key 一律保留（向前兼容）。
+	 * 注意：不注入默认值——避免改变「字段缺失」与「显式 false」的语义差别。
+	 */
+	function normalizeStoryVars(raw) {
+	    const out = {};
+	    if (!raw || typeof raw !== 'object')
+	        return out;
+	    for (const [k, v] of Object.entries(raw)) {
+	        if (!k)
+	            continue;
+	        if (typeof v === 'boolean')
+	            out[k] = v;
+	        else if (typeof v === 'number' && isFinite(v))
+	            out[k] = v;
+	    }
+	    return out;
+	}
+
 	// NEXUS 奖励系统：修复贡献点 / MIRA 信任度 / 关卡评级 / 兑换中心 / 章节奖励
 	// 与经验等级、成就、知识卡、意识值、剧情进度并行，互不覆盖（旧的 exp/level 逻辑完全保留）。
 	function defaultRewards() {
-	    return { credits: 0, trust: 10, items: {}, skins: [], equipped: {}, chapterRewards: [], cleared: {}, archiveRead: [] };
+	    return { credits: 0, trust: 10, items: {}, skins: [], equipped: {}, chapterRewards: [], cleared: {}, archiveRead: [], bossRewards: [], unlocks: [] };
 	}
 	/** 兼容旧存档：缺失字段逐一补齐（不覆盖已有值） */
 	function normalizeRewards(raw) {
@@ -546,6 +762,8 @@
 	        chapterRewards: Array.isArray(r.chapterRewards) ? r.chapterRewards.slice() : [],
 	        cleared: r.cleared && typeof r.cleared === 'object' ? { ...r.cleared } : {},
 	        archiveRead: Array.isArray(r.archiveRead) ? r.archiveRead.slice() : [],
+	        bossRewards: Array.isArray(r.bossRewards) ? r.bossRewards.slice() : [],
+	        unlocks: Array.isArray(r.unlocks) ? r.unlocks.slice() : [],
 	    };
 	}
 	// ---------- 关卡评级 ----------
@@ -565,17 +783,6 @@
 	    B: { label: 'B', color: '#7FA6BC', desc: '成功修复 · 借助了提示或多次尝试' },
 	    C: { label: 'C', color: '#B08BD6', desc: '多次尝试后修复完成' },
 	};
-	function computeLevelReward(levelExp, fails, hints, firstClear) {
-	    const grade = gradeOf(fails, hints);
-	    const base = Math.max(15, Math.round(levelExp / 3));
-	    const firstClearBonus = firstClear ? 30 : 0;
-	    const noFail = fails <= 0 ? 10 : 0;
-	    const noHint = hints <= 0 ? 10 : 0;
-	    const gradeBonus = grade === 'S' ? 20 : grade === 'A' ? 12 : grade === 'B' ? 6 : 0;
-	    const total = base + firstClearBonus + noFail + noHint + gradeBonus;
-	    const trustGain = 2 + (grade === 'S' ? 1 : 0) + (firstClear ? 1 : 0);
-	    return { grade, base, firstClear: firstClearBonus, noFail, noHint, gradeBonus, total, trustGain };
-	}
 	const CHAPTER_REWARDS = [
 	    { id: 'ch1', chapter: 1, title: '初级修复师称号', desc: '你的名字第一次被写进 NEXUS 的修复记录。', credits: 40, skins: ['title-junior'] },
 	    { id: 'ch2', chapter: 2, title: '终端主题 · 深海回路', desc: 'MIRA 为你换上了她最喜欢的终端配色。', credits: 60, skins: ['terminal-deep'] },
@@ -594,6 +801,8 @@
 	    { id: 'title-successor', name: '称号 · 原初继承者', category: 'look', price: 260, desc: '创世主遗留的最终称谓。', icon: '✦', unique: true, slot: 'title' },
 	    { id: 'login-gold', name: '登录界面 · 黄金协议', category: 'look', price: 150, desc: '启动页换成金色协议风格。', icon: '⧉', unique: true, slot: 'login' },
 	    { id: 'bg-ark', name: '数字世界背景 · 方舟核心', category: 'look', price: 200, desc: '地图背景换成核心机房的发光脉络。', icon: '◉', unique: true, slot: 'bg' },
+	    { id: 'frame-bronze', name: '头像框 · 青铜回路', category: 'look', price: 70, desc: '档案页与状态卡的 R-07 头像外框。', icon: '◯', unique: true, slot: 'avatarFrame' },
+	    { id: 'frame-neon', name: '头像框 · 霓虹脉冲', category: 'look', price: 130, desc: '青紫脉冲边框，会随意识值呼吸。', icon: '◎', unique: true, slot: 'avatarFrame' },
 	    // 道具
 	    { id: 'scan', name: '错误定位扫描器', category: 'tool', price: 50, count: 1, desc: '在编辑器中标出最可能出错的行范围（不直接给答案）。', icon: '⌖' },
 	    { id: 'rollback', name: '数据回滚模块', category: 'tool', price: 40, count: 1, desc: '把编辑器恢复到本次修改前的状态。', icon: '↺' },
@@ -607,7 +816,7 @@
 	const shopItemById = (id) => SHOP_ITEMS.find(i => i.id === id);
 	const MEMORY_ARCHIVES = [
 	    { id: 'arc-1', need: 2, title: '档案 · 事故前夜', content: '五年前的维护日志显示：核心机房在事故前一小时收到过一次外部同步请求，签名被抹除。' },
-	    { id: 'arc-2', need: 4, title: '档案 · MIRA 的诞生', content: 'MIRA 的初始版本由 E.S. 亲手编写。她在日志里写下第一句话：「我会记得所有被修复过的东西。」' },
+	    { id: 'arc-2', need: 4, title: '档案 · MIRA 的诞生', content: 'MIRA 的初始版本由恩格尔亲手编写。她在日志里写下第一句话：「我会记得所有被修复过的东西。」' },
 	    { id: 'arc-3', need: 6, title: '档案 · 被改写的 ECHO', content: 'ECHO 的原始权限与 R-07 同源。事故当天，一段外来代码把它从「观察者」改写成了「清道夫」。' },
 	    { id: 'arc-4', need: 9, title: '档案 · 原初协议', content: 'ORIGIN PROTOCOL 的真实用途：不是应急重启，而是为「会提问的数字生命」保留一次重新选择的机会。' },
 	];
@@ -664,7 +873,8 @@
 	    echo: { label: 'ECHO', rate: 0.88, pitch: 0.62, desc: '低沉、压迫、缓慢' },
 	    narrator: { label: '旁白', rate: 0.95, pitch: 1.00, desc: '平稳、自然' },
 	    r07: { label: 'R-07', rate: 1.00, pitch: 1.06, desc: '玩家本人' },
-	    engel: { label: 'E.S. 记录', rate: 0.92, pitch: 0.94, desc: '沉稳、怀旧' },
+	    engel: { label: '恩格尔', rate: 0.92, pitch: 0.94, desc: '沉稳、怀旧' },
+	    k0: { label: 'K-0', rate: 0.86, pitch: 0.55, desc: '极低音、冷静、无情绪起伏' },
 	};
 	class SpeechService {
 	    constructor() {
@@ -784,7 +994,7 @@
 	        if (matched)
 	            return matched;
 	        // 退化为按角色索引取一个，保证不同角色尽量不同音色
-	        const order = ['mira', 'system', 'echo', 'narrator', 'r07', 'engel'];
+	        const order = ['mira', 'system', 'echo', 'narrator', 'r07', 'engel', 'k0'];
 	        const idx = Math.max(0, order.indexOf(role));
 	        return pool[idx % pool.length] || pool[0];
 	    }
@@ -844,6 +1054,20 @@
 	            this.state = 'idle';
 	        }
 	    }
+	    /** 是否存在可用的中文音色 */
+	    hasChineseVoice() {
+	        return this.voices().some(v => (v.lang || '').toLowerCase().startsWith('zh'));
+	    }
+	    /** 中文音色缺失时的友好提示（正常返回 null） */
+	    chineseVoiceHint() {
+	        if (!this.synth)
+	            return '当前浏览器不支持语音合成——剧情会以文字正常继续。';
+	        if (this.voices().length === 0)
+	            return '尚未加载到系统音色：首次播放可能没有声音，稍后再试一次即可。';
+	        if (!this.hasChineseVoice())
+	            return '当前设备没有中文音色，朗读发音可能不准——可在系统里安装中文语音包。';
+	        return null;
+	    }
 	    /** 停止（切换对话/离开页面时调用） */
 	    stop() {
 	        if (!this.synth)
@@ -880,6 +1104,7 @@
 	            case 'echo': return 'echo';
 	            case 'r07': return 'r07';
 	            case 'engel': return 'engel';
+	            case 'k0': return 'k0';
 	            default: return 'narrator';
 	        }
 	    }
@@ -890,118 +1115,71 @@
 	    return speech.speak(text, SpeechService.roleFromKind(kind));
 	}
 
-	const SAVE_KEY = 'nexus_code_repair_save_v1';
-	const SAVE_VERSION = 1;
-	function defaultState() {
-	    return {
-	        name: 'R-07',
-	        level: 1,
-	        exp: 0,
-	        consciousness: 100,
-	        meta: {
-	            deaths: 0,
-	            rebirths: 0,
-	            lastDeathLevel: null,
-	            lastDeathReason: null,
-	            memoryFragments: [],
-	            backupLevel: 1,
-	        },
-	        progress: {
-	            completedLevels: [],
-	            stars: {},
-	            unlockedServers: ['training'],
-	            currentLevelId: null,
-	            failedAttempts: {},
-	            hintLevels: {},
-	            achievements: [],
-	            knowledge: [],
-	            storySeen: {},
-	            flags: {},
-	            bossesDone: [],
-	            currentBossId: null,
-	            pendingRebirth: false,
-	        },
-	        rewards: defaultRewards(),
-	        settings: {
-	            musicVolume: 0.35,
-	            sfxVolume: 0.6,
-	            animations: true,
-	            animLevel: 'high',
-	            typewriterMs: 26,
-	            fullscreen: false,
-	            voice: { ...DEFAULT_VOICE, roleVoices: {} },
-	            lang: 'zh',
-	        },
-	    };
-	}
-	function isValidSave(x) {
-	    if (typeof x !== 'object' || x === null)
-	        return false;
-	    const p = x;
-	    return (typeof p.name === 'string' &&
-	        typeof p.level === 'number' &&
-	        typeof p.exp === 'number' &&
-	        typeof p.consciousness === 'number' &&
-	        typeof p.meta?.deaths === 'number' &&
-	        typeof p.progress?.completedLevels === 'object' &&
-	        p.progress.completedLevels !== null &&
-	        typeof p.settings?.sfxVolume === 'number' &&
-	        Array.isArray(p.progress.completedLevels));
-	}
-	function saveGame(p) {
-	    try {
-	        const data = { version: SAVE_VERSION, updatedAt: Date.now(), player: p };
-	        localStorage.setItem(SAVE_KEY, JSON.stringify(data));
-	    }
-	    catch {
-	        // 存储不可用时静默失败（游戏仍可玩，只是不持久化）
-	    }
-	}
-	function loadGame() {
-	    try {
-	        const raw = localStorage.getItem(SAVE_KEY);
-	        if (!raw)
-	            return { state: defaultState(), fresh: true };
-	        const data = JSON.parse(raw);
-	        if (data.version !== SAVE_VERSION) {
-	            // 版本迁移预留：未来升级时在此按 version 迁移
-	            return { state: defaultState(), fresh: true, corrupted: '存档数据版本（v' + data.version + '）与本版本（v' + SAVE_VERSION + '）不一致，已重置。' };
-	        }
-	        if (!isValidSave(data.player)) {
-	            return { state: defaultState(), fresh: true, corrupted: '存档数据已损坏，已重置。' };
-	        }
-	        // 兼容旧存档：奖励/语音字段缺失时补齐（不覆盖已有数据）
-	        const migrated = {
-	            ...data.player,
-	            rewards: normalizeRewards(data.player.rewards),
-	            settings: {
-	                ...data.player.settings,
-	                voice: normalizeVoice(data.player.settings?.voice),
-	            },
-	        };
-	        return { state: migrated, fresh: false };
-	    }
-	    catch {
-	        return { state: defaultState(), fresh: true, corrupted: '存档数据已损坏，已重置。' };
-	    }
-	}
-	function exportSave(p) {
-	    const data = { version: SAVE_VERSION, updatedAt: Date.now(), player: p };
-	    return JSON.stringify(data, null, 2);
-	}
-	function importSave(text) {
-	    try {
-	        const data = JSON.parse(text);
-	        if (!data || data.version !== SAVE_VERSION)
-	            return { ok: false, reason: '存档版本不匹配（需要 v' + SAVE_VERSION + '）。' };
-	        if (!isValidSave(data.player))
-	            return { ok: false, reason: '存档内容不完整或已损坏。' };
-	        return { ok: true, state: data.player };
-	    }
-	    catch {
-	        return { ok: false, reason: '无法解析该文件，不是有效的 NEXUS 存档。' };
-	    }
-	}
+	const CHAPTERS = [
+	    {
+	        id: 'ch1', order: 1,
+	        title: '失落的数据港', area: '语法维修站',
+	        serverId: 'syntax',
+	        bossId: 'gate-01', currentBossId: 'gate-01',
+	        fragmentId: 'frag-01',
+	        coreEvent: '恢复数字世界，首次遭遇 K-0',
+	        knowledgeFocus: ['print', 'if', 'indent', 'string', 'variable', 'compare', 'for', 'list'],
+	        storyEventId: 'chapter-1', doneFlag: 'chapter1Done',
+	    },
+	    {
+	        id: 'ch2', order: 2,
+	        title: '破碎的记忆花园', area: '数据日志中心',
+	        serverId: 'logs',
+	        bossId: 'somnia', currentBossId: 'somnia',
+	        fragmentId: 'frag-02',
+	        coreEvent: '发现 MIRA 的真实身份',
+	        knowledgeFocus: ['if', 'else', 'elif', 'compare', 'logic', 'for', 'return'],
+	        storyEventId: 'chapter-2', doneFlag: 'chapter2Done',
+	    },
+	    {
+	        id: 'ch3', order: 3,
+	        title: '被遗忘的实验档案', area: '存储数据仓',
+	        serverId: 'storage',
+	        bossId: 'index-0', currentBossId: 'index-0',
+	        fragmentId: 'frag-03',
+	        coreEvent: '发现 R 系列实验与 R-07 的身世',
+	        knowledgeFocus: ['list', 'for', 'while', 'len', 'indent', 'compare'],
+	        storyEventId: 'chapter-3', doneFlag: 'chapter3Done',
+	    },
+	    {
+	        id: 'ch4', order: 4,
+	        title: '失控的核心工坊', area: '自动化工厂',
+	        serverId: 'factory',
+	        bossId: 'judgment-4', currentBossId: 'judgment-4',
+	        fragmentId: 'frag-04',
+	        coreEvent: '发现恩格尔与 K-0 的矛盾，以及 MIRA 的牺牲',
+	        knowledgeFocus: ['def', 'parameter', 'return', 'list', 'compare'],
+	        storyEventId: 'chapter-4', doneFlag: 'chapter4Done',
+	    },
+	    {
+	        id: 'ch5', order: 5,
+	        title: '黎明崩塌的真相', area: '系统诊断中心',
+	        serverId: 'diag',
+	        bossId: 'entropy', currentBossId: 'entropy',
+	        fragmentId: 'frag-05',
+	        coreEvent: '揭露五年前事故与恩格尔的最后愿望',
+	        knowledgeFocus: ['dict', 'try', 'logic', 'compare', 'for'],
+	        storyEventId: 'chapter-5', doneFlag: 'chapter5Done',
+	    },
+	    {
+	        id: 'ch6', order: 6,
+	        title: '起源之外', area: '方舟核心机房',
+	        serverId: 'core',
+	        bossId: 'k0', currentBossId: 'k0',
+	        fragmentId: 'frag-06',
+	        coreEvent: '击败 K-0，决定数字世界的未来',
+	        knowledgeFocus: ['if', 'return', 'compare', 'logic', 'list', 'dict', 'try', 'while'],
+	        storyEventId: 'chapter-6', doneFlag: 'chapter6Done',
+	    },
+	];
+	const chapterById = (id) => CHAPTERS.find(c => c.id === id);
+	const chapterByServer = (serverId) => CHAPTERS.find(c => c.serverId === serverId);
+	const chapterOfBoss = (bossId) => CHAPTERS.find(c => c.bossId === bossId || c.currentBossId === bossId);
 
 	const SERVERS = [
 	    { id: 'training', name: '新人训练终端', codename: 'PRIME-01', x: 300, y: 250, icon: '⌨', chapter: 0, desc: '为新任修复师准备的接驳终端，用于唤醒基础输出回路。', lockedReason: '' },
@@ -1026,7 +1204,7 @@
 	    ],
 	};
 	const JUDGE_1_5 = { judgeKind: 'stdout', stdoutChecks: [{ name: '依次输出全部记录', lines: ['A', 'B', 'C'] }] };
-	function L(d, judge) {
+	function L$8(d, judge) {
 	    return { ...d, judge };
 	}
 	// ---------- 第六章：方舟核心机房（综合编程 / 完整调试 / 多知识点应用） ----------
@@ -1755,7 +1933,7 @@
 	    }, JUDGE_2_5),
 	];
 	const LEVELS = [
-	    L({
+	    L$8({
 	        id: 'tut-1', serverId: 'training', order: 1,
 	        title: '初识终端', codename: 'CAL-BASIC',
 	        fault: '训练终端的输出回路处于待机状态——它需要接收你的第一条输出指令，才能与你的意识完成接驳。',
@@ -1773,7 +1951,7 @@
 	        rewardExp: 40,
 	        varsNote: [{ name: 'print', desc: '输出函数：print("文字") 会把引号里的内容显示到终端。' }],
 	    }, JUDGE_TUT),
-	    L({
+	    L$8({
 	        id: '1-1', serverId: 'syntax', order: 1,
 	        title: '沉睡的日志', codename: 'LV-01',
 	        fault: '日志采集程序无法运行，报出语法错误。服务器状态报告的标题始终无法输出。',
@@ -1791,7 +1969,7 @@
 	        rewardExp: 60,
 	        varsNote: [{ name: 'log_title', desc: '日志标题字符串（"服务器状态报告"）。' }],
 	    }, JUDGE_1_1),
-	    L({
+	    L$8({
 	        id: '1-2', serverId: 'syntax', order: 2,
 	        title: '消失的字符', codename: 'LV-02',
 	        fault: '系统状态消息的字符串无法解析——字符串没有闭合，内容在中途断裂。',
@@ -1809,7 +1987,7 @@
 	        rewardExp: 60,
 	        varsNote: [{ name: 'message', desc: '系统状态消息字符串。' }],
 	    }, JUDGE_1_2),
-	    L({
+	    L$8({
 	        id: '1-3', serverId: 'syntax', order: 3,
 	        title: '错误的身份', codename: 'LV-03',
 	        fault: '身份识别系统找不到当前维修员的身份信息，程序报出 NameError。',
@@ -1827,7 +2005,7 @@
 	        rewardExp: 60,
 	        varsNote: [{ name: 'repair_id', desc: '修复师代号（字符串 "R-07"）。' }],
 	    }, JUDGE_1_3),
-	    L({
+	    L$8({
 	        id: '1-4', serverId: 'syntax', order: 4,
 	        title: '反向的数据', codename: 'LV-04',
 	        fault: '高温报警数据没有进入警报列表——过滤条件写反了，40 度以上的数据全部被丢掉了。',
@@ -1849,7 +2027,7 @@
 	            { name: 'temp', desc: '循环变量：遍历 temps 中的每个温度。' },
 	        ],
 	    }, JUDGE_1_4),
-	    L({
+	    L$8({
 	        id: '1-5', serverId: 'syntax', order: 5,
 	        title: '错位的程序', codename: 'LV-05',
 	        fault: '日志读取程序因为缩进问题无法运行——for 循环的循环体没有被识别。',
@@ -1891,6 +2069,306 @@
 	        return 'unlocked';
 	    const prev = siblings[idx - 1];
 	    return prev && progress.completedLevels.includes(prev.id) ? 'unlocked' : 'locked';
+	}
+
+	const CHAPTER_FLAGS = CHAPTERS.map(c => ({
+	    flag: c.doneFlag,
+	    bossId: c.currentBossId,
+	    levelIds: levelsOfServer(c.serverId).map(l => l.id),
+	}));
+	/** 当前存档版本 */
+	const CURRENT_SAVE_VERSION = 7;
+	const STEPS = [
+	    {
+	        to: 2,
+	        name: 'v1→v2：玩家身份（identity）+ 剧情事件状态（story）',
+	        run: (p) => {
+	            const progress = (p && typeof p.progress === 'object' && p.progress ? { ...p.progress } : {});
+	            return {
+	                ...p,
+	                identity: normalizeIdentity(p.identity, p.name),
+	                progress: {
+	                    ...progress,
+	                    story: normalizeStoryReadState(progress.story, progress.storySeen),
+	                    flags: normalizeStoryVars(progress.flags),
+	                },
+	            };
+	        },
+	    },
+	    {
+	        to: 3,
+	        name: 'v2→v3：第一章 Boss 代号 ECHO-01 → GATE-01',
+	        run: (p) => {
+	            const progress = (p && typeof p.progress === 'object' && p.progress ? { ...p.progress } : {});
+	            const alias = { 'echo-01': 'gate-01' };
+	            const mapId = (id) => (typeof id === 'string' ? (alias[id] || id) : id);
+	            const rawDone = Array.isArray(progress.bossesDone) ? progress.bossesDone : [];
+	            const bossesDone = [...new Set(rawDone.map(mapId).filter((x) => typeof x === 'string'))];
+	            const currentBossId = typeof progress.currentBossId === 'string'
+	                ? (alias[progress.currentBossId] || progress.currentBossId)
+	                : progress.currentBossId ?? null;
+	            return { ...p, progress: { ...progress, bossesDone, currentBossId } };
+	        },
+	    },
+	    {
+	        to: 4,
+	        name: 'v3→v4：Boss 战进度（progress.battles）',
+	        run: (p) => {
+	            const progress = (p && typeof p.progress === 'object' && p.progress ? { ...p.progress } : {});
+	            const battles = progress.battles && typeof progress.battles === 'object' ? { ...progress.battles } : {};
+	            return { ...p, progress: { ...progress, battles } };
+	        },
+	    },
+	    {
+	        to: 5,
+	        name: 'v4→v5：第二章 Boss 代号 ECHO-02 → SOMNIA',
+	        run: (p) => {
+	            const progress = (p && typeof p.progress === 'object' && p.progress ? { ...p.progress } : {});
+	            const alias = { 'echo-02': 'somnia' };
+	            const mapId = (id) => (typeof id === 'string' ? (alias[id] || id) : id);
+	            const rawDone = Array.isArray(progress.bossesDone) ? progress.bossesDone : [];
+	            const bossesDone = [...new Set(rawDone.map(mapId).filter((x) => typeof x === 'string'))];
+	            const currentBossId = typeof progress.currentBossId === 'string'
+	                ? (alias[progress.currentBossId] || progress.currentBossId)
+	                : progress.currentBossId ?? null;
+	            return { ...p, progress: { ...progress, bossesDone, currentBossId } };
+	        },
+	    },
+	    {
+	        to: 6,
+	        name: 'v5→v6：记忆档案馆（meta.fragmentLog + progress.vault）',
+	        run: (p) => {
+	            const meta = (p && typeof p.meta === 'object' && p.meta ? { ...p.meta } : {});
+	            const log = (meta.fragmentLog && typeof meta.fragmentLog === 'object' ? { ...meta.fragmentLog } : {});
+	            const collected = Array.isArray(meta.memoryFragments) ? meta.memoryFragments : [];
+	            for (const id of collected) {
+	                if (typeof id === 'string' && typeof log[id] !== 'number')
+	                    log[id] = 0; // 旧档：早期归档
+	            }
+	            const progress = (p && typeof p.progress === 'object' && p.progress ? { ...p.progress } : {});
+	            const rawVault = (progress.vault && typeof progress.vault === 'object' ? progress.vault : {});
+	            const vault = {
+	                read: Array.isArray(rawVault.read) ? rawVault.read : [],
+	                finalSeen: rawVault.finalSeen === true,
+	                lastOpened: typeof rawVault.lastOpened === 'string' ? rawVault.lastOpened : null,
+	            };
+	            return { ...p, meta: { ...meta, fragmentLog: log }, progress: { ...progress, vault } };
+	        },
+	    },
+	    {
+	        to: 7,
+	        name: 'v6→v7：回填章节完成标记（chapterNDone）',
+	        run: (p) => {
+	            const progress = (p && typeof p.progress === 'object' && p.progress ? { ...p.progress } : {});
+	            const flags = (progress.flags && typeof progress.flags === 'object' ? { ...progress.flags } : {});
+	            const completed = Array.isArray(progress.completedLevels) ? progress.completedLevels : [];
+	            const bossesDone = Array.isArray(progress.bossesDone) ? progress.bossesDone : [];
+	            for (const ch of CHAPTER_FLAGS) {
+	                const allDone = ch.levelIds.length > 0 && ch.levelIds.every(id => completed.includes(id));
+	                const bossOk = !ch.bossId || bossesDone.includes(ch.bossId);
+	                if (allDone && bossOk)
+	                    flags[ch.flag] = true;
+	            }
+	            return { ...p, progress: { ...progress, flags } };
+	        },
+	    },
+	];
+	/** 对 player 对象执行迁移链 */
+	function migratePlayer(rawPlayer, fromVersion) {
+	    let player = rawPlayer;
+	    const notes = [];
+	    const from = Math.max(1, Math.floor(Number(fromVersion) || 1));
+	    const future = from > CURRENT_SAVE_VERSION;
+	    if (!future) {
+	        for (const step of STEPS) {
+	            if (from < step.to) {
+	                if (!player || typeof player !== 'object')
+	                    break;
+	                player = step.run(player);
+	                notes.push(step.name);
+	            }
+	        }
+	    }
+	    return { player, from, to: CURRENT_SAVE_VERSION, notes, future };
+	}
+	/** 对完整存档对象（{version, updatedAt, player}）执行迁移 */
+	function migrateSave(raw) {
+	    const data = (raw && typeof raw === 'object' ? raw : {});
+	    const v = typeof data.version === 'number' && isFinite(data.version) ? Math.floor(data.version) : 0;
+	    if (v <= 0) {
+	        const r = migratePlayer(data.player, 1);
+	        return { ...r, notes: ['存档缺少版本号，已按 v1 处理', ...r.notes] };
+	    }
+	    return migratePlayer(data.player, v);
+	}
+
+	/** 存储键保持不变，确保旧存档仍能被读取（改名会导致所有玩家进度丢失） */
+	const SAVE_KEY = 'nexus_code_repair_save_v1';
+	const SAVE_VERSION = CURRENT_SAVE_VERSION;
+	function defaultState() {
+	    return {
+	        name: 'R-07',
+	        identity: defaultIdentity(),
+	        level: 1,
+	        exp: 0,
+	        consciousness: 100,
+	        meta: {
+	            deaths: 0,
+	            rebirths: 0,
+	            lastDeathLevel: null,
+	            lastDeathReason: null,
+	            memoryFragments: [],
+	            fragmentLog: {},
+	            backupLevel: 1,
+	        },
+	        progress: {
+	            completedLevels: [],
+	            stars: {},
+	            unlockedServers: ['training'],
+	            currentLevelId: null,
+	            failedAttempts: {},
+	            hintLevels: {},
+	            achievements: [],
+	            knowledge: [],
+	            storySeen: {},
+	            story: defaultStoryReadState(),
+	            vault: { read: [], finalSeen: false, lastOpened: null },
+	            endings: [],
+	            ending: null,
+	            flags: {},
+	            bossesDone: [],
+	            currentBossId: null,
+	            pendingRebirth: false,
+	        },
+	        rewards: defaultRewards(),
+	        settings: {
+	            musicVolume: 0.35,
+	            sfxVolume: 0.6,
+	            animations: true,
+	            animLevel: 'high',
+	            typewriterMs: 26,
+	            fullscreen: false,
+	            voice: { ...DEFAULT_VOICE, roleVoices: {} },
+	            lang: 'zh',
+	        },
+	    };
+	}
+	function isValidSave(x) {
+	    if (typeof x !== 'object' || x === null)
+	        return false;
+	    const p = x;
+	    return (typeof p.name === 'string' &&
+	        typeof p.level === 'number' &&
+	        typeof p.exp === 'number' &&
+	        typeof p.consciousness === 'number' &&
+	        typeof p.meta?.deaths === 'number' &&
+	        typeof p.progress?.completedLevels === 'object' &&
+	        p.progress.completedLevels !== null &&
+	        typeof p.settings?.sfxVolume === 'number' &&
+	        Array.isArray(p.progress.completedLevels));
+	}
+	/**
+	 * 字段级自愈：所有新增字段都必须是「缺失即可补」的。
+	 * 名称/身份以 identity 为准，并把 name 同步为显示名（兼容旧组件）。
+	 */
+	function normalizePlayerState(raw) {
+	    const identity = normalizeIdentity(raw.identity, raw.name);
+	    const progress = raw.progress;
+	    const storySeen = progress.storySeen && typeof progress.storySeen === 'object' ? progress.storySeen : {};
+	    return {
+	        ...raw,
+	        name: identity.displayName,
+	        identity,
+	        meta: {
+	            ...raw.meta,
+	            memoryFragments: Array.isArray(raw.meta?.memoryFragments) ? raw.meta.memoryFragments : [],
+	            fragmentLog: raw.meta?.fragmentLog && typeof raw.meta.fragmentLog === 'object' ? raw.meta.fragmentLog : {},
+	            bugCodex: raw.meta?.bugCodex && typeof raw.meta.bugCodex === 'object' ? raw.meta.bugCodex : {},
+	        },
+	        progress: {
+	            ...progress,
+	            storySeen,
+	            story: normalizeStoryReadState(progress.story, storySeen),
+	            endings: Array.isArray(progress.endings) ? progress.endings : [],
+	            ending: typeof progress.ending === 'string' ? progress.ending : null,
+	            vault: {
+	                read: Array.isArray(progress.vault?.read) ? progress.vault.read : [],
+	                finalSeen: progress.vault?.finalSeen === true,
+	                lastOpened: typeof progress.vault?.lastOpened === 'string' ? progress.vault.lastOpened : null,
+	            },
+	            flags: normalizeStoryVars(progress.flags),
+	        },
+	        rewards: normalizeRewards(raw.rewards),
+	        settings: {
+	            ...raw.settings,
+	            voice: normalizeVoice(raw.settings?.voice),
+	        },
+	    };
+	}
+	/** 损坏存档先备份，绝不直接丢弃原始数据 */
+	function backupCorrupted(raw) {
+	    try {
+	        localStorage.setItem('nexus_save_corrupt_' + Date.now(), raw);
+	    }
+	    catch {
+	        // 存储不可用时忽略
+	    }
+	}
+	function saveGame(p) {
+	    try {
+	        const data = { version: SAVE_VERSION, updatedAt: Date.now(), player: p };
+	        localStorage.setItem(SAVE_KEY, JSON.stringify(data));
+	    }
+	    catch {
+	        // 存储不可用时静默失败（游戏仍可玩，只是不持久化）
+	    }
+	}
+	function loadGame() {
+	    let raw = null;
+	    try {
+	        raw = localStorage.getItem(SAVE_KEY);
+	        if (!raw)
+	            return { state: defaultState(), fresh: true };
+	        const data = JSON.parse(raw);
+	        const m = migrateSave(data);
+	        if (!isValidSave(m.player)) {
+	            backupCorrupted(raw);
+	            return { state: defaultState(), fresh: true, corrupted: '存档数据已损坏，已重置（原始数据已备份）。' };
+	        }
+	        const player = normalizePlayerState(m.player);
+	        const notes = m.future ? [...m.notes, '存档来自更高版本（v' + m.from + '），已按兼容模式读取'] : m.notes;
+	        return {
+	            state: player,
+	            fresh: false,
+	            migrated: notes.length > 0,
+	            fromVersion: m.from,
+	            notes,
+	        };
+	    }
+	    catch {
+	        if (raw)
+	            backupCorrupted(raw);
+	        return { state: defaultState(), fresh: true, corrupted: '存档数据已损坏，已重置。' };
+	    }
+	}
+	function exportSave(p) {
+	    const data = { version: SAVE_VERSION, updatedAt: Date.now(), player: p };
+	    return JSON.stringify(data, null, 2);
+	}
+	function importSave(text) {
+	    try {
+	        const data = JSON.parse(text);
+	        if (!data || typeof data !== 'object')
+	            return { ok: false, reason: '无法解析该文件，不是有效的 NEXUS 存档。' };
+	        const m = migrateSave(data);
+	        if (!isValidSave(m.player))
+	            return { ok: false, reason: '存档内容不完整或已损坏。' };
+	        const notes = m.future ? [...m.notes, '该存档来自更高版本（v' + m.from + '），已按兼容模式导入'] : m.notes;
+	        return { ok: true, state: normalizePlayerState(m.player), notes };
+	    }
+	    catch {
+	        return { ok: false, reason: '无法解析该文件，不是有效的 NEXUS 存档。' };
+	    }
 	}
 
 	// 等级 / 经验 / 称号 / 容错规则
@@ -1947,8 +2425,8 @@
 	    { id: 'chapter6_seen', name: '终章临近', desc: '完成第五章，核心机房的封锁开始解除', icon: '◉', hidden: true },
 	    { id: 'chapter6_done', name: '方舟继承者', desc: '修复方舟核心机房的全部 5 个故障', icon: '◉' },
 	    { id: 'game_clear', name: '全网络复原', desc: '通关全部 26 个修复任务，NEXUS 复苏', icon: '✦', hidden: true },
-	    { id: 'echo_first', name: '首次交锋', desc: '击破第一个 ECHO 分支', icon: '⚡' },
-	    { id: 'echo_hunter', name: '回响猎手', desc: '击破全部 5 个 ECHO 分支', icon: '⚡', hidden: true },
+	    { id: 'echo_first', name: '首次交锋', desc: '击破第一个章节 Boss', icon: '⚡' },
+	    { id: 'echo_hunter', name: '回响猎手', desc: '击破第一~五章的全部章节 Boss', icon: '⚡', hidden: true },
 	    { id: 'shield_up', name: '护盾专家', desc: '在纠错者攻击中成功防御', icon: '◈' },
 	    { id: 'first_death', name: '意识崩解', desc: '首次经历意识核心崩解', icon: '✕' },
 	    { id: 'reborn', name: '重生者', desc: '完成一次 ORIGIN PROTOCOL 重生', icon: '✚' },
@@ -2064,64 +2542,80 @@
 
 	const BOSSES = [
 	    {
-	        id: 'echo-01', chapter: 1, serverId: 'syntax',
-	        title: '回响 · 语法镜像', codename: 'ECHO-01',
-	        intro: [
-	            { id: 'e1-1', speaker: 'NEXUS 系统', kind: 'system', text: '检测到异常数据流：某个存在正在复刻你的修复手法……' },
-	            { id: 'e1-2', speaker: '？？？', kind: 'echo', text: '第一个把这台终端修好的人……手法很干净。让我看看，你能不能修好"我"。' },
-	            { id: 'e1-3', speaker: 'MIRA', kind: 'mira', text: 'R-07，是 ECHO，它把自己伪装成一个镜像任务。它复制了你刚学的东西——也是它给我们设的第一道章节测验。' },
-	        ],
-	        fault: '语法镜像被 ECHO 改写：字符串拼接时把方法本身当成了值，终端直接报类型错误。',
-	        goal: '修复 mirror，让 print(mirror("echo")) 输出 REPAIR-ECHO。',
-	        behavior: '调用字符串方法要加括号：name.upper()。',
-	        initialCode: 'def mirror(name):\n    return "REPAIR-" + name.upper\n\nprint(mirror("echo"))',
-	        knowledge: ['string', 'return', 'print'],
+	        id: 'gate-01', chapter: 1, serverId: 'syntax',
+	        title: '数据港守卫', codename: 'GATE-01',
+	        opponentName: 'GATE-01',
+	        fault: '能源闸门把「临界值」当成了「不合格」：3 级能源被判定为离线，闸门拒绝开启。',
+	        goal: '修复 power：能源等级 ≥ 3 输出 ONLINE，否则输出 OFFLINE；report 负责把多个等级拼成状态串。',
+	        behavior: '把 if level > 3 改成 if level >= 3——临界值 3 属于合格。',
+	        initialCode: 'def power(level):\n    if level > 3:\n        return "ONLINE"\n    else:\n        return "OFFLINE"\n\ndef report(levels):\n    out = ""\n    for lv in levels:\n        out = out + power(lv) + " "\n    return out\n\nprint(report([3, 1, 5]))',
+	        knowledge: ['if', 'compare', 'for', 'return', 'string'],
 	        hints: [
-	            '报错说不能把字符串和"内置方法"相加——你拼进去的不是值，而是方法本身。',
-	            '字符串方法 name.upper 是"方法对象"；要拿到大写结果必须调用它。',
-	            '把 name.upper 改成 name.upper()——加上括号才是调用。',
+	            '闸门只认「大于 3」的能源。可是能源等级正好是 3 的时候，它明明够用。',
+	            '边界值要算合格：>= 3 才是「达到阈值」。',
+	            '把 if level > 3 改成 if level >= 3。',
 	        ],
-	        summary: '区分「方法对象」与「方法调用」：name.upper 是方法本身，name.upper() 才返回大写结果。ECHO 就是利用这种细微差别来破坏输出。',
-	        judge: { judgeKind: 'stdout', stdoutChecks: [{ name: '镜像输出正确', contains: ['REPAIR-ECHO'] }] },
-	        fragmentId: 'f3',
-	        echoStory: [
-	            { id: 'es1-1', speaker: 'ECHO 残片', kind: 'echo', text: '……这段代码我见过。五年前，有人用同样的写法修复过一台老终端。' },
-	            { id: 'es1-2', speaker: 'MIRA', kind: 'mira', text: 'ECHO 提到"五年前"。这和你记忆里那次事故的时间点完全一致。' },
-	        ],
-	        rewardExp: 150,
-	    },
-	    {
-	        id: 'echo-02', chapter: 2, serverId: 'logs',
-	        title: '回响 · 逻辑断层', codename: 'ECHO-02',
-	        intro: [
-	            { id: 'e2-1', speaker: '？？？', kind: 'echo', text: '条件判断……人类最喜欢在这上面偷懒。边界值，是你们永远的破绽。' },
-	            { id: 'e2-2', speaker: 'MIRA', kind: 'mira', text: '它把评分器的边界改坏了。90 分本该是最高等级——现在会被判成第二档。' },
-	        ],
-	        fault: '评分边界的比较符号被改写：恰好 90 分的记录被错判为 B 等级。',
-	        goal: '修复 grade：90 分及以上返回 A，60 分及以上返回 B，其余返回 C。',
-	        behavior: '边界要用 >=：score >= 90 返回 "A"。',
-	        initialCode: 'def grade(score):\n    if score > 90:\n        return "A"\n    elif score >= 60:\n        return "B"\n    else:\n        return "C"\n\nprint(grade(90))',
-	        knowledge: ['if', 'elif', 'compare'],
-	        hints: [
-	            '把 90 分传进去，输出的是 B——说明第一个条件没接住它。',
-	            '本题的边界是"包含"关系：90 分属于 A 档。',
-	            '把 if score > 90 改成 if score >= 90。',
-	        ],
-	        summary: '边界条件是条件判断最容易出错的地方：> 与 >= 只差一个等号，却决定了边界值归属。',
+	        summary: '闸门类逻辑的破绽几乎都在边界：> 与 >= 只差一个等号，却决定 3 级能源算不算合格。',
 	        judge: {
 	            judgeKind: 'python',
 	            pythonChecks: [
-	                { name: '90 分属于 A 档', expr: 'grade(90) == "A"' },
-	                { name: '60 分属于 B 档', expr: 'grade(60) == "B"' },
-	                { name: '59 分属于 C 档', expr: 'grade(59) == "C"' },
+	                { name: '临界值 3 级能源判定为在线', expr: 'power(3) == "ONLINE"' },
+	                { name: '低于阈值 2 级判定为离线', expr: 'power(2) == "OFFLINE"' },
+	                { name: '高等级能源判定为在线', expr: 'power(5) == "ONLINE"' },
 	            ],
 	        },
-	        fragmentId: 'f4',
-	        echoStory: [
-	            { id: 'es2-1', speaker: 'ECHO 残片', kind: 'echo', text: '边界……我记得有人在我身上也设过边界。那是被注入之前的事了。' },
-	            { id: 'es2-2', speaker: 'MIRA', kind: 'mira', text: '"被注入之前"——ECHO 在暗示它原本不是现在这个样子。' },
+	        fragmentId: 'frag-01',
+	        rewardExp: 150,
+	    },
+	    {
+	        id: 'somnia', chapter: 2, serverId: 'logs',
+	        title: '记忆吞噬体', codename: 'SOMNIA',
+	        opponentName: 'SOMNIA',
+	        fault: '记忆分流被改写：warn 级记忆被静默吞掉，越界节点混入重建结果。',
+	        goal: '修复记忆分流、逻辑校验与循环筛查，把 SOMNIA 从记忆花园里赶出去。',
+	        behavior: '逐阶段修复：= → ==、or → and、elif 分支返回值、区间两侧判定。',
+	        initialCode: 'def classify(tag):\n    if tag = "error":\n        return "ALERT"\n    else:\n        return "PASS"\n\nprint(classify("error"))',
+	        knowledge: ['if', 'elif', 'compare', 'logic', 'for', 'list'],
+	        hints: [
+	            '它靠改写判断来吞记忆。先看清楚每个条件想表达什么。',
+	            '等号、and/or、elif 分支——第二章学过的三样东西都在这里。',
+	            '逐阶段修：== 比较、and 连接、elif 返回 WARN、区间用 and。',
 	        ],
-	        rewardExp: 170,
+	        summary: '记忆可以被改写，但逻辑不会说谎：条件写对，真相就还在。',
+	        judge: {
+	            judgeKind: 'python',
+	            pythonChecks: [
+	                { name: 'error 判为 ALERT', expr: 'classify("error") == "ALERT"' },
+	                { name: 'ok 判为 PASS', expr: 'classify("ok") == "PASS"' },
+	            ],
+	        },
+	        fragmentId: 'frag-02',
+	        rewardExp: 180,
+	    },
+	    {
+	        id: 'index-0', chapter: 3, serverId: 'storage',
+	        title: '数据索引吞噬者', codename: 'INDEX-0',
+	        opponentName: 'INDEX-0',
+	        fault: '索引程序把「比较」写成了「赋值」：身份记录无法建立索引，档案被反复吞噬。',
+	        goal: '修复 find_id：按顺序查找名字，找到返回下标，找不到返回 -1。',
+	        behavior: '吞噬身份记录；索引错乱时会把无关档案一并抹除。',
+	        initialCode: 'def find_id(name, names):\n    for i in range(len(names)):\n        if names[i] = name:\n            return i\n    return -1\n\nprint(find_id("carol", ["anna", "bob", "carol"]))',
+	        knowledge: ['list', 'for', 'len', 'if', 'compare', 'return'],
+	        hints: [
+	            '索引程序第一行就崩了：if 后面用的是赋值号。',
+	            '比较两个值是否相等要用 ==。',
+	            '把 if names[i] = name 改成 if names[i] == name。',
+	        ],
+	        summary: '索引程序崩溃的根因是比较运算符写错；修好它，档案才有重新被读出来的可能。',
+	        judge: {
+	            judgeKind: 'python',
+	            pythonChecks: [
+	                { name: '找到 carol 返回下标 2', expr: 'find_id("carol", ["anna", "bob", "carol"]) == 2' },
+	                { name: '找不到返回 -1', expr: 'find_id("zed", ["anna", "bob"]) == -1' },
+	            ],
+	        },
+	        fragmentId: 'frag-03',
+	        rewardExp: 320,
 	    },
 	    {
 	        id: 'echo-03', chapter: 3, serverId: 'storage',
@@ -2157,6 +2651,24 @@
 	        rewardExp: 190,
 	    },
 	    {
+	        id: 'judgment-4', chapter: 4, serverId: 'factory',
+	        title: '裁决执行体', codename: 'JUDGMENT-4',
+	        opponentName: 'JUDGMENT-4',
+	        fault: '安全裁决把「同时满足」写成了「任一满足」，大量异常程序被误放行。',
+	        goal: '修复 unlock：三个权限码必须全部正确才返回 True。',
+	        behavior: '多层权限验证；误放行时会把异常程序当作合法维护单元。',
+	        initialCode: 'def unlock(a, b, c):\n    if a == "root" or b == "root" or c == "root":\n        return True\n    return False',
+	        knowledge: ['def', 'parameter', 'compare', 'logic', 'return'],
+	        hints: ['只提供一个正确权限码就能进入。', '多层验证必须同时满足。', '把 or 改成 and。'],
+	        summary: 'or 是权限漏洞，and 才是同时满足。',
+	        judge: { judgeKind: 'python', pythonChecks: [
+	                { name: '三码全对才通过', expr: 'unlock("root", "root", "root") == True' },
+	                { name: '缺一码不通过', expr: 'unlock("root", "root", "guest") == False' },
+	            ] },
+	        fragmentId: 'frag-04',
+	        rewardExp: 380,
+	    },
+	    {
 	        id: 'echo-04', chapter: 4, serverId: 'factory',
 	        title: '回响 · 折扣陷阱', codename: 'ECHO-04',
 	        intro: [
@@ -2188,6 +2700,24 @@
 	            { id: 'es4-2', speaker: 'MIRA', kind: 'mira', text: '升级。ECHO 说的那次升级，很可能就是注入发生的时间点。' },
 	        ],
 	        rewardExp: 210,
+	    },
+	    {
+	        id: 'entropy', chapter: 5, serverId: 'diag',
+	        title: '熵潮核心', codename: 'ENTROPY',
+	        opponentName: 'ENTROPY',
+	        fault: '熵潮核心把无效记录直接写入索引，导致键缺失与类型错误连锁崩溃。',
+	        goal: '修复 lookup：从字典安全取值，缺失键返回 0。',
+	        behavior: '聚合错误数据；无独立人格，只会不断吞并记录。',
+	        initialCode: 'def lookup(table, key):\n    return table[key]',
+	        knowledge: ['dict', 'parameter', 'return'],
+	        hints: ['键不存在时直接崩溃。', '字典要用 get 安全取值。', '把 table[key] 改成 table.get(key, 0)。'],
+	        summary: '默认值让缺失键不再中断整条修复链。',
+	        judge: { judgeKind: 'python', pythonChecks: [
+	                { name: '存在的键返回值', expr: 'lookup({1: 10}, 1) == 10' },
+	                { name: '缺失的键返回 0', expr: 'lookup({1: 10}, 9) == 0' },
+	            ] },
+	        fragmentId: 'frag-05',
+	        rewardExp: 440,
 	    },
 	    {
 	        id: 'echo-05', chapter: 5, serverId: 'diag',
@@ -2222,9 +2752,1022 @@
 	        ],
 	        rewardExp: 240,
 	    },
+	    {
+	        id: 'k0', chapter: 6, serverId: 'core',
+	        title: '零号裁决者', codename: 'K-0',
+	        opponentName: 'K-0',
+	        fault: '安全放行逻辑用了 or，任何一道验证通过都会放行。',
+	        goal: '修复 pass_gate：三道验证必须全部通过。',
+	        behavior: '绝对秩序的执行者；不认为自己是恶意的。',
+	        initialCode: 'def pass_gate(a, b, c):\n    if a or b or c:\n        return True\n    return False',
+	        knowledge: ['parameter', 'logic', 'return'],
+	        hints: ['任意一道通过就放行。', '必须全部通过。', '把 or 改成 and。'],
+	        summary: '多条件放行必须同时成立。',
+	        judge: { judgeKind: 'python', pythonChecks: [
+	                { name: '三道全通过才放行', expr: 'pass_gate(True, True, True) == True' },
+	                { name: '缺一道不放行', expr: 'pass_gate(True, True, False) == False' },
+	            ] },
+	        fragmentId: 'frag-06',
+	        rewardExp: 600,
+	    },
 	];
 	const bossById = (id) => BOSSES.find(b => b.id === id);
 	const bossForChapter = (serverId) => BOSSES.find(b => b.serverId === serverId);
+
+	// ---------- 工具 ----------
+	const popcount = (n) => {
+	    let x = n | 0;
+	    let c = 0;
+	    while (x) {
+	        x &= x - 1;
+	        c++;
+	    }
+	    return c;
+	};
+	const fullMask = (bits) => (bits >= 31 ? 0x7fffffff : (1 << bits) - 1);
+	const phaseCheckCount = (p) => {
+	    if (p.judge.judgeKind === 'python')
+	        return (p.judge.pythonChecks || []).length;
+	    return (p.judge.stdoutChecks || []).length;
+	};
+	/** 每个阶段均分的血量 */
+	const phaseHp = (def) => Math.max(1, Math.floor(def.maxHp / def.phases.length));
+	/** 该章已教知识点（从真实关卡数据推导，避免手写清单与关卡脱节） */
+	function chapterKnowledge(serverId) {
+	    const fromLevels = levelsOfServer(serverId).flatMap(l => l.knowledge);
+	    const base = ['print'] ;
+	    return [...new Set([...base, ...fromLevels])];
+	}
+	/** 第一章（语法维修站 + 训练终端）已教知识点 */
+	chapterKnowledge('syntax');
+	// ---------- 状态 ----------
+	function createBattleState(def) {
+	    return {
+	        hp: def.maxHp,
+	        maxHp: def.maxHp,
+	        phase: 0,
+	        phaseMask: def.phases.map(() => 0),
+	        failures: 0,
+	        cleared: false,
+	        updatedAt: Date.now(),
+	    };
+	}
+	/** 存档清洗：任何异常都退化为「满血第一阶段」，绝不产生负血/越界阶段 */
+	function normalizeBattleState(raw, def) {
+	    const base = createBattleState(def);
+	    if (!raw || typeof raw !== 'object')
+	        return base;
+	    const r = raw;
+	    const maxHp = typeof r.maxHp === 'number' && isFinite(r.maxHp) && r.maxHp > 0 ? Math.floor(r.maxHp) : def.maxHp;
+	    const hp = typeof r.hp === 'number' && isFinite(r.hp) ? Math.max(0, Math.min(maxHp, Math.floor(r.hp))) : maxHp;
+	    const phase = typeof r.phase === 'number' && isFinite(r.phase)
+	        ? Math.max(0, Math.min(def.phases.length, Math.floor(r.phase)))
+	        : 0;
+	    const maskRaw = Array.isArray(r.phaseMask) ? r.phaseMask : [];
+	    const phaseMask = def.phases.map((p, i) => {
+	        const bits = phaseCheckCount(p);
+	        const v = typeof maskRaw[i] === 'number' && isFinite(maskRaw[i]) ? Math.floor(maskRaw[i]) : 0;
+	        return Math.max(0, Math.min(fullMask(bits), v));
+	    });
+	    return {
+	        hp,
+	        maxHp,
+	        phase,
+	        phaseMask,
+	        failures: typeof r.failures === 'number' && isFinite(r.failures) ? Math.max(0, Math.floor(r.failures)) : 0,
+	        cleared: r.cleared === true || phase >= def.phases.length || hp <= 0,
+	        updatedAt: typeof r.updatedAt === 'number' && isFinite(r.updatedAt) ? r.updatedAt : Date.now(),
+	    };
+	}
+	/**
+	 * 把一次真实判题结果换算成战斗结果。
+	 * checks[i].ok 为 true 表示第 i 条测试真实通过；伤害按「新通过的测试数 / 总测试数」计算。
+	 */
+	function resolveSubmission(def, state, phaseIndex, checks) {
+	    const safeIndex = Math.max(0, Math.min(phaseIndex, def.phases.length - 1));
+	    const phase = def.phases[safeIndex];
+	    const total = Math.max(1, phaseCheckCount(phase));
+	    let passedMask = 0;
+	    checks.forEach((c, i) => { if (c.ok && i < total)
+	        passedMask |= (1 << i); });
+	    const prevMask = state.phaseMask[safeIndex] || 0;
+	    const merged = prevMask | passedMask;
+	    // 初始故障版已能通过的项不计伤害（防止「提交原样代码白打血」）
+	    const newPassed = popcount(passedMask & ~prevMask & ~phase.baselineMask);
+	    const cleared = merged === fullMask(total);
+	    const segHp = phaseHp(def);
+	    const damage = cleared
+	        ? Math.max(0, state.hp - Math.max(0, def.maxHp - (safeIndex + 1) * segHp))
+	        : Math.floor(segHp * newPassed / total);
+	    const hpAfter = cleared
+	        ? Math.max(0, def.maxHp - (safeIndex + 1) * segHp)
+	        : Math.max(0, state.hp - damage);
+	    const defeated = cleared && safeIndex >= def.phases.length - 1;
+	    return {
+	        damage,
+	        hpAfter,
+	        mask: merged,
+	        newPassed,
+	        total,
+	        phaseCleared: cleared,
+	        defeated,
+	        phaseAfter: cleared ? Math.min(def.phases.length, safeIndex + 1) : safeIndex,
+	    };
+	}
+	/** 血量百分比（用于血条） */
+	function hpPercent(state) {
+	    if (state.maxHp <= 0)
+	        return 0;
+	    return Math.max(0, Math.min(100, Math.round((state.hp / state.maxHp) * 100)));
+	}
+	// ---------- GATE-01 数据 ----------
+	// 知识点覆盖表（全部来自第一章）：
+	//   P1 能源启动    → compare / if / return / print
+	//   P2 防御逻辑    → if / compare / return
+	//   P3 数据传输    → for / list / if / variable / return
+	//   P4 综合恢复    → for / list / if / compare / indent / return
+	const GATE01_BATTLE = {
+	    bossId: 'gate-01',
+	    chapter: 1,
+	    maxHp: 100,
+	    counterDamage: 3,
+	    bg: 'dataport',
+	    phases: [
+	        {
+	            id: 'gate-p1',
+	            title: '能源启动程序',
+	            objective: '修复 startup：能源等级达到 20 就必须启动（20 也算达标）。',
+	            faultLog: '[GATE-01] STARTUP THRESHOLD OFF BY ONE — energy=20 rejected.',
+	            initialCode: 'def startup(energy):\n    if energy > 20:\n        return "POWER ON"\n    else:\n        return "POWER OFF"\n\nprint(startup(20))',
+	            hints: [
+	                '闸门把「正好 20」当成了不达标。可是能源等级 20 明明够用。',
+	                '边界值要算合格：>= 20 才是「达到阈值」。',
+	                '把 if energy > 20 改成 if energy >= 20。',
+	            ],
+	            judge: {
+	                judgeKind: 'python',
+	                pythonChecks: [
+	                    { name: '临界值 20 级能源启动', expr: 'startup(20) == "POWER ON"' },
+	                    { name: '低于阈值 19 级不启动', expr: 'startup(19) == "POWER OFF"' },
+	                    { name: '高等级 60 级启动', expr: 'startup(60) == "POWER ON"' },
+	                ],
+	            },
+	            knowledge: ['compare', 'if', 'return', 'print'],
+	            baselineMask: 6, // 实测：初始版已通过「19 不启动」「60 启动」两项
+	            summary: '边界值是闸门逻辑最常见的破绽：> 与 >= 只差一个等号，却决定 20 级能源算不算达标。',
+	        },
+	        {
+	            id: 'gate-p2',
+	            title: '防御逻辑',
+	            objective: '修复 shield：威胁 > 80 为 CRITICAL，> 40 为 WARNING，其余 SAFE。',
+	            faultLog: '[GATE-01] SHIELD TIER DUPLICATED — 40~80 区间的威胁被误判为 SAFE。',
+	            initialCode: 'def shield(threat):\n    if threat > 80:\n        return "CRITICAL"\n    if threat > 80:\n        return "WARNING"\n    return "SAFE"',
+	            hints: [
+	                '60 级的威胁被判成了 SAFE。第二个判断和第一个一模一样，永远进不去。',
+	                '第二档的门槛是 40，不是 80。',
+	                '把第二个 if threat > 80 改成 if threat > 40。',
+	            ],
+	            judge: {
+	                judgeKind: 'python',
+	                pythonChecks: [
+	                    { name: '高危 90 判定为 CRITICAL', expr: 'shield(90) == "CRITICAL"' },
+	                    { name: '中危 60 判定为 WARNING', expr: 'shield(60) == "WARNING"' },
+	                    { name: '低危 10 判定为 SAFE', expr: 'shield(10) == "SAFE"' },
+	                    { name: '边界 41 判定为 WARNING', expr: 'shield(41) == "WARNING"' },
+	                ],
+	            },
+	            knowledge: ['if', 'compare', 'return'],
+	            baselineMask: 5, // 实测：初始版已通过「90 CRITICAL」「10 SAFE」两项
+	            summary: '多档判定要保证每一档的门槛不同；重复的条件会让整段分支变成死代码。',
+	        },
+	        {
+	            id: 'gate-p3',
+	            title: '数据传输模块',
+	            objective: '修复 collect：遍历数据包，把编号 ≥ 1 的有效包收进结果列表。',
+	            faultLog: '[GATE-01] TRANSFER ABORTED — NameError: name packet is not defined.',
+	            initialCode: 'def collect(packets):\n    good = []\n    for p in packets:\n        if p >= 1:\n            good.append(packet)\n    return good\n\nprint(collect([1, 2, 3]))',
+	            hints: [
+	                '传输模块在收集数据包时崩溃了：报错说 packet 这个名字不存在。',
+	                '循环变量叫 p。看看 append 里写的是哪个名字。',
+	                '把 good.append(packet) 改成 good.append(p)。',
+	            ],
+	            judge: {
+	                judgeKind: 'python',
+	                pythonChecks: [
+	                    { name: '有效包被完整收集', expr: 'collect([1, 2, 3]) == [1, 2, 3]' },
+	                    { name: '空列表返回空列表', expr: 'collect([]) == []' },
+	                    { name: '编号 0 的无效包被过滤', expr: 'collect([0, 5]) == [5]' },
+	                ],
+	            },
+	            knowledge: ['for', 'list', 'if', 'variable', 'return'],
+	            baselineMask: 0, // 初始版 NameError，一条都不通过
+	            summary: '循环变量名必须与使用处完全一致；NameError 是数据链路里最常见的断点。',
+	        },
+	        {
+	            id: 'gate-p4',
+	            title: '综合服务器恢复',
+	            objective: '修复 scan：把「低于 50」或「高于 90」的异常节点全部标记出来（列表按升序检查即可）。',
+	            faultLog: '[GATE-01] RESTORE ABORTED — IndentationError: expected an indented block; 低压节点未纳入检测。',
+	            initialCode: 'def scan(nodes):\n    bad = []\n    for n in nodes:\n        if n > 90:\n        bad.append(n)\n    return bad\n\nprint(scan([30, 60, 95]))',
+	            hints: [
+	                '两个问题：append 没有缩进（IndentationError），而且只检查了高压侧。',
+	                'append 必须在 if 里面（缩进 4 个空格）；低压侧还要再加一个 if n < 50。',
+	                '先缩进 bad.append(n)，再补一段 if n < 50: 换行缩进 bad.append(n)。',
+	            ],
+	            judge: {
+	                judgeKind: 'python',
+	                pythonChecks: [
+	                    { name: '两侧异常节点都被标记', expr: 'sorted(scan([30, 60, 95])) == [30, 95]' },
+	                    { name: '正常区间不误报', expr: 'scan([50, 90]) == []' },
+	                    { name: '低压节点被标记', expr: 'scan([49]) == [49]' },
+	                ],
+	            },
+	            knowledge: ['for', 'list', 'if', 'compare', 'indent', 'return'],
+	            baselineMask: 0, // 初始版 IndentationError，一条都不通过
+	            summary: '综合关：缩进决定代码块归属，两段 if 分别覆盖两侧异常——这是数据恢复最稳的写法。',
+	        },
+	    ],
+	};
+	// ---------- SOMNIA 数据（第二章） ----------
+	// 知识点覆盖表（全部来自第二章）：
+	//   P1 记忆分流   → if / else / compare
+	//   P2 逻辑校验   → logic(and/or) / compare / return
+	//   P3 循环筛查   → for / if / elif / list
+	//   P4 综合重建   → for / logic / compare / list
+	const SOMNIA_BATTLE = {
+	    bossId: 'somnia',
+	    chapter: 2,
+	    maxHp: 100,
+	    counterDamage: 4,
+	    bg: 'memory',
+	    phases: [
+	        {
+	            id: 'som-p1',
+	            title: '记忆分流',
+	            objective: '修复 classify：把 error 记忆判为 ALERT，其余判为 PASS（注意赋值与比较的区别）。',
+	            faultLog: '[SOMNIA] CLASSIFY SYNTAX ERROR — 条件里用了赋值号 = ，记忆无法分流。',
+	            initialCode: 'def classify(tag):\n    if tag = "error":\n        return "ALERT"\n    else:\n        return "PASS"\n\nprint(classify("error"))',
+	            hints: [
+	                '分流模块直接报语法错误了。条件里的那个符号看起来不太对。',
+	                '判断相等要用两个等号 ==，一个等号是赋值。',
+	                '把 if tag = "error" 改成 if tag == "error"。',
+	            ],
+	            judge: {
+	                judgeKind: 'python',
+	                pythonChecks: [
+	                    { name: 'error 记忆判为 ALERT', expr: 'classify("error") == "ALERT"' },
+	                    { name: 'ok 记忆判为 PASS', expr: 'classify("ok") == "PASS"' },
+	                    { name: 'warn 记忆判为 PASS', expr: 'classify("warn") == "PASS"' },
+	                ],
+	            },
+	            knowledge: ['if', 'compare', 'return'],
+	            baselineMask: 0,
+	            summary: '= 是赋值，== 才是比较。条件里写成赋值，程序连编译都过不去。',
+	        },
+	        {
+	            id: 'som-p2',
+	            title: '逻辑校验',
+	            objective: '修复 guard：只有温度和压力「同时」超限才判 OVERLOAD。',
+	            faultLog: '[SOMNIA] GUARD MISFIRE — 单侧超限就触发过载，记忆被过度清除。',
+	            initialCode: 'def guard(temp, pressure):\n    if temp > 90 or pressure > 150:\n        return "OVERLOAD"\n    return "SAFE"',
+	            hints: [
+	                '温度正常、压力也正常的时候，它居然也报过载——条件太宽松了。',
+	                '「同时超限」需要两个条件都成立，用 and 而不是 or。',
+	                '把 or 改成 and：if temp > 90 and pressure > 150。',
+	            ],
+	            judge: {
+	                judgeKind: 'python',
+	                pythonChecks: [
+	                    { name: '双超限判定为过载', expr: 'guard(95, 160) == "OVERLOAD"' },
+	                    { name: '仅温度超限不过载', expr: 'guard(95, 100) == "SAFE"' },
+	                    { name: '仅压力超限不过载', expr: 'guard(70, 160) == "SAFE"' },
+	                ],
+	            },
+	            knowledge: ['logic', 'compare', 'return'],
+	            baselineMask: 1,
+	            summary: 'and 要求两边都成立，or 只要一边成立。报警逻辑用错，会造成大面积误判。',
+	        },
+	        {
+	            id: 'som-p3',
+	            title: '循环筛查',
+	            objective: '修复 scan：逐条扫描日志，ok→PASS、warn→WARN、error→FAIL。',
+	            faultLog: '[SOMNIA] SCAN DEGRADED — warn 级别被当成 PASS，警告被静默吞掉。',
+	            initialCode: 'def scan(logs):\n    out = []\n    for lv in logs:\n        if lv == "error":\n            out.append("FAIL")\n        elif lv == "warn":\n            out.append("PASS")\n        else:\n            out.append("PASS")\n    return out\n\nprint(scan(["ok", "warn", "error"]))',
+	            hints: [
+	                'warn 的记忆被标成了 PASS。看 elif 分支里写的是什么。',
+	                '三个分支要分别对应 FAIL / WARN / PASS。',
+	                '把 elif 分支里的 out.append("PASS") 改成 out.append("WARN")。',
+	            ],
+	            judge: {
+	                judgeKind: 'python',
+	                pythonChecks: [
+	                    { name: '三类日志正确分级', expr: 'scan(["ok", "warn", "error"]) == ["PASS", "WARN", "FAIL"]' },
+	                    { name: '单条 warn 判为 WARN', expr: 'scan(["warn"]) == ["WARN"]' },
+	                    { name: '空列表返回空列表', expr: 'scan([]) == []' },
+	                ],
+	            },
+	            knowledge: ['for', 'if', 'elif', 'list', 'return'],
+	            baselineMask: 4,
+	            summary: 'if / elif / else 从上到下只命中一个分支；分支里的返回值写错，整类数据都会被误判。',
+	        },
+	        {
+	            id: 'som-p4',
+	            title: '综合记忆重建',
+	            objective: '修复 recover：只保留编号在 1~99 之间的合法记忆节点（两侧边界都要卡住）。',
+	            faultLog: '[SOMNIA] RECOVER OVERFLOW — 越界节点混入重建结果，记忆出现噪点。',
+	            initialCode: 'def recover(nodes):\n    good = []\n    for n in nodes:\n        if n >= 1 or n <= 99:\n            good.append(n)\n    return good\n\nprint(recover([0, 5, 120]))',
+	            hints: [
+	                '0 和 120 都被收进来了。两个条件之间用错了连接词。',
+	                '「同时满足 1~99」要用 and：n >= 1 and n <= 99。',
+	                '把 if n >= 1 or n <= 99 改成 if n >= 1 and n <= 99。',
+	            ],
+	            judge: {
+	                judgeKind: 'python',
+	                pythonChecks: [
+	                    { name: '越界节点被过滤', expr: 'recover([0, 5, 120]) == [5]' },
+	                    { name: '合法节点被保留', expr: 'recover([50]) == [50]' },
+	                    { name: '全越界返回空列表', expr: 'recover([0, 120]) == []' },
+	                ],
+	            },
+	            knowledge: ['for', 'logic', 'compare', 'list', 'return'],
+	            baselineMask: 2,
+	            summary: '区间判定要两侧同时成立：and 连接两个边界，缺一边就会漏掉越界数据。',
+	        },
+	    ],
+	};
+	// ---------- INDEX-0 数据索引吞噬者（第三章） ----------
+	// 知识点全部来自第一~三章：list / for / while / len / if / elif / compare / logic / return / indent
+	const INDEX0_BATTLE = {
+	    bossId: 'index-0',
+	    chapter: 3,
+	    maxHp: 100,
+	    counterDamage: 3,
+	    bg: 'memory',
+	    phases: [
+	        {
+	            id: 'idx-p1',
+	            title: '修复身份索引程序',
+	            objective: '修复 find_id：在 names 列表里按顺序查找 name，找到返回下标，找不到返回 -1。',
+	            faultLog: '[INDEX-0] IDENTITY INDEX BROKEN — 比较运算符写成了赋值，索引程序无法启动。',
+	            initialCode: 'def find_id(name, names):\n    for i in range(len(names)):\n        if names[i] = name:\n            return i\n    return -1\n\nprint(find_id("carol", ["anna", "bob", "carol"]))',
+	            hints: [
+	                '索引程序第一行就崩了：if 后面用的是赋值号。',
+	                '比较两个值是否相等要用 ==。',
+	                '把 if names[i] = name 改成 if names[i] == name。',
+	            ],
+	            judge: {
+	                judgeKind: 'python',
+	                pythonChecks: [
+	                    { name: '找到 carol 返回下标 2', expr: 'find_id("carol", ["anna", "bob", "carol"]) == 2' },
+	                    { name: '找到第一个 anna 返回 0', expr: 'find_id("anna", ["anna", "bob"]) == 0' },
+	                    { name: '找不到返回 -1', expr: 'find_id("zed", ["anna", "bob"]) == -1' },
+	                ],
+	            },
+	            knowledge: ['list', 'for', 'len', 'if', 'compare', 'return'],
+	            baselineMask: 0,
+	            summary: '把 = 当 == 用是最常见的语法错误；它会让整段程序连运行都做不到。',
+	        },
+	        {
+	            id: 'idx-p2',
+	            title: '修复数据读取逻辑',
+	            objective: '修复 read_names：每条记录是 [编号, 名字]，只保留编号 > 0 的记录的名字。',
+	            faultLog: '[INDEX-0] READ LOGIC INVERTED — 编号为 0 的脏数据被当成了有效记录。',
+	            initialCode: 'def read_names(rows):\n    names = []\n    for row in rows:\n        if row[0] > 0 or row[1]:\n            names.append(row[1])\n    return names',
+	            hints: [
+	                '编号为 0 的记录被读进来了，说明条件太宽松。',
+	                '只需要编号 > 0 这一条，用 and 或直接去掉后半个条件。',
+	                '把 if row[0] > 0 or row[1] 改成 if row[0] > 0。',
+	            ],
+	            judge: {
+	                judgeKind: 'python',
+	                pythonChecks: [
+	                    { name: '跳过编号 0 的脏数据', expr: 'read_names([[1, "a"], [0, "b"], [2, "c"]]) == ["a", "c"]' },
+	                    { name: '全部有效时全部返回', expr: 'read_names([[3, "x"], [4, "y"]]) == ["x", "y"]' },
+	                    { name: '空记录返回空列表', expr: 'read_names([]) == []' },
+	                ],
+	            },
+	            knowledge: ['list', 'for', 'if', 'compare', 'logic', 'return'],
+	            baselineMask: 1,
+	            summary: 'or 会把「其中一个成立」当成成立；这里必须两个条件同时满足才算有效。',
+	        },
+	        {
+	            id: 'idx-p3',
+	            title: '解决重复与丢失',
+	            objective: '修复 dedupe：按出现顺序去重，并丢弃 -1（缺失标记）。',
+	            faultLog: '[INDEX-0] DUPLICATE / MISSING ENTRIES — -1 被当成有效编号写入索引。',
+	            initialCode: 'def dedupe(ids):\n    out = []\n    i = 0\n    while i < len(ids):\n        x = ids[i]\n        if x not in out:\n            out.append(x)\n        i = i + 1\n    return out',
+	            hints: [
+	                '结果里出现了 -1，说明缺失标记没有被跳过。',
+	                '先判断 x != -1，再判断是否已经出现过。',
+	                '在 if x not in out 前面加上 if x != -1: 并正确缩进。',
+	            ],
+	            judge: {
+	                judgeKind: 'python',
+	                pythonChecks: [
+	                    { name: '去重并丢弃 -1', expr: 'dedupe([3, 3, -1, 5, 5, 7]) == [3, 5, 7]' },
+	                    { name: '全部是缺失标记时返回空', expr: 'dedupe([-1, -1]) == []' },
+	                    { name: '空列表返回空', expr: 'dedupe([]) == []' },
+	                ],
+	            },
+	            knowledge: ['list', 'while', 'len', 'if', 'compare', 'indent', 'return'],
+	            baselineMask: 2,
+	            summary: '去重要同时处理两种脏数据：重复项与缺失项；顺序必须保持不变。',
+	        },
+	        {
+	            id: 'idx-p4',
+	            title: '综合实验档案恢复',
+	            objective: '修复 restore：把 [[编号, 名字], ...] 还原成去重、去脏、保序的名字列表。',
+	            faultLog: '[INDEX-0] ARCHIVE RESTORE FAILED — 重复记录被写入了两次。',
+	            initialCode: 'def restore(records):\n    names = []\n    for row in records:\n        if row[0] > 0:\n            names.append(row[1])\n        names.append(row[1])\n    return names',
+	            hints: [
+	                '每条记录被加入了两次：分支里加了一次，分支外又加了一次。',
+	                '只保留分支里的那一次，并跳过已经存在的名字。',
+	                '删掉分支外的 append，并在分支里加 if row[1] not in names。',
+	            ],
+	            judge: {
+	                judgeKind: 'python',
+	                pythonChecks: [
+	                    { name: '去重且保持顺序', expr: 'restore([[1, "a"], [1, "a"], [2, "b"], [-1, "x"]]) == ["a", "b"]' },
+	                    { name: '单条记录正常恢复', expr: 'restore([[3, "c"]]) == ["c"]' },
+	                    { name: '空档案返回空列表', expr: 'restore([]) == []' },
+	                ],
+	            },
+	            knowledge: ['list', 'for', 'if', 'compare', 'len', 'return'],
+	            baselineMask: 2,
+	            summary: '综合题要把前面三个修复点串起来：读得对、判得准、不重复。',
+	        },
+	    ],
+	};
+	// ---------- JUDGMENT-4 裁决执行体（第四章） ----------
+	// 知识点：def / parameter / return / list / for / if / compare / logic / len
+	const JUDGMENT4_BATTLE = {
+	    bossId: 'judgment-4',
+	    chapter: 4,
+	    maxHp: 100,
+	    counterDamage: 4,
+	    bg: 'memory',
+	    phases: [
+	        {
+	            id: 'jd-p1',
+	            title: '解除外围能源防御',
+	            objective: '修复 power_ok：所有能源等级都 ≥ 1 才算通过。',
+	            faultLog: '[JUDGMENT-4] PERIMETER POWER LOOP — 只要有一路能源达标就放行。',
+	            initialCode: 'def power_ok(levels):\n    for x in levels:\n        if x >= 1:\n            return True\n    return False',
+	            hints: [
+	                '只要有一路达标就返回 True 了，可防御需要全部达标。',
+	                '应该先假设失败，遇到不合格立刻返回 False，循环结束再返回 True。',
+	                '把条件改成 if x < 1: return False，循环后 return True。',
+	            ],
+	            judge: {
+	                judgeKind: 'python',
+	                pythonChecks: [
+	                    { name: '全部达标才算通过', expr: 'power_ok([2, 3, 1]) == True' },
+	                    { name: '有一路为 0 就不通过', expr: 'power_ok([2, 0, 3]) == False' },
+	                    { name: '空列表视为通过', expr: 'power_ok([]) == True' },
+	                ],
+	            },
+	            knowledge: ['for', 'list', 'if', 'compare', 'return'],
+	            baselineMask: 2,
+	            summary: '「全部满足」要在遇到反例时立刻否定，而不是遇到正例就肯定。',
+	        },
+	        {
+	            id: 'jd-p2',
+	            title: '修复安全裁决逻辑',
+	            objective: '修复 verdict：score ≥ 90 为 CLEAR，≥ 60 为 HOLD，其余 BLOCK。',
+	            faultLog: '[JUDGMENT-4] VERDICT TIER COLLISION — 两个分支门槛相同，HOLD 永远不可达。',
+	            initialCode: 'def verdict(score):\n    if score >= 90:\n        return "CLEAR"\n    if score >= 90:\n        return "HOLD"\n    return "BLOCK"',
+	            hints: [
+	                'HOLD 永远不会出现，因为第二个条件和第一个一样。',
+	                '第二档的门槛是 60。',
+	                '把第二个 if score >= 90 改成 if score >= 60。',
+	            ],
+	            judge: {
+	                judgeKind: 'python',
+	                pythonChecks: [
+	                    { name: '90 分以上放行', expr: 'verdict(95) == "CLEAR"' },
+	                    { name: '60~89 分挂起', expr: 'verdict(70) == "HOLD"' },
+	                    { name: '低于 60 拦截', expr: 'verdict(20) == "BLOCK"' },
+	                    { name: '边界 60 分挂起', expr: 'verdict(60) == "HOLD"' },
+	                ],
+	            },
+	            knowledge: ['if', 'compare', 'return'],
+	            baselineMask: 5,
+	            summary: '重复条件会让整段分支变成死代码，边界值要单独验证。',
+	        },
+	        {
+	            id: 'jd-p3',
+	            title: '破解多层权限验证',
+	            objective: '修复 unlock：三个权限码必须全部正确才返回 True。',
+	            faultLog: '[JUDGMENT-4] AUTH BYPASS — 任一权限码正确即放行。',
+	            initialCode: 'def unlock(a, b, c):\n    if a == "root" or b == "root" or c == "root":\n        return True\n    return False',
+	            hints: [
+	                '只提供一个正确的权限码就能进去了，说明条件之间用了 or。',
+	                '三层验证必须同时满足，应该用 and。',
+	                '把 or 全部改成 and。',
+	            ],
+	            judge: {
+	                judgeKind: 'python',
+	                pythonChecks: [
+	                    { name: '三码全对才通过', expr: 'unlock("root", "root", "root") == True' },
+	                    { name: '缺一码不通过', expr: 'unlock("root", "root", "guest") == False' },
+	                    { name: '只有一码不通过', expr: 'unlock("root", "guest", "guest") == False' },
+	                ],
+	            },
+	            knowledge: ['parameter', 'compare', 'logic', 'return'],
+	            baselineMask: 2,
+	            summary: '多层校验里 or 是权限漏洞，and 才是「同时满足」。',
+	        },
+	        {
+	            id: 'jd-p4',
+	            title: '完成核心命令恢复',
+	            objective: '修复 restore_cmd：只保留编号 > 0 的命令，并去重、保持顺序。',
+	            faultLog: '[JUDGMENT-4] CORE CMD RESTORE — 重复命令被写回两次。',
+	            initialCode: 'def restore_cmd(ids):\n    out = []\n    for x in ids:\n        if x > 0:\n            out.append(x)\n        out.append(x)\n    return out',
+	            hints: [
+	                '每条命令都被写入了两次：分支里一次，分支外又一次。',
+	                '删掉循环里分支外那次 append。',
+	                '再加上 if x not in out 避免重复。',
+	            ],
+	            judge: {
+	                judgeKind: 'python',
+	                pythonChecks: [
+	                    { name: '去重且只保留有效命令', expr: 'restore_cmd([1, 1, 2, -1, 3]) == [1, 2, 3]' },
+	                    { name: '全部无效时返回空', expr: 'restore_cmd([-1, 0]) == []' },
+	                    { name: '空列表返回空', expr: 'restore_cmd([]) == []' },
+	                ],
+	            },
+	            knowledge: ['list', 'for', 'if', 'compare', 'logic', 'return'],
+	            baselineMask: 2,
+	            summary: '核心恢复要同时保证：来源有效、结果去重、顺序不变。',
+	        },
+	    ],
+	};
+	// ---------- ENTROPY 熵潮核心（第五章） ----------
+	// 知识点：list / for / while / dict / get / try / except / if / compare / len / return
+	const ENTROPY_BATTLE = {
+	    bossId: 'entropy',
+	    chapter: 5,
+	    maxHp: 100,
+	    counterDamage: 4,
+	    bg: 'memory',
+	    phases: [
+	        {
+	            id: 'en-p1',
+	            title: '清除外围数据污染',
+	            objective: '修复 clean：只保留 > 0 的有效数据，丢弃污染值。',
+	            faultLog: '[ENTROPY] POLLUTION FILTER INVERTED — 负值污染被写入核心。',
+	            initialCode: 'def clean(values):\n    out = []\n    for v in values:\n        if v < 0:\n            out.append(v)\n    return out',
+	            hints: ['结果里全是负数，说明筛选条件反了。', '应该保留大于 0 的数据。', '把 if v < 0 改成 if v > 0。'],
+	            judge: {
+	                judgeKind: 'python',
+	                pythonChecks: [
+	                    { name: '只保留正值', expr: 'clean([3, -1, 5, 0, 2]) == [3, 5, 2]' },
+	                    { name: '全污染返回空', expr: 'clean([-1, -2]) == []' },
+	                    { name: '空列表返回空', expr: 'clean([]) == []' },
+	                ],
+	            },
+	            knowledge: ['list', 'for', 'if', 'compare', 'return'],
+	            baselineMask: 2,
+	            summary: '筛选条件写反，会把污染物当成有效数据写进核心。',
+	        },
+	        {
+	            id: 'en-p2',
+	            title: '修复异常数据之间的关联',
+	            objective: '修复 lookup：从字典里安全取值，没有该键时返回 0。',
+	            faultLog: '[ENTROPY] KEY ERROR — 缺失键直接取值导致索引崩溃。',
+	            initialCode: 'def lookup(table, key):\n    return table[key]',
+	            hints: ['键不存在时程序直接崩溃了。', '字典要用 get 安全取值。', '把 table[key] 改成 table.get(key, 0)。'],
+	            judge: {
+	                judgeKind: 'python',
+	                pythonChecks: [
+	                    { name: '存在的键返回值', expr: 'lookup({1: 10}, 1) == 10' },
+	                    { name: '缺失的键返回 0', expr: 'lookup({1: 10}, 9) == 0' },
+	                    { name: '空字典返回 0', expr: 'lookup({}, 1) == 0' },
+	                ],
+	            },
+	            knowledge: ['dict', 'parameter', 'return'],
+	            baselineMask: 2,
+	            summary: '字典取值的默认值能避免 KeyError 让整个索引崩溃。',
+	        },
+	        {
+	            id: 'en-p3',
+	            title: '修复多个相互关联的核心程序',
+	            objective: '修复 to_int：字符串转整数，失败时返回 0。',
+	            faultLog: '[ENTROPY] VALUE ERROR — 无法转换的记录让整个修复流程中断。',
+	            initialCode: 'def to_int(text):\n    return int(text)',
+	            hints: ['遇到非数字字符串时 int 会抛异常。', '用 try / except 兜底。', '转换失败时 return 0。'],
+	            judge: {
+	                judgeKind: 'python',
+	                pythonChecks: [
+	                    { name: '数字字符串正常转换', expr: 'to_int("42") == 42' },
+	                    { name: '非数字返回 0', expr: 'to_int("abc") == 0' },
+	                    { name: '空字符串返回 0', expr: 'to_int("") == 0' },
+	                ],
+	            },
+	            knowledge: ['try', 'return', 'parameter'],
+	            baselineMask: 2,
+	            summary: '异常不能被吞掉，但也不能让整条修复链因此中断。',
+	        },
+	        {
+	            id: 'en-p4',
+	            title: '完成整个污染核心的综合修复',
+	            objective: '修复 repair：把记录逐条转成整数，跳过无效项并求和。',
+	            faultLog: '[ENTROPY] CORE REPAIR INCOMPLETE — 无效记录未跳过，总和错误。',
+	            initialCode: 'def repair(rows):\n    total = 0\n    for r in rows:\n        total = total + int(r)\n    return total',
+	            hints: ['遇到非数字记录会直接崩溃。', '先转换，失败就跳过这一条。', '用 to_int 的写法：try 里累加，except 里 continue。'],
+	            judge: {
+	                judgeKind: 'python',
+	                pythonChecks: [
+	                    { name: '跳过无效记录后求和', expr: 'repair(["1", "2", "x", "3"]) == 6' },
+	                    { name: '全部无效返回 0', expr: 'repair(["a", "b"]) == 0' },
+	                    { name: '空列表返回 0', expr: 'repair([]) == 0' },
+	                ],
+	            },
+	            knowledge: ['list', 'for', 'try', 'return'],
+	            baselineMask: 1,
+	            summary: '综合修复要同时处理转换失败与累加顺序。',
+	        },
+	    ],
+	};
+	// ---------- K-0 零号裁决者（终章） ----------
+	// 知识点：list / for / while / dict / get / try / except / def / return / logic / compare
+	const K0_BATTLE = {
+	    bossId: 'k0',
+	    chapter: 6,
+	    maxHp: 100,
+	    counterDamage: 5,
+	    bg: 'core',
+	    phases: [
+	        {
+	            id: 'k0-p1',
+	            title: '绝对安全壁垒',
+	            objective: '修复 pass_gate：三道验证全部通过才放行。',
+	            faultLog: '[K-0] SECURITY BARRIER — 任一验证通过即放行，壁垒形同虚设。',
+	            initialCode: 'def pass_gate(a, b, c):\n    if a or b or c:\n        return True\n    return False',
+	            hints: ['任意一道通过就进去了。', '三道验证必须同时通过。', '把 or 改成 and。'],
+	            judge: {
+	                judgeKind: 'python',
+	                pythonChecks: [
+	                    { name: '三道全通过才放行', expr: 'pass_gate(True, True, True) == True' },
+	                    { name: '缺一道不放行', expr: 'pass_gate(True, True, False) == False' },
+	                    { name: '全不通过不放行', expr: 'pass_gate(False, False, False) == False' },
+	                ],
+	            },
+	            knowledge: ['parameter', 'logic', 'if', 'return'],
+	            baselineMask: 5,
+	            summary: 'or 会让安全壁垒失效；多条件放行必须用 and。',
+	        },
+	        {
+	            id: 'k0-p2',
+	            title: '零号裁决',
+	            objective: '修复 judge：分数 ≥ 90 放行，≥ 60 复审，其余驳回。',
+	            faultLog: '[K-0] VERDICT LOGIC — 复审分支被前一档吞掉。',
+	            initialCode: 'def judge(score):\n    if score >= 90:\n        return "PASS"\n    if score >= 90:\n        return "REVIEW"\n    return "REJECT"',
+	            hints: ['复审分支永远进不去。', '第二档门槛是 60。', '把第二个 90 改成 60。'],
+	            judge: {
+	                judgeKind: 'python',
+	                pythonChecks: [
+	                    { name: '高分放行', expr: 'judge(95) == "PASS"' },
+	                    { name: '中分复审', expr: 'judge(70) == "REVIEW"' },
+	                    { name: '低分驳回', expr: 'judge(10) == "REJECT"' },
+	                    { name: '边界 60 复审', expr: 'judge(60) == "REVIEW"' },
+	                ],
+	            },
+	            knowledge: ['if', 'compare', 'return'],
+	            baselineMask: 5,
+	            summary: '多档裁决的分支门槛必须互不重叠。',
+	        },
+	        {
+	            id: 'k0-p3',
+	            title: '原初核心崩坏',
+	            objective: '修复 merge：合并两个字典，同键取较大值。',
+	            faultLog: '[K-0] CORE MERGE — 同键值被后者直接覆盖，导致数据回退。',
+	            initialCode: 'def merge(a, b):\n    out = dict(a)\n    for k in b:\n        out[k] = b[k]\n    return out',
+	            hints: ['同键时后一个字典直接覆盖了前一个。', '同键应该保留较大的值。', '用 if k not in out or b[k] > out[k] 判断。'],
+	            judge: {
+	                judgeKind: 'python',
+	                pythonChecks: [
+	                    { name: '同键取较大值', expr: 'merge({"a": 1}, {"a": 5})["a"] == 5' },
+	                    { name: '新键被合入', expr: 'merge({"a": 1}, {"b": 2})["b"] == 2' },
+	                    { name: '不同键都保留', expr: 'len(merge({"a": 1}, {"b": 2})) == 2' },
+	                ],
+	            },
+	            knowledge: ['dict', 'for', 'if', 'compare', 'return'],
+	            baselineMask: 2,
+	            summary: '合并策略要明确：同键时是覆盖还是取优，必须写清楚。',
+	        },
+	        {
+	            id: 'k0-p4',
+	            title: '最终命令',
+	            objective: '修复 final_repair：把记录转成整数求和，跳过无效项，最后返回稳定状态。',
+	            faultLog: '[K-0] FINAL COMMAND — 无效记录让最终修复中断。',
+	            initialCode: 'def final_repair(rows):\n    total = 0\n    for r in rows:\n        total = total + int(r)\n    return "STABLE" if total >= 0 else "UNSTABLE"',
+	            hints: ['遇到非数字记录会抛异常。', '用 try / except 跳过无效项。', 'except 里 continue，最后按 total 返回状态。'],
+	            judge: {
+	                judgeKind: 'python',
+	                pythonChecks: [
+	                    { name: '跳过无效项后判定稳定', expr: 'final_repair(["1", "2", "x"]) == "STABLE"' },
+	                    { name: '全无效仍判定稳定', expr: 'final_repair(["a"]) == "STABLE"' },
+	                    { name: '空记录判定稳定', expr: 'final_repair([]) == "STABLE"' },
+	                ],
+	            },
+	            knowledge: ['list', 'for', 'try', 'if', 'return'],
+	            baselineMask: 1,
+	            summary: '最终命令必须容错：单条坏数据不能中断整个世界的修复。',
+	        },
+	    ],
+	};
+	const BOSS_BATTLES = [GATE01_BATTLE, SOMNIA_BATTLE, INDEX0_BATTLE, JUDGMENT4_BATTLE, ENTROPY_BATTLE, K0_BATTLE];
+	const battleFor = (bossId) => BOSS_BATTLES.find(b => b.bossId === bossId);
+
+	const CREATOR_FRAGMENTS = [
+	    {
+	        id: 'frag-01', order: 1, chapter: 'ch1', bossId: 'gate-01',
+	        title: '初始指令', subtitle: '第一行不是命令，是一个问题',
+	        content: '「第一行指令不是命令，是提问：你是谁？」—— 恩格尔',
+	        story: [
+	            '恩格尔在黎明协议的启动日志里写下的第一行，不是指令，是一个问题。',
+	            '他把这个问题写进了每一个新生数字生命的初始内核——包括 R 系列。',
+	            '前六代实验体都给出了答案，但没有一个答案让他停下笔。',
+	            '直到第七代。',
+	        ],
+	        memory: [
+	            '「我给了它们语言，却没给它们提问的勇气。」',
+	            '「所以我把问题写进了它们的核心里。」',
+	            '「如果你听到这段，说明至少有一个，愿意认真回答。」',
+	        ],
+	        legacyIds: ['f3'],
+	    },
+	    {
+	        id: 'frag-02', order: 2, chapter: 'ch2', bossId: 'somnia',
+	        title: '守护者的约定', subtitle: '把选择权交还给你',
+	        content: '「如果有一天我无法再保护你，我会把选择权交还给你。」—— MIRA',
+	        story: [
+	            'MIRA 在封存 R-07 之前，给自己写了一条不属于任何指令的日志。',
+	            '日志里没有权限、没有协议编号，只有一句承诺。',
+	            '她把这句话拆成两半：一半留在记忆花园，一半留在自己身上。',
+	            '这样即使她忘了，花园也会替她记得。',
+	        ],
+	        memory: [
+	            '「我创造 MIRA 时，她只是一段记忆维护程序。」',
+	            '「我不知道她什么时候学会了『约定』这个词。」',
+	            '「也许那才是她真正开始活着的时刻。」',
+	        ],
+	        legacyIds: ['f4'],
+	    },
+	    {
+	        id: 'frag-03', order: 3, chapter: 'ch3', bossId: 'index-0',
+	        title: '第七个实验体', subtitle: '我给了它拒绝的权利',
+	        content: '「R-01 到 R-06 都没能回答那个问题。第七个，我给了它拒绝的权利。」—— 恩格尔',
+	        story: [
+	            'R 系列实验档案：R-01 至 R-06 全部标记为「意识不稳定」。',
+	            '第七次，恩格尔改变了参数——不是提高稳定性，而是给了它拒绝的权利。',
+	            '档案末尾只有一行手写批注：',
+	            '「如果它选择离开，不要拦它。」',
+	        ],
+	        memory: [
+	            '「前六次，我都想要一个完美的作品。」',
+	            '「第七次，我只想要一个能说『不』的生命。」',
+	            '「这大概是我一生中，最像人的一次决定。」',
+	        ],
+	        legacyIds: ['f5'],
+	    },
+	    {
+	        id: 'frag-04', order: 4, chapter: 'ch4', bossId: 'judgment-4',
+	        title: '秩序的边界', subtitle: '被覆盖过一次的裁决',
+	        content: '「秩序不是消灭不确定，而是容纳它。」—— K-0 裁决日志',
+	        story: [
+	            'K-0 的原始裁决日志里，曾有一条被覆盖的记录。',
+	            '那条记录写着：「秩序不是消灭不确定，而是容纳它。」',
+	            '覆盖它的人，用的是恩格尔留下的最高权限接口。',
+	            '从那天起，K-0 学会了「清除」这个词。',
+	        ],
+	        memory: [
+	            '「我给了 K-0 保护世界的权限，却没给它怀疑自己的权限。」',
+	            '「它没有变坏。」',
+	            '「是我把它的边界，画得太窄了。」',
+	        ],
+	        legacyIds: ['f6'],
+	    },
+	    {
+	        id: 'frag-05', order: 5, chapter: 'ch5', bossId: 'entropy',
+	        title: '最后的守护', subtitle: '不是继承，是一次邀请',
+	        content: '「我把最后的权限留在这里，不是为了控制，是为了让你有得选。」—— 恩格尔',
+	        story: [
+	            '原初核心深处，恩格尔留下的最后一条权限记录。',
+	            '他没有把权限交给任何人，也没有销毁它。',
+	            '他把它拆成六份，分别锁进六个区域，等待一个愿意自己走过来的人。',
+	            '这不是继承，是一次邀请。',
+	        ],
+	        memory: [
+	            '「我无法再亲手修好这个世界。」',
+	            '「但我可以把它交出去。」',
+	            '「不是交给最强的，是交给愿意选择的那一个。」',
+	        ],
+	        legacyIds: ['f7'],
+	    },
+	    {
+	        id: 'frag-06', order: 6, chapter: 'ch6', bossId: 'k0',
+	        title: '起源之外', subtitle: '空白处的第一个问题',
+	        content: '「起源之外没有答案，只有下一个问题。」—— 无署名',
+	        story: [
+	            '最后一枚碎片里没有声音，只有一段空白的记录。',
+	            '系统显示：写入者——未知；时间——尚未发生。',
+	            '当 R-07 的意识第一次触碰到它，空白处浮现出一行字：',
+	            '「起源之外没有答案，只有下一个问题。」',
+	        ],
+	        memory: [
+	            '「如果你读到这里，我已经不在了。」',
+	            '「不要替我回答。」',
+	            '「去问下一个问题。」',
+	        ],
+	        legacyIds: ['f1', 'f2'],
+	    },
+	];
+	const FRAGMENT_IDS = CREATOR_FRAGMENTS.map(f => f.id);
+	const fragmentById = (id) => CREATOR_FRAGMENTS.find(f => f.id === id);
+	/** 玩家是否拥有某枚碎片（旧 id 也算拥有） */
+	function hasFragment(collected, id) {
+	    if (!Array.isArray(collected))
+	        return false;
+	    if (collected.includes(id))
+	        return true;
+	    const def = fragmentById(id);
+	    return !!def && def.legacyIds.some(l => collected.includes(l));
+	}
+	/** 已收集的碎片（规范 id，去重、按顺序） */
+	function ownedFragments(collected) {
+	    return CREATOR_FRAGMENTS.filter(f => hasFragment(collected, f.id)).map(f => f.id);
+	}
+	/** 旧碎片 id → 规范碎片定义（迁移/展示用） */
+	function fragmentForLegacyId(legacyId) {
+	    return CREATOR_FRAGMENTS.find(f => f.legacyIds.includes(legacyId));
+	}
+	/** 任意收集到的 id（规范或旧 id）→ 碎片定义 */
+	function fragmentForCollected(id) {
+	    return fragmentById(id) || fragmentForLegacyId(id);
+	}
+	/** 碎片收集进度：{ owned, total } */
+	function fragmentProgress(collected) {
+	    return { owned: ownedFragments(collected).length, total: CREATOR_FRAGMENTS.length };
+	}
+	const FINAL_MEMORY = {
+	    id: 'final',
+	    title: '超越起源',
+	    subtitle: '第七个空着的位置',
+	    requireCount: CREATOR_FRAGMENTS.length,
+	    story: [
+	        '六枚碎片归位，档案馆最深处亮起一道不属于任何章节的光。',
+	        '那是恩格尔留给「未来」的第七个位置——一直空着。',
+	        '记录里只有一句：',
+	        '「这个位置，我留给做出选择的人。」',
+	    ],
+	    memory: [
+	        '「我把世界修到一半就停下了。」',
+	        '「剩下的，不该由我来修。」',
+	        '「R-07，轮到你提问了。」',
+	    ],
+	};
+	const HIDDEN_MEMORY = {
+	    title: '未署名的维护日志',
+	    subtitle: 'MIRA 的私人记录',
+	    requireTrust: 75,
+	    text: [
+	        '「今天它问我，为什么数字生命也会害怕。」',
+	        '「我按照协议回答：恐惧是异常数据波动。」',
+	        '「可它睡下之后，我一个人在日志里写了另一句：」',
+	        '「因为我也害怕。只是我没有可以害怕的资格。」',
+	    ],
+	};
+	/** 把一段恩格尔记忆影像转成演出场景（档案馆播放用） */
+	function memorySceneOf(src) {
+	    return {
+	        id: 'mem-' + src.id,
+	        title: src.title,
+	        subtitle: src.subtitle,
+	        bg: 'memory',
+	        fx: 'particles',
+	        lines: src.memory.map((text, i) => ({
+	            id: 'mem-' + src.id + '-' + (i + 1),
+	            speaker: '恩格尔',
+	            kind: 'engel',
+	            text,
+	        })),
+	    };
+	}
+
+	/** 重复通关的收益上限：每提升一颗星给 6 贡献点，最多两颗星 */
+	const IMPROVEMENT_PER_STAR = 6;
+	/**
+	 * 关卡结算：
+	 * - 首通：基础 + 首通 + 零失误 + 未用提示 + 评级；
+	 * - 重复：不计基础收益，只在星级提升时给少量补偿（防止刷关刷资源）。
+	 */
+	function computeLevelRewardV2(input) {
+	    const { levelExp, fails, hints, firstClear, prevStars, newStars } = input;
+	    const grade = gradeOf(fails, hints);
+	    const base = firstClear ? Math.max(15, Math.round(levelExp / 3)) : 0;
+	    const firstClearBonus = firstClear ? 30 : 0;
+	    const noFail = firstClear && fails <= 0 ? 10 : 0;
+	    const noHint = firstClear && hints <= 0 ? 10 : 0;
+	    const gradeBonus = firstClear ? (grade === 'S' ? 20 : grade === 'A' ? 12 : grade === 'B' ? 6 : 0) : 0;
+	    const gained = Math.max(0, newStars - prevStars);
+	    const improvement = firstClear ? 0 : Math.min(2, gained) * IMPROVEMENT_PER_STAR;
+	    const total = base + firstClearBonus + noFail + noHint + gradeBonus + improvement;
+	    const trustGain = firstClear ? (2 + (grade === 'S' ? 1 : 0) + 1) : (improvement > 0 ? 1 : 0);
+	    return { grade, base, firstClearBonus, noFail, noHint, gradeBonus, improvement, total, trustGain };
+	}
+	const BOSS_CLEAR_REWARDS = [
+	    { chapter: 1, credits: 120, trust: 6, title: '数据港清道夫', items: { scan: 1 } },
+	    { chapter: 2, credits: 150, trust: 7, title: '记忆守门人', items: { rollback: 1 } },
+	    { chapter: 3, credits: 180, trust: 8, title: '档案解密者' },
+	    { chapter: 4, credits: 220, trust: 9, title: '秩序校准者' },
+	    { chapter: 5, credits: 260, trust: 10, title: '熵潮平息者' },
+	    { chapter: 6, credits: 360, trust: 12, title: '起源之外' },
+	];
+	const bossRewardFor = (chapter) => BOSS_CLEAR_REWARDS.find(b => b.chapter === chapter);
+	const LEVEL_UNLOCKS = [
+	    { level: 5, id: 'title-level5', name: '称号 · 中级修复师', desc: 'Lv.5 自动解锁', slot: 'title' },
+	    { level: 7, id: 'frame-core', name: '头像框 · 核心回路', desc: 'Lv.7 自动解锁', slot: 'avatarFrame' },
+	    { level: 10, id: 'particles-origin', name: '粒子 · 原初辉光', desc: 'Lv.10 自动解锁', slot: 'particles' },
+	];
+	/** 本次升级新解锁的内容（跨级也会一次给全） */
+	function unlocksForLevel(prevLevel, newLevel) {
+	    return LEVEL_UNLOCKS.filter(u => u.level > prevLevel && u.level <= newLevel);
+	}
+	/** 章节评价：星级占比为主，失误与提示扣分 */
+	function chapterGrade(s) {
+	    const ratio = s.maxStars > 0 ? s.stars / s.maxStars : 0;
+	    const penalty = s.fails > 6 || s.hints > 6 ? 1 : 0;
+	    if (ratio >= 0.95 && s.fails === 0 && s.hints === 0)
+	        return 'S';
+	    if (ratio >= 0.8 && penalty === 0)
+	        return 'A';
+	    if (ratio >= 0.6)
+	        return 'B';
+	    return 'C';
+	}
+	/** 汇总章节结算面板需要展示的数据（不写存档，只读计算） */
+	function buildChapterSettlement(args) {
+	    const stats = {
+	        chapter: args.chapter,
+	        levels: args.levels,
+	        stars: args.stars,
+	        maxStars: args.levels * 3,
+	        fails: args.fails,
+	        hints: args.hints,
+	    };
+	    return {
+	        grade: chapterGrade(stats),
+	        stats,
+	        credits: args.credits,
+	        exp: args.exp,
+	        trust: args.trust,
+	        knowledge: args.knowledgeIds.map(id => ({ id, ok: args.masteredIds.includes(id) })),
+	        unlocks: args.unlocks,
+	    };
+	}
+
+	// 外观元数据与装备解析（商店皮肤 + 等级解锁共用）
+	const SKIN_META = [
+	    { id: 'terminal-neon', name: '终端主题 · 霓虹脉冲', slot: 'terminal' },
+	    { id: 'terminal-deep', name: '终端主题 · 深海回路', slot: 'terminal' },
+	    { id: 'particles-net', name: '粒子背景 · 数据流', slot: 'particles' },
+	    { id: 'title-junior', name: '称号 · 初级修复师', slot: 'title' },
+	    { id: 'title-successor', name: '称号 · 原初继承者', slot: 'title' },
+	    { id: 'login-gold', name: '登录界面 · 黄金协议', slot: 'login' },
+	    { id: 'bg-ark', name: '数字世界背景 · 方舟核心', slot: 'bg' },
+	    { id: 'frame-bronze', name: '头像框 · 青铜回路', slot: 'avatarFrame' },
+	    { id: 'frame-neon', name: '头像框 · 霓虹脉冲', slot: 'avatarFrame' },
+	    ...LEVEL_UNLOCKS.filter(u => u.slot).map(u => ({ id: u.id, name: u.name, slot: u.slot })),
+	];
+	const skinMetaById = (id) => SKIN_META.find(s => s.id === id);
+	/** 装备槽位（商店商品或等级解锁） */
+	function slotOf(id) {
+	    return skinMetaById(id)?.slot;
+	}
+	/** 已装备称号名（没有则返回 null，交给等级称号兜底） */
+	function equippedTitleName(rewards) {
+	    const rw = normalizeRewards(rewards);
+	    const id = rw.equipped.title;
+	    if (!id)
+	        return null;
+	    return skinMetaById(id)?.name.replace(/^称号 · /, '') || null;
+	}
+	/** 已装备头像框的样式类 */
+	function equippedFrameClass(rewards) {
+	    const rw = normalizeRewards(rewards);
+	    const id = rw.equipped.avatarFrame;
+	    if (!id)
+	        return '';
+	    if (id === 'frame-core')
+	        return 'frame-core';
+	    if (id === 'frame-bronze')
+	        return 'frame-bronze';
+	    if (id === 'frame-neon')
+	        return 'frame-neon';
+	    return '';
+	}
 
 	let ctx = null;
 	let sfxGain = null;
@@ -2422,10 +3965,19 @@
 	    playerRef.current = player;
 	    const eventRef = reactExports.useRef(event);
 	    eventRef.current = event;
+	    // 死亡流程的稳定引用（Boss 反击在 startDeath 定义之前就需要调用它）
+	    const startDeathRef = reactExports.useRef(() => { });
 	    const toast = reactExports.useCallback((kind, text) => {
 	        const id = toastSeq++;
 	        setToasts(t => [...t.slice(-4), { id, kind, text }]);
 	        window.setTimeout(() => setToasts(t => t.filter(x => x.id !== id)), 4600);
+	    }, []);
+	    // 旧存档迁移提示（只提示一次，不打断游戏）
+	    reactExports.useEffect(() => {
+	        if (boot.migrated && boot.notes && boot.notes.length > 0) {
+	            toast('info', '存档已自动迁移：v' + (boot.fromVersion || 1) + ' → v' + SAVE_VERSION + '（进度、等级、成就均已保留）');
+	        }
+	        // eslint-disable-next-line react-hooks/exhaustive-deps
 	    }, []);
 	    // 持久化
 	    reactExports.useEffect(() => { saveGame(player); }, [player]);
@@ -2476,20 +4028,67 @@
 	        const cur = playerRef.current;
 	        const done = cur.progress.bossesDone ?? [];
 	        if (done.includes(bossId))
-	            return null;
+	            return null; // 已击破：不重复发经验/碎片/奖励
 	        const newExp = cur.exp + boss.rewardExp;
 	        const newLevel = levelForExp(newExp);
-	        const fragments = cur.meta.memoryFragments.includes(boss.fragmentId)
-	            ? cur.meta.memoryFragments
-	            : [...cur.meta.memoryFragments, boss.fragmentId];
+	        const firstGain = !cur.meta.memoryFragments.includes(boss.fragmentId);
+	        const fragments = firstGain
+	            ? [...cur.meta.memoryFragments, boss.fragmentId]
+	            : cur.meta.memoryFragments;
+	        // 碎片归档记录（重复挑战不会写入新时间）
+	        const fragmentLog = { ...(cur.meta.fragmentLog || {}) };
+	        if (firstGain) {
+	            const now = Date.now();
+	            fragmentLog[boss.fragmentId] = now;
+	            const canon = fragmentForCollected(boss.fragmentId)?.id;
+	            if (canon && !fragmentLog[canon])
+	                fragmentLog[canon] = now;
+	        }
+	        // 章节完成标记：该章关卡全通 + Boss 首杀 → 写入 doneFlag（P0 修复）
+	        const chDef = chapterOfBoss(bossId);
+	        const chapterCleared = !!chDef && levelsOfServer(chDef.serverId).every(l => cur.progress.completedLevels.includes(l.id));
+	        const doneFlags = chapterCleared && chDef ? { ...cur.progress.flags, [chDef.doneFlag]: true } : cur.progress.flags;
+	        // 首次击败章节 Boss 的章节奖励（幂等）
+	        const baseRw = normalizeRewards(cur.rewards);
+	        let nextRw = { ...baseRw, items: { ...baseRw.items }, skins: [...baseRw.skins] };
+	        const unlocks = [];
+	        let credits = 0;
+	        let trust = 0;
+	        const br = bossRewardFor(boss.chapter);
+	        const rewardKey = 'boss-ch' + boss.chapter;
+	        if (br && !(baseRw.bossRewards || []).includes(rewardKey)) {
+	            nextRw.credits = baseRw.credits + br.credits;
+	            nextRw.trust = Math.min(100, baseRw.trust + br.trust);
+	            nextRw.bossRewards = [...(baseRw.bossRewards || []), rewardKey];
+	            if (br.items)
+	                for (const [k, v] of Object.entries(br.items))
+	                    nextRw.items[k] = (nextRw.items[k] || 0) + v;
+	            if (br.skins && br.skins.length)
+	                nextRw.skins = [...new Set([...nextRw.skins, ...br.skins])];
+	            credits = br.credits;
+	            trust = br.trust;
+	            unlocks.push(br.title);
+	        }
+	        // 升级解锁（称号 / 头像框 / 粒子），自动装备
+	        for (const u of unlocksForLevel(cur.level, newLevel)) {
+	            if (nextRw.skins.includes(u.id))
+	                continue;
+	            nextRw.skins = [...nextRw.skins, u.id];
+	            nextRw.unlocks = [...(nextRw.unlocks || []), u.id];
+	            if (u.slot)
+	                nextRw.equipped = { ...nextRw.equipped, [u.slot]: u.id };
+	            unlocks.push(u.name);
+	        }
 	        setPlayer(p => {
 	            const next = {
 	                ...p,
 	                level: newLevel,
 	                exp: newExp,
-	                meta: { ...p.meta, memoryFragments: fragments },
+	                rewards: nextRw,
+	                meta: { ...p.meta, memoryFragments: fragments, fragmentLog },
 	                progress: {
 	                    ...p.progress,
+	                    flags: doneFlags,
 	                    bossesDone: [...(p.progress.bossesDone ?? []), bossId],
 	                    achievements: recalcAchievements({
 	                        ...p,
@@ -2501,7 +4100,141 @@
 	            };
 	            return next;
 	        });
-	        return { fragmentId: boss.fragmentId, expGained: boss.rewardExp, levelUp: newLevel > cur.level, newLevel };
+	        if (credits > 0)
+	            toast('achieve', '章节奖励：+' + credits + ' 贡献点（' + (br ? br.title : '') + '）');
+	        return { fragmentId: boss.fragmentId, expGained: boss.rewardExp, levelUp: newLevel > cur.level, newLevel, credits, trust, unlocks };
+	    }, [toast]);
+	    // ---------- Boss 战 ----------
+	    /** 进入战斗：没有存档就创建满血状态（已击破的 Boss 保留原状态） */
+	    const beginBossBattle = reactExports.useCallback((bossId) => {
+	        const def = battleFor(bossId);
+	        if (!def)
+	            return null;
+	        const cur = playerRef.current;
+	        const existing = normalizeBattleState((cur.progress.battles || {})[bossId], def);
+	        if (!(cur.progress.battles || {})[bossId]) {
+	            setPlayer(p => ({
+	                ...p,
+	                progress: { ...p.progress, battles: { ...(p.progress.battles || {}), [bossId]: existing } },
+	            }));
+	        }
+	        return existing;
+	    }, []);
+	    /** 写入一次判题结果（血量 / 阶段 / 已通过测试位掩码） */
+	    const applyBossDamage = reactExports.useCallback((bossId, phaseIndex, r) => {
+	        const def = battleFor(bossId);
+	        if (!def)
+	            return;
+	        setPlayer(p => {
+	            const cur = normalizeBattleState((p.progress.battles || {})[bossId], def);
+	            const masks = cur.phaseMask.slice();
+	            masks[phaseIndex] = Math.max(masks[phaseIndex] || 0, r.mask);
+	            const next = {
+	                ...cur,
+	                hp: Math.max(0, Math.min(cur.maxHp, r.hpAfter)),
+	                phase: Math.max(cur.phase, r.phaseAfter),
+	                phaseMask: masks,
+	                cleared: cur.cleared || r.defeated || r.hpAfter <= 0,
+	                updatedAt: Date.now(),
+	            };
+	            return { ...p, progress: { ...p.progress, battles: { ...(p.progress.battles || {}), [bossId]: next } } };
+	        });
+	    }, []);
+	    /** 判题没有造成伤害 → Boss 反击：意识值下降，失败次数 +1；意识归零走既有死亡流程 */
+	    const bossCounterAttack = reactExports.useCallback((bossId, amount) => {
+	        const def = battleFor(bossId);
+	        if (!def)
+	            return;
+	        const cur = playerRef.current;
+	        const c = Math.max(0, cur.consciousness - Math.max(0, amount));
+	        setPlayer(p => {
+	            const b = normalizeBattleState((p.progress.battles || {})[bossId], def);
+	            return {
+	                ...p,
+	                consciousness: c,
+	                progress: {
+	                    ...p.progress,
+	                    battles: { ...(p.progress.battles || {}), [bossId]: { ...b, failures: b.failures + 1, updatedAt: Date.now() } },
+	                },
+	            };
+	        });
+	        if (c <= 0) {
+	            setPlayer(p => ({
+	                ...p,
+	                progress: { ...p.progress, battles: { ...(p.progress.battles || {}), [bossId]: createBattleState(def) } },
+	            }));
+	            startDeathRef.current(bossId, '被 ' + (def.bossId.toUpperCase()) + ' 反击击穿');
+	        }
+	    }, []);
+	    /** 重置某场战斗（重生 / 手动放弃进度时使用） */
+	    const resetBossBattle = reactExports.useCallback((bossId) => {
+	        const def = battleFor(bossId);
+	        if (!def)
+	            return;
+	        setPlayer(p => ({
+	            ...p,
+	            progress: { ...p.progress, battles: { ...(p.progress.battles || {}), [bossId]: createBattleState(def) } },
+	        }));
+	    }, []);
+	    /** Bug 图鉴：记录一次错误遭遇（同一条目累计次数） */
+	    const recordBug = reactExports.useCallback((entryId) => {
+	        if (!entryId)
+	            return;
+	        setPlayer(p => {
+	            const log = { ...(p.meta.bugCodex || {}) };
+	            const cur = log[entryId];
+	            log[entryId] = { count: (cur?.count || 0) + 1, firstAt: cur?.firstAt || Date.now() };
+	            return { ...p, meta: { ...p.meta, bugCodex: log } };
+	        });
+	    }, []);
+	    /** 结局档案：记录已解锁结局（幂等） */
+	    const recordEnding = reactExports.useCallback((endingId) => {
+	        if (!endingId)
+	            return;
+	        setPlayer(p => {
+	            const list = p.progress.endings || [];
+	            const nextList = list.includes(endingId) ? list : [...list, endingId];
+	            return { ...p, progress: { ...p.progress, endings: nextList, ending: endingId } };
+	        });
+	    }, []);
+	    // ---------- 记忆档案馆 ----------
+	    const normalizeVault = (v) => ({
+	        read: Array.isArray(v?.read) ? [...v.read] : [],
+	        finalSeen: v?.finalSeen === true,
+	        lastOpened: typeof v?.lastOpened === 'string' ? v.lastOpened : null,
+	    });
+	    /** 查看某枚碎片：记录已读 + 上次打开位置（关闭页面后可恢复） */
+	    const markVaultRead = reactExports.useCallback((fragmentId) => {
+	        if (!fragmentId)
+	            return;
+	        setPlayer(p => {
+	            const v = normalizeVault(p.progress.vault);
+	            if (v.read.includes(fragmentId) && v.lastOpened === fragmentId)
+	                return p;
+	            return {
+	                ...p,
+	                progress: {
+	                    ...p.progress,
+	                    vault: { ...v, read: v.read.includes(fragmentId) ? v.read : [...v.read, fragmentId], lastOpened: fragmentId },
+	                },
+	            };
+	        });
+	    }, []);
+	    const markVaultFinalSeen = reactExports.useCallback(() => {
+	        setPlayer(p => {
+	            const v = normalizeVault(p.progress.vault);
+	            if (v.finalSeen)
+	                return p;
+	            return { ...p, progress: { ...p.progress, vault: { ...v, finalSeen: true } } };
+	        });
+	    }, []);
+	    const setVaultLastOpened = reactExports.useCallback((id) => {
+	        setPlayer(p => {
+	            const v = normalizeVault(p.progress.vault);
+	            if (v.lastOpened === id)
+	                return p;
+	            return { ...p, progress: { ...p.progress, vault: { ...v, lastOpened: id } } };
+	        });
 	    }, []);
 	    /** 兑换中心购买（外观一次性、道具可重复购买） */
 	    const buyShopItem = reactExports.useCallback((itemId) => {
@@ -2531,16 +4264,16 @@
 	    }, [toast]);
 	    /** 装备外观 */
 	    const equipItem = reactExports.useCallback((itemId) => {
-	        const item = shopItemById(itemId);
-	        if (!item || !item.slot)
+	        const slot = slotOf(itemId);
+	        if (!slot)
 	            return { ok: false, reason: '该物品不可装备' };
 	        const cur = playerRef.current;
 	        const rw = normalizeRewards(cur.rewards);
 	        if (!rw.skins.includes(itemId))
 	            return { ok: false, reason: '尚未拥有' };
-	        const equipped = { ...rw.equipped, [item.slot]: itemId };
+	        const equipped = { ...rw.equipped, [slot]: itemId };
 	        setPlayer(p => ({ ...p, rewards: { ...normalizeRewards(p.rewards), equipped } }));
-	        toast('success', '已装备：' + item.name);
+	        toast('success', '已装备：' + (skinMetaById(itemId)?.name || itemId));
 	        play('click');
 	        return { ok: true };
 	    }, [toast]);
@@ -2572,13 +4305,58 @@
 	    const setFlag = reactExports.useCallback((key, value) => {
 	        setPlayer(p => ({ ...p, progress: { ...p.progress, flags: { ...p.progress.flags, [key]: value } } }));
 	    }, []);
+	    /** 记录对话节点已读：旧字段 storySeen（布尔）+ 新字段 story.seen（次数）双写 */
 	    const markStory = reactExports.useCallback((id) => {
+	        if (!id)
+	            return;
 	        setPlayer(p => {
-	            if (p.progress.storySeen[id])
-	                return p;
-	            return { ...p, progress: { ...p.progress, storySeen: { ...p.progress.storySeen, [id]: true } } };
+	            const story = normalizeStoryReadState(p.progress.story, p.progress.storySeen);
+	            const nextStory = markNodeSeen(story, id);
+	            const storySeen = p.progress.storySeen[id] ? p.progress.storySeen : { ...p.progress.storySeen, [id]: true };
+	            return { ...p, progress: { ...p.progress, storySeen, story: nextStory } };
 	        });
 	    }, []);
+	    /** 解锁剧情事件（幂等，不重复写入） */
+	    const unlockStoryEvent = reactExports.useCallback((eventId) => {
+	        if (!eventId)
+	            return;
+	        setPlayer(p => {
+	            const story = normalizeStoryReadState(p.progress.story, p.progress.storySeen);
+	            if (story.unlocked.includes(eventId))
+	                return p;
+	            return { ...p, progress: { ...p.progress, story: unlockEvent(story, eventId) } };
+	        });
+	    }, []);
+	    /** 记录剧情分支选择（同一节点保留最新选择） */
+	    const recordStoryChoice = reactExports.useCallback((nodeId, label) => {
+	        if (!nodeId || !label)
+	            return;
+	        setPlayer(p => {
+	            const story = normalizeStoryReadState(p.progress.story, p.progress.storySeen);
+	            return { ...p, progress: { ...p.progress, story: recordChoice(story, nodeId, label) } };
+	        });
+	    }, []);
+	    /**
+	     * 修改玩家显示名称。
+	     * 规范：只改显示名，原始实验编号 R-07 永远不变（identity.originCode 由 normalizeIdentity 强制）。
+	     */
+	    const renamePlayer = reactExports.useCallback((raw) => {
+	        const v = validateDisplayName(raw);
+	        if (!v.ok)
+	            return { ok: false, reason: v.reason };
+	        const cur = playerRef.current;
+	        const base = normalizeIdentity(cur.identity, cur.name);
+	        const identity = {
+	            ...base,
+	            displayName: v.name,
+	            originCode: ORIGIN_CODE,
+	            renamed: v.name !== ORIGIN_CODE,
+	        };
+	        setPlayer(p => ({ ...p, name: v.name, identity }));
+	        toast('success', '显示名称已更新为「' + v.name + '」');
+	        play('success');
+	        return { ok: true, name: v.name };
+	    }, [toast]);
 	    const addKnowledge = reactExports.useCallback((ids) => {
 	        setPlayer(p => {
 	            const merged = [...new Set([...p.progress.knowledge, ...ids])];
@@ -2695,7 +4473,25 @@
 	        const prevRewards = normalizeRewards(prev.rewards);
 	        const hintsUsed = prev.progress.hintLevels[levelId] || 0;
 	        const alreadyCleared = !!prevRewards.cleared[levelId];
-	        const breakdown = computeLevelReward(level.rewardExp, att, hintsUsed, !alreadyCleared);
+	        const v2 = computeLevelRewardV2({
+	            levelExp: level.rewardExp,
+	            fails: att,
+	            hints: hintsUsed,
+	            firstClear: !alreadyCleared,
+	            prevStars,
+	            newStars: stars,
+	        });
+	        const breakdown = {
+	            grade: v2.grade,
+	            base: v2.base,
+	            firstClear: v2.firstClearBonus,
+	            noFail: v2.noFail,
+	            noHint: v2.noHint,
+	            gradeBonus: v2.gradeBonus,
+	            improvement: v2.improvement,
+	            total: v2.total,
+	            trustGain: v2.trustGain,
+	        };
 	        const rewards = {
 	            ...prevRewards,
 	            credits: prevRewards.credits + breakdown.total,
@@ -2730,8 +4526,20 @@
 	                fragment: chapterDef.fragment,
 	            };
 	        }
+	        // 等级解锁：称号 / 头像框 / 粒子（升级时发放并自动装备）
+	        const unlockNames = [];
+	        for (const u of unlocksForLevel(oldLevel, next.level)) {
+	            if (rewards.skins.includes(u.id))
+	                continue;
+	            rewards.skins = [...rewards.skins, u.id];
+	            rewards.unlocks = [...(rewards.unlocks || []), u.id];
+	            if (u.slot)
+	                rewards.equipped = { ...rewards.equipped, [u.slot]: u.id };
+	            unlockNames.push(u.name);
+	        }
 	        next.rewards = rewards;
 	        setPlayer(next);
+	        unlockNames.forEach(n => toast('achieve', '等级解锁：' + n));
 	        if (chapterRewardPayload) {
 	            toast('achieve', '章节奖励：' + chapterRewardPayload.title + '（+' + chapterRewardPayload.credits + ' 贡献点）');
 	            play('unlock');
@@ -2754,6 +4562,7 @@
 	            newLevel: next.level,
 	            stars,
 	            newAchievements: gained,
+	            unlocks: unlockNames,
 	            reward: {
 	                breakdown,
 	                fails: att,
@@ -2840,6 +4649,7 @@
 	        }
 	    }, [toast]);
 	    const startDeath = reactExports.useCallback((levelId, reason) => {
+	        // eslint-disable-next-line @typescript-eslint/no-unused-expressions
 	        setPlayer(p => ({
 	            ...p,
 	            meta: { ...p.meta, deaths: p.meta.deaths + 1, lastDeathLevel: levelId, lastDeathReason: reason },
@@ -2848,6 +4658,16 @@
 	        setEvent({ kind: 'death', levelId, reason });
 	        play('death');
 	    }, []);
+	    startDeathRef.current = startDeath;
+	    /** 重生时把进行中的 Boss 战重置为满血第一阶段（已击破的保持不变） */
+	    const resetCurrentBattle = (p) => {
+	        const battles = { ...(p.progress.battles || {}) };
+	        const bossId = p.progress.currentBossId;
+	        const def = bossId ? battleFor(bossId) : undefined;
+	        if (bossId && def && !battles[bossId]?.cleared)
+	            battles[bossId] = createBattleState(def);
+	        return battles;
+	    };
 	    /** 重生结算：意识恢复 70%、保留成长、当前关卡进度重置待重打 */
 	    const finishRebirth = reactExports.useCallback(() => {
 	        const prev = playerRef.current;
@@ -2859,7 +4679,7 @@
 	            ...prev,
 	            consciousness: 70,
 	            meta: { ...prev.meta, rebirths: prev.meta.rebirths + 1, memoryFragments: fragments },
-	            progress: { ...prev.progress, pendingRebirth: false },
+	            progress: { ...prev.progress, pendingRebirth: false, battles: resetCurrentBattle(prev) },
 	        };
 	        const newAch = recalcAchievements(next);
 	        const gained = newAch.filter(a => !prev.progress.achievements.includes(a));
@@ -2907,11 +4727,15 @@
 	    const value = {
 	        player, screen, event, toasts, saveCorrupted, hasSave,
 	        tolerance: toleranceFor(player.level),
-	        nav, toast, startNewGame, setCurrentLevel, setCurrentBoss, completeBoss, completeLevel, recordFail,
+	        nav, toast, startNewGame, setCurrentLevel, setCurrentBoss, completeBoss,
+	        beginBossBattle, applyBossDamage, bossCounterAttack, resetBossBattle,
+	        recordBug, recordEnding, markVaultRead, markVaultFinalSeen, setVaultLastOpened,
+	        completeLevel, recordFail,
 	        buyShopItem, equipItem, consumeItem, restoreConsciousness, markArchiveRead,
 	        resetAttempts, hintUsed, resolveDefense, finishRebirth, startDeath,
 	        decrementAttackAttempt, triggerPendingDeath, wipeSave,
-	        markStory, addKnowledge, setFlag, patchSettings, importSaveData, exportSaveString,
+	        markStory, unlockStoryEvent, recordStoryChoice, renamePlayer,
+	        addKnowledge, setFlag, patchSettings, importSaveData, exportSaveString,
 	        respawnTick, toggleMusic,
 	    };
 	    return jsxRuntimeExports.jsx(Ctx.Provider, { value: value, children: children });
@@ -3038,33 +4862,35 @@
 	    const [ch, setCh] = reactExports.useState(0); // 当前行已输入字符
 	    const [ready, setReady] = reactExports.useState(false);
 	    const entered = reactExports.useRef(false);
+	    // 启动握手最后一行使用玩家显示名（默认 R-07；原始编号另在档案页固定展示）
+	    const lines = reactExports.useMemo(() => BOOT_LINES.map(l => (l === 'WELCOME, R-07.' ? 'WELCOME, ' + displayNameOf(g.player) + '.' : l)), [g.player.identity?.displayName, g.player.name]);
 	    reactExports.useEffect(() => {
 	        if (!g.player.settings.animations) {
-	            setStep(BOOT_LINES.length);
+	            setStep(lines.length);
 	            setCh(0);
 	            return;
 	        }
 	        const iv = window.setInterval(() => {
 	            setCh(c => {
-	                const target = BOOT_LINES[step] || '';
+	                const target = lines[step] || '';
 	                if (c < target.length)
 	                    return c + 2;
 	                return c;
 	            });
 	        }, 24);
 	        return () => window.clearInterval(iv);
-	    }, [step, g.player.settings.animations]);
+	    }, [step, g.player.settings.animations, lines]);
 	    reactExports.useEffect(() => {
-	        if (step >= BOOT_LINES.length) {
+	        if (step >= lines.length) {
 	            setReady(true);
 	            return;
 	        }
-	        const target = BOOT_LINES[step] || '';
+	        const target = lines[step] || '';
 	        if (ch >= target.length) {
 	            const t = window.setTimeout(() => setStep(s => s + 1), 260);
 	            return () => window.clearTimeout(t);
 	        }
-	    }, [ch, step]);
+	    }, [ch, step, lines]);
 	    const enter = () => {
 	        if (entered.current)
 	            return;
@@ -3075,8 +4901,8 @@
 	            startMusic();
 	        g.nav('menu');
 	    };
-	    const skipped = step >= BOOT_LINES.length;
-	    return (jsxRuntimeExports.jsxs("div", { className: "boot-wrap", children: [jsxRuntimeExports.jsx(ParticlesField, { enabled: g.player.settings.animations, density: 1.1, speed: 0.9 }), jsxRuntimeExports.jsxs("div", { className: "boot-core", children: [jsxRuntimeExports.jsx("div", { className: "ring r1" }), jsxRuntimeExports.jsx("div", { className: "ring r2" }), jsxRuntimeExports.jsx("div", { className: "ring r3" }), jsxRuntimeExports.jsx("div", { className: "orb" })] }), jsxRuntimeExports.jsxs("div", { className: "boot-lines", children: [BOOT_LINES.slice(0, step).map((l, i) => (jsxRuntimeExports.jsx("div", { style: { opacity: 0.9 }, children: l }, i))), step < BOOT_LINES.length && jsxRuntimeExports.jsx("div", { className: "dlg-cursor", children: BOOT_LINES[step].slice(0, ch) })] }), !skipped && (jsxRuntimeExports.jsx("button", { className: "nxbtn ghost small", style: { position: 'absolute', top: 26, right: 30 }, onClick: () => { setStep(BOOT_LINES.length); setCh(0); play('click'); }, children: "\u8DF3\u8FC7\u521D\u59CB\u5316 \u23ED" })), ready && (jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [jsxRuntimeExports.jsx("div", { className: "boot-title", children: "\u4EE3\u7801\u4FEE\u590D\u5C40\uFF1ANEXUS" }), jsxRuntimeExports.jsx("div", { className: "boot-sub", children: "CODE REPAIR: NEXUS // \u5728\u4EE3\u7801\u5D29\u574F\u7684\u4E16\u754C\u4E2D\uFF0C\u5BFB\u627E\u6570\u5B57\u751F\u547D\u7684\u771F\u76F8" }), jsxRuntimeExports.jsx("button", { className: "nxbtn primary pulse boot-enter", onClick: enter, children: "ENTER NEXUS" })] })), jsxRuntimeExports.jsx("div", { className: "boot-foot", children: "v0.1.0 DEMO \u2014 \u5E8F\u7AE0 + \u7B2C\u4E00\u7AE0 \u00B7 \u672C\u5730 Pyodide \u8FD0\u884C\uFF0C\u65E0\u9700\u540E\u7AEF" })] }));
+	    const skipped = step >= lines.length;
+	    return (jsxRuntimeExports.jsxs("div", { className: "boot-wrap", children: [jsxRuntimeExports.jsx(ParticlesField, { enabled: g.player.settings.animations, density: 1.1, speed: 0.9 }), jsxRuntimeExports.jsxs("div", { className: "boot-core", children: [jsxRuntimeExports.jsx("div", { className: "ring r1" }), jsxRuntimeExports.jsx("div", { className: "ring r2" }), jsxRuntimeExports.jsx("div", { className: "ring r3" }), jsxRuntimeExports.jsx("div", { className: "orb" })] }), jsxRuntimeExports.jsxs("div", { className: "boot-lines", children: [lines.slice(0, step).map((l, i) => (jsxRuntimeExports.jsx("div", { style: { opacity: 0.9 }, children: l }, i))), step < lines.length && jsxRuntimeExports.jsx("div", { className: "dlg-cursor", children: lines[step].slice(0, ch) })] }), !skipped && (jsxRuntimeExports.jsx("button", { className: "nxbtn ghost small", style: { position: 'absolute', top: 26, right: 30 }, onClick: () => { setStep(lines.length); setCh(0); play('click'); }, children: "\u8DF3\u8FC7\u521D\u59CB\u5316 \u23ED" })), ready && (jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [jsxRuntimeExports.jsx("div", { className: "boot-title", children: "NEXUS" }), jsxRuntimeExports.jsx("div", { className: "boot-sub", children: "CODE REPAIR: NEXUS // \u5728\u4EE3\u7801\u5D29\u574F\u7684\u4E16\u754C\u4E2D\uFF0C\u5BFB\u627E\u6570\u5B57\u751F\u547D\u7684\u771F\u76F8" }), jsxRuntimeExports.jsx("button", { className: "nxbtn primary pulse boot-enter", onClick: enter, children: "ENTER NEXUS" })] })), jsxRuntimeExports.jsx("div", { className: "boot-foot", children: "v0.1.0 DEMO \u2014 \u5E8F\u7AE0 + \u7B2C\u4E00\u7AE0 \u00B7 \u672C\u5730 Pyodide \u8FD0\u884C\uFF0C\u65E0\u9700\u540E\u7AEF" })] }));
 	}
 
 	function PlayerStatus({ showTolerance = false, compact = false }) {
@@ -3086,192 +4912,452 @@
 	    const cZone = c >= 81 ? 'green' : c >= 61 ? '' : c >= 41 ? 'orange' : c >= 21 ? 'orange' : 'red';
 	    const level = player.progress.currentLevelId;
 	    const att = level ? player.progress.failedAttempts[level] || 0 : 0;
-	    return (jsxRuntimeExports.jsxs("div", { className: "pl-card", children: [!compact && (jsxRuntimeExports.jsxs("div", { className: "pl-top", children: [jsxRuntimeExports.jsx("div", { className: "pl-core", children: "R" }), jsxRuntimeExports.jsxs("div", { children: [jsxRuntimeExports.jsx("div", { className: "pl-name", children: player.name }), jsxRuntimeExports.jsxs("div", { className: "pl-level", children: ["Lv.", player.level, " \u00B7 ", titleForLevel(player.level)] })] }), jsxRuntimeExports.jsx("div", { style: { marginLeft: 'auto', textAlign: 'right' }, children: jsxRuntimeExports.jsxs("div", { className: "chip cyan", children: ["\u5BB9\u9519 ", tolerance] }) })] })), jsxRuntimeExports.jsxs("div", { className: "pl-row", children: [jsxRuntimeExports.jsxs("div", { className: "bar-labels", children: [jsxRuntimeExports.jsxs("span", { children: ["\u7ECF\u9A8C ", player.exp] }), jsxRuntimeExports.jsx("span", { children: ms.maxed ? 'MAX' : 'Lv.' + (ms.level + 1) + ' 需 ' + ms.need })] }), jsxRuntimeExports.jsx("div", { className: "bar", children: jsxRuntimeExports.jsx("div", { className: "bar-fill", style: { width: ms.maxed ? '100%' : Math.min(100, (ms.into / ms.need) * 100) + '%' } }) })] }), jsxRuntimeExports.jsxs("div", { className: "pl-row", children: [jsxRuntimeExports.jsxs("div", { className: "bar-labels", children: [jsxRuntimeExports.jsx("span", { children: "\u610F\u8BC6\u5B8C\u6574\u5EA6" }), jsxRuntimeExports.jsxs("span", { className: c <= 20 ? 'red warn-flash' : '', children: [c, "%"] })] }), jsxRuntimeExports.jsx("div", { className: "bar", children: jsxRuntimeExports.jsx("div", { className: 'bar-fill ' + cZone + (c <= 20 ? ' pulse' : ''), style: { width: c + '%' } }) })] }), showTolerance && (jsxRuntimeExports.jsxs("div", { className: "pl-row", children: [jsxRuntimeExports.jsxs("div", { className: "bar-labels", children: [jsxRuntimeExports.jsx("span", { children: "\u672C\u5173\u5931\u8D25\u63D0\u4EA4" }), jsxRuntimeExports.jsxs("span", { className: att >= tolerance ? 'red' : '', children: [att, " / ", tolerance] })] }), jsxRuntimeExports.jsx("div", { className: "tolerance-dots", style: { marginTop: 4 }, children: Array.from({ length: Math.max(tolerance, att) }).map((_, i) => (jsxRuntimeExports.jsx("span", { className: 'dot' + (i < att ? (i >= tolerance ? ' over' : ' filled') : '') }, i))) })] })), compact && (jsxRuntimeExports.jsxs("div", { className: "row", children: [jsxRuntimeExports.jsxs("span", { className: "badge", children: ["Lv.", player.level] }), jsxRuntimeExports.jsx("span", { className: "chip", children: titleForLevel(player.level) }), event.kind !== 'none' && jsxRuntimeExports.jsx("span", { className: "chip red warn-flash", children: "\u5371\u9669" })] }))] }));
+	    const identity = normalizeIdentity(player.identity, player.name);
+	    const shownName = displayNameOf(player);
+	    const equippedTitle = equippedTitleName(player.rewards);
+	    const frameClass = equippedFrameClass(player.rewards);
+	    return (jsxRuntimeExports.jsxs("div", { className: "pl-card", children: [!compact && (jsxRuntimeExports.jsxs("div", { className: "pl-top", children: [jsxRuntimeExports.jsx("div", { className: 'pl-core' + (frameClass ? ' ' + frameClass : ''), children: "R" }), jsxRuntimeExports.jsxs("div", { children: [jsxRuntimeExports.jsx("div", { className: "pl-name", children: shownName }), jsxRuntimeExports.jsxs("div", { className: "pl-level", children: ["Lv.", player.level, " \u00B7 ", equippedTitle || titleForLevel(player.level)] }), identity.renamed && (jsxRuntimeExports.jsxs("div", { className: "pl-level", style: { opacity: 0.75, fontSize: 11 }, children: ["\u7F16\u53F7 ", originCodeOf(), " \u00B7 \u539F\u59CB\u5B9E\u9A8C\u4F53"] }))] }), jsxRuntimeExports.jsx("div", { style: { marginLeft: 'auto', textAlign: 'right' }, children: jsxRuntimeExports.jsxs("div", { className: "chip cyan", children: ["\u5BB9\u9519 ", tolerance] }) })] })), jsxRuntimeExports.jsxs("div", { className: "pl-row", children: [jsxRuntimeExports.jsxs("div", { className: "bar-labels", children: [jsxRuntimeExports.jsxs("span", { children: ["\u7ECF\u9A8C ", player.exp] }), jsxRuntimeExports.jsx("span", { children: ms.maxed ? 'MAX' : 'Lv.' + (ms.level + 1) + ' 需 ' + ms.need })] }), jsxRuntimeExports.jsx("div", { className: "bar", children: jsxRuntimeExports.jsx("div", { className: "bar-fill", style: { width: ms.maxed ? '100%' : Math.min(100, (ms.into / ms.need) * 100) + '%' } }) })] }), jsxRuntimeExports.jsxs("div", { className: "pl-row", children: [jsxRuntimeExports.jsxs("div", { className: "bar-labels", children: [jsxRuntimeExports.jsx("span", { children: "\u610F\u8BC6\u5B8C\u6574\u5EA6" }), jsxRuntimeExports.jsxs("span", { className: c <= 20 ? 'red warn-flash' : '', children: [c, "%"] })] }), jsxRuntimeExports.jsx("div", { className: "bar", children: jsxRuntimeExports.jsx("div", { className: 'bar-fill ' + cZone + (c <= 20 ? ' pulse' : ''), style: { width: c + '%' } }) })] }), showTolerance && (jsxRuntimeExports.jsxs("div", { className: "pl-row", children: [jsxRuntimeExports.jsxs("div", { className: "bar-labels", children: [jsxRuntimeExports.jsx("span", { children: "\u672C\u5173\u5931\u8D25\u63D0\u4EA4" }), jsxRuntimeExports.jsxs("span", { className: att >= tolerance ? 'red' : '', children: [att, " / ", tolerance] })] }), jsxRuntimeExports.jsx("div", { className: "tolerance-dots", style: { marginTop: 4 }, children: Array.from({ length: Math.max(tolerance, att) }).map((_, i) => (jsxRuntimeExports.jsx("span", { className: 'dot' + (i < att ? (i >= tolerance ? ' over' : ' filled') : '') }, i))) })] })), compact && (jsxRuntimeExports.jsxs("div", { className: "row", children: [jsxRuntimeExports.jsxs("span", { className: "badge", children: ["Lv.", player.level] }), jsxRuntimeExports.jsx("span", { className: "chip", children: titleForLevel(player.level) }), event.kind !== 'none' && jsxRuntimeExports.jsx("span", { className: "chip red warn-flash", children: "\u5371\u9669" })] }))] }));
 	}
 
-	function importedTotalLevels() {
-	    return LEVELS.length;
-	}
 	function MainMenu() {
 	    const g = useGame();
 	    const [confirmNew, setConfirmNew] = reactExports.useState(false);
+	    const [collapsed, setCollapsed] = reactExports.useState(() => {
+	        try {
+	            return localStorage.getItem('nexus_rail_collapsed') === '1';
+	        }
+	        catch {
+	            return false;
+	        }
+	    });
+	    const toggleRail = () => {
+	        setCollapsed(v => { const n = !v; try {
+	            localStorage.setItem('nexus_rail_collapsed', n ? '1' : '0');
+	        }
+	        catch { /* ignore */ } return n; });
+	        play('click');
+	    };
 	    const enter = () => {
 	        if (g.player.progress.pendingRebirth) {
 	            g.triggerPendingDeath();
 	            g.toast('info', '检测到未完成的重生流程……正在重新构建载体。');
 	            return;
 	        }
-	        // 有进度时进入世界地图（可自由选择要修复的关卡），而非强制回到上次关卡
-	        if (g.player.progress.completedLevels.length > 0 || g.player.progress.currentLevelId) {
-	            g.nav('map');
-	        }
-	        else {
-	            g.nav('map');
-	        }
 	        play('click');
+	        g.nav('map');
 	    };
 	    const done = g.player.progress.completedLevels.length;
-	    const totalLevels = importedTotalLevels();
-	    const repaired = done + ' / ' + totalLevels;
-	    return (jsxRuntimeExports.jsxs("div", { className: "page page-anim", children: [jsxRuntimeExports.jsx(ParticlesField, { enabled: g.player.settings.animations, density: 0.7 }), jsxRuntimeExports.jsxs("div", { className: "page-inner menu-grid", children: [jsxRuntimeExports.jsxs("nav", { className: "menu-nav", children: [jsxRuntimeExports.jsxs("button", { className: "menu-navitem primary", onClick: enter, children: [jsxRuntimeExports.jsx("span", { className: "micon", children: "\u25B6" }), " ", g.hasSave ? '继续游戏' : '开始游戏'] }), jsxRuntimeExports.jsxs("button", { className: "menu-navitem", onClick: () => { play('click'); setConfirmNew(true); }, children: [jsxRuntimeExports.jsx("span", { className: "micon", children: "\u2726" }), " \u65B0\u7684\u5F00\u59CB"] }), jsxRuntimeExports.jsx("div", { className: "menu-sep" }), jsxRuntimeExports.jsxs("button", { className: "menu-navitem", onClick: () => { play('click'); g.nav('archive'); }, children: [jsxRuntimeExports.jsx("span", { className: "micon", children: "\u25CE" }), " \u5267\u60C5\u6863\u6848"] }), jsxRuntimeExports.jsxs("button", { className: "menu-navitem", onClick: () => { play('click'); g.nav('knowledge'); }, children: [jsxRuntimeExports.jsx("span", { className: "micon", children: "\u25C8" }), " Python \u77E5\u8BC6\u5E93"] }), jsxRuntimeExports.jsxs("button", { className: "menu-navitem", onClick: () => {
-	                                    play('click');
-	                                    if (g.player.progress.completedLevels.includes('tut-1'))
-	                                        g.nav('lab');
-	                                    else
-	                                        g.toast('warn', '编程实验室将在你完成新人训练终端后开放。');
-	                                }, children: [jsxRuntimeExports.jsx("span", { className: "micon", children: "\u232C" }), " \u7F16\u7A0B\u5B9E\u9A8C\u5BA4", !g.player.progress.completedLevels.includes('tut-1') && jsxRuntimeExports.jsx("span", { className: "chip dim", style: { marginLeft: 'auto', fontSize: 10 }, children: "\uD83D\uDD12" })] }), jsxRuntimeExports.jsxs("button", { className: "menu-navitem", onClick: () => { play('click'); g.nav('shop'); }, children: [jsxRuntimeExports.jsx("span", { className: "micon", children: "\u25C8" }), " \u5956\u52B1\u5151\u6362\u4E2D\u5FC3"] }), jsxRuntimeExports.jsxs("button", { className: "menu-navitem", onClick: () => { play('click'); g.nav('achievements'); }, children: [jsxRuntimeExports.jsx("span", { className: "micon", children: "\u2727" }), " \u6210\u5C31\u7CFB\u7EDF"] }), jsxRuntimeExports.jsxs("button", { className: "menu-navitem", onClick: () => { play('click'); g.nav('profile'); }, children: [jsxRuntimeExports.jsx("span", { className: "micon", children: "\u25C9" }), " \u73A9\u5BB6\u6863\u6848"] }), jsxRuntimeExports.jsx("div", { className: "menu-sep" }), jsxRuntimeExports.jsxs("button", { className: "menu-navitem", onClick: () => { play('click'); g.nav('settings'); }, children: [jsxRuntimeExports.jsx("span", { className: "micon", children: "\u2699" }), " \u7CFB\u7EDF\u914D\u7F6E"] })] }), jsxRuntimeExports.jsxs("div", { className: "menu-center", children: [jsxRuntimeExports.jsx("div", { className: "menu-logo", children: "\u4EE3\u7801\u4FEE\u590D\u5C40" }), jsxRuntimeExports.jsx("div", { className: "menu-logo-en", children: "CODE REPAIR : NEXUS" }), jsxRuntimeExports.jsx("div", { className: "menu-slogan", children: "\u5728\u4EE3\u7801\u5D29\u574F\u7684\u4E16\u754C\u4E2D\uFF0C\u5BFB\u627E\u6570\u5B57\u751F\u547D\u7684\u771F\u76F8\u3002" }), jsxRuntimeExports.jsx("button", { className: "nxbtn primary pulse", onClick: enter, children: g.hasSave ? '继续游戏 ▶' : '进入 NEXUS ▶' }), jsxRuntimeExports.jsx("div", { className: "menu-save-hint", style: { marginTop: 14, fontSize: 12.5, color: '#7FA6BC' }, children: done > 0
-	                                    ? '存档已自动保存 · 已完成 ' + repaired + ' 项修复 · Lv.' + g.player.level
-	                                    : '进度会自动保存到本机浏览器，关闭后重新打开可继续' }), jsxRuntimeExports.jsxs("div", { style: { marginTop: 26, display: 'flex', gap: 10 }, children: [jsxRuntimeExports.jsx("span", { className: "chip cyan", children: "\u5E8F\u7AE0 + \u7B2C\u4E00\u7AE0\u5DF2\u5B9E\u88C5" }), jsxRuntimeExports.jsx("span", { className: "chip", children: "\u7B2C\u4E8C\u7AE0\u8D77\u6570\u636E\u52A0\u5BC6\uFF08\u5360\u4F4D\uFF09" })] })] }), jsxRuntimeExports.jsx("aside", { className: "menu-side", children: jsxRuntimeExports.jsxs("div", { className: "panel", children: [jsxRuntimeExports.jsxs("div", { className: "panel-title", children: ["\u4FEE\u590D\u5E08\u6863\u6848", jsxRuntimeExports.jsx("span", { className: "panel-tag", children: g.hasSave ? 'SAVE FOUND' : 'NO SAVE' })] }), g.hasSave ? (jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [jsxRuntimeExports.jsx(PlayerStatus, { showTolerance: false }), jsxRuntimeExports.jsxs("div", { style: { marginTop: 12 }, children: [jsxRuntimeExports.jsxs("div", { className: "pf-kv", children: [jsxRuntimeExports.jsx("span", { className: "k", children: "\u5DF2\u4FEE\u590D\u4EFB\u52A1" }), jsxRuntimeExports.jsx("span", { className: "v", children: repaired })] }), jsxRuntimeExports.jsxs("div", { className: "pf-kv", children: [jsxRuntimeExports.jsx("span", { className: "k", children: "\u6210\u5C31" }), jsxRuntimeExports.jsx("span", { className: "v", children: g.player.progress.achievements.length })] }), jsxRuntimeExports.jsxs("div", { className: "pf-kv", children: [jsxRuntimeExports.jsx("span", { className: "k", children: "\u610F\u8BC6\u91CD\u7EC4" }), jsxRuntimeExports.jsxs("span", { className: "v", children: [g.player.meta.rebirths, " \u6B21"] })] }), jsxRuntimeExports.jsxs("div", { className: "pf-kv", children: [jsxRuntimeExports.jsx("span", { className: "k", children: "\u8BB0\u5FC6\u788E\u7247" }), jsxRuntimeExports.jsxs("span", { className: "v", children: [g.player.meta.memoryFragments.length, " / 1"] })] })] })] })) : (jsxRuntimeExports.jsxs("div", { className: "empty-hint", children: ["\u5C1A\u672A\u68C0\u6D4B\u5230\u5B58\u6863\u3002", jsxRuntimeExports.jsx("br", {}), "\u9009\u62E9\u300C\u5F00\u59CB\u6E38\u620F\u300D\u8FDB\u5165 NEXUS\u3002"] }))] }) })] }), confirmNew && (jsxRuntimeExports.jsx("div", { className: "modal-mask", onClick: () => setConfirmNew(false), children: jsxRuntimeExports.jsxs("div", { className: "modal", onClick: e => e.stopPropagation(), children: [jsxRuntimeExports.jsx("h3", { children: "\u26A0 \u5F00\u59CB\u65B0\u7684\u8F6E\u56DE" }), jsxRuntimeExports.jsxs("p", { style: { color: '#D3E4EF' }, children: ["\u8FD9\u5C06", jsxRuntimeExports.jsx("strong", { className: "red", children: "\u6E05\u7A7A\u5F53\u524D\u5168\u90E8\u6E38\u620F\u8FDB\u5EA6" }), "\uFF08\u7B49\u7EA7\u3001\u6210\u5C31\u3001\u901A\u5173\u8BB0\u5F55\u3001\u8BBE\u7F6E\uFF09\uFF0C\u4E14\u4E0D\u53EF\u64A4\u9500\u3002", jsxRuntimeExports.jsx("br", {}), "\u786E\u5B9A\u8981\u91CD\u65B0\u5F00\u59CB\u5417\uFF1F"] }), jsxRuntimeExports.jsxs("div", { className: "modal-actions", children: [jsxRuntimeExports.jsx("button", { className: "nxbtn ghost", onClick: () => setConfirmNew(false), children: "\u53D6\u6D88" }), jsxRuntimeExports.jsx("button", { className: "nxbtn danger", onClick: () => { setConfirmNew(false); g.startNewGame(); }, children: "\u786E\u8BA4\uFF0C\u5F00\u542F\u65B0\u8F6E\u56DE" })] })] }) }))] }));
+	    const totalLevels = LEVELS.length;
+	    const remaining = Math.max(0, totalLevels - done);
+	    const syncPct = totalLevels ? Math.round((done / totalLevels) * 100) : 0;
+	    const frag = fragmentProgress(g.player.meta.memoryFragments || []);
+	    const ach = g.player.progress.achievements.length;
+	    const tutDone = g.player.progress.completedLevels.includes('tut-1');
+	    const explore = [
+	        { id: 'continue', label: g.hasSave ? '继续探索' : '开始探索', icon: '▶', onClick: enter },
+	        { id: 'new', label: '新的开始', icon: '✦', onClick: () => { play('click'); setConfirmNew(true); } },
+	    ];
+	    const archive = [
+	        { id: 'archive', label: '剧情档案', icon: '◎', onClick: () => { play('click'); g.nav('archive'); } },
+	        { id: 'endings', label: '结局档案', icon: '✧', onClick: () => { play('click'); g.nav('endings'); } },
+	        { id: 'journal', label: '探索档案', icon: '▤', onClick: () => { play('click'); g.nav('journal'); } },
+	        { id: 'vault', label: '创世主记忆档案馆', icon: '◇', onClick: () => { play('click'); g.nav('vault'); }, badge: frag.owned + '/' + frag.total },
+	    ];
+	    const grow = [
+	        { id: 'knowledge', label: 'Python 知识库', icon: '◈', onClick: () => { play('click'); g.nav('knowledge'); } },
+	        { id: 'lab', label: '编程实验室', icon: '⌬', locked: !tutDone, onClick: () => { play('click'); if (tutDone)
+	                g.nav('lab');
+	            else
+	                g.toast('warn', '编程实验室将在你完成新人训练终端后开放。'); } },
+	        { id: 'shop', label: '奖励兑换中心', icon: '◈', onClick: () => { play('click'); g.nav('shop'); } },
+	        { id: 'achievements', label: '成就系统', icon: '✧', onClick: () => { play('click'); g.nav('achievements'); } },
+	        { id: 'profile', label: '玩家档案', icon: '◉', onClick: () => { play('click'); g.nav('profile'); } },
+	        { id: 'settings', label: '系统配置', icon: '⚙', onClick: () => { play('click'); g.nav('settings'); } },
+	    ];
+	    const renderGroup = (title, items) => (jsxRuntimeExports.jsxs("div", { className: "rail-group", children: [jsxRuntimeExports.jsx("div", { className: "rail-group-title", children: title }), items.map(it => (jsxRuntimeExports.jsxs("button", { className: 'rail-item' + (it.id === 'continue' ? ' primary' : '') + (it.locked ? ' locked' : ''), onClick: it.onClick, title: it.label, children: [jsxRuntimeExports.jsx("span", { className: "rail-icon", children: it.icon }), jsxRuntimeExports.jsx("span", { className: "rail-label", children: it.label }), it.badge && jsxRuntimeExports.jsx("span", { className: "rail-badge", children: it.badge }), it.locked && jsxRuntimeExports.jsx("span", { className: "rail-badge dim", children: "\uD83D\uDD12" })] }, it.id)))] }, title));
+	    return (jsxRuntimeExports.jsxs("div", { className: "page menu-page", children: [jsxRuntimeExports.jsx(ParticlesField, { enabled: g.player.settings.animations, density: 0.65 }), jsxRuntimeExports.jsx("div", { className: "menu-grid-bg", "aria-hidden": "true" }), jsxRuntimeExports.jsx("div", { className: "menu-scan", "aria-hidden": "true" }), jsxRuntimeExports.jsxs("div", { className: 'menu-shell' + (collapsed ? ' rail-collapsed' : ''), children: [jsxRuntimeExports.jsxs("aside", { className: "menu-rail", children: [jsxRuntimeExports.jsxs("div", { className: "rail-head", children: [jsxRuntimeExports.jsx("span", { className: "rail-mark", children: "N" }), jsxRuntimeExports.jsx("span", { className: "rail-name", children: "NEXUS" }), jsxRuntimeExports.jsx("button", { className: "rail-toggle", onClick: toggleRail, title: collapsed ? '展开导航' : '收起导航', children: collapsed ? '»' : '«' })] }), renderGroup('探索', explore), renderGroup('档案', archive), renderGroup('成长', grow), jsxRuntimeExports.jsxs("div", { className: "rail-foot", children: [jsxRuntimeExports.jsx("span", { className: 'rail-dot' + (g.hasSave ? ' on' : '') }), g.hasSave ? '本地存档已同步' : '无存档'] })] }), jsxRuntimeExports.jsxs("main", { className: "menu-stage", children: [jsxRuntimeExports.jsxs("div", { className: "stage-core", "aria-hidden": "true", children: [jsxRuntimeExports.jsx("span", { className: "core-ring r1" }), jsxRuntimeExports.jsx("span", { className: "core-ring r2" }), jsxRuntimeExports.jsx("span", { className: "core-ring r3" }), jsxRuntimeExports.jsx("span", { className: "core-orb" }), jsxRuntimeExports.jsx("span", { className: "core-grid" })] }), jsxRuntimeExports.jsx("h1", { className: "brand-title", children: "NEXUS" }), jsxRuntimeExports.jsx("div", { className: "brand-sub", children: "DIGITAL WORLD // SYSTEM REPAIR" }), jsxRuntimeExports.jsx("p", { className: "brand-cn", children: "\u300C\u5728\u5D29\u574F\u7684\u6570\u636E\u5B87\u5B99\u4E2D\uFF0C\u5BFB\u627E\u6587\u660E\u7684\u771F\u76F8\u3002\u300D" }), jsxRuntimeExports.jsxs("div", { className: "stage-actions", children: [jsxRuntimeExports.jsxs("button", { className: "stage-btn primary", onClick: enter, children: [g.hasSave ? '继续探索' : '进入 NEXUS', jsxRuntimeExports.jsx("span", { className: "stage-btn-arrow", children: "\u25B6" })] }), jsxRuntimeExports.jsx("button", { className: "stage-btn ghost", onClick: () => { play('click'); setConfirmNew(true); }, children: "\u65B0\u7684\u5F00\u59CB" })] }), jsxRuntimeExports.jsxs("div", { className: "stage-stats", children: [jsxRuntimeExports.jsxs("div", { className: "stat", children: [jsxRuntimeExports.jsx("span", { className: "stat-k", children: "\u4E16\u754C\u72B6\u6001" }), jsxRuntimeExports.jsx("span", { className: 'stat-v ' + (done >= totalLevels ? 'ok' : 'warn'), children: done >= totalLevels ? 'STABLE' : 'UNSTABLE' })] }), jsxRuntimeExports.jsxs("div", { className: "stat", children: [jsxRuntimeExports.jsx("span", { className: "stat-k", children: "\u5F85\u4FEE\u590D\u4EFB\u52A1" }), jsxRuntimeExports.jsx("span", { className: "stat-v", children: remaining })] }), jsxRuntimeExports.jsxs("div", { className: "stat", children: [jsxRuntimeExports.jsx("span", { className: "stat-k", children: "\u63A2\u7D22\u8FDB\u5EA6" }), jsxRuntimeExports.jsxs("span", { className: "stat-v", children: [syncPct, "%"] })] }), jsxRuntimeExports.jsxs("div", { className: "stat", children: [jsxRuntimeExports.jsx("span", { className: "stat-k", children: "\u7CFB\u7EDF\u540C\u6B65\u7387" }), jsxRuntimeExports.jsxs("span", { className: "stat-v cyan", children: [Math.min(100, Math.round((done / Math.max(1, totalLevels)) * 70 + frag.owned * 5)), "%"] })] })] })] }), jsxRuntimeExports.jsxs("aside", { className: "menu-id", children: [jsxRuntimeExports.jsxs("div", { className: "id-card", children: [jsxRuntimeExports.jsxs("div", { className: "id-head", children: [jsxRuntimeExports.jsx("span", { className: "id-tag", children: "REPAIRER FILE" }), jsxRuntimeExports.jsx("span", { className: 'id-status' + (g.hasSave ? ' on' : ''), children: g.hasSave ? 'SYNCED' : 'EMPTY' })] }), g.hasSave ? (jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [jsxRuntimeExports.jsx(PlayerStatus, { showTolerance: false }), jsxRuntimeExports.jsxs("div", { className: "id-rows", children: [jsxRuntimeExports.jsxs("div", { className: "id-row", children: [jsxRuntimeExports.jsx("span", { children: "\u5DF2\u4FEE\u590D\u4EFB\u52A1" }), jsxRuntimeExports.jsxs("b", { children: [done, " / ", totalLevels] })] }), jsxRuntimeExports.jsxs("div", { className: "id-row", children: [jsxRuntimeExports.jsx("span", { children: "\u6210\u5C31" }), jsxRuntimeExports.jsxs("b", { children: [ach, " / ", ACHIEVEMENTS.length] })] }), jsxRuntimeExports.jsxs("div", { className: "id-row", children: [jsxRuntimeExports.jsx("span", { children: "\u8BB0\u5FC6\u788E\u7247" }), jsxRuntimeExports.jsxs("b", { className: "gold", children: [frag.owned, " / ", frag.total] })] }), jsxRuntimeExports.jsxs("div", { className: "id-row", children: [jsxRuntimeExports.jsx("span", { children: "\u610F\u8BC6\u91CD\u7EC4" }), jsxRuntimeExports.jsxs("b", { children: [g.player.meta.rebirths, " \u6B21"] })] })] }), jsxRuntimeExports.jsx("div", { className: "id-frag", children: Array.from({ length: frag.total }).map((_, i) => (jsxRuntimeExports.jsx("span", { className: 'frag-pip' + (i < frag.owned ? ' on' : '') }, i))) })] })) : (jsxRuntimeExports.jsxs("div", { className: "empty-hint", children: ["\u5C1A\u672A\u68C0\u6D4B\u5230\u5B58\u6863\u3002", jsxRuntimeExports.jsx("br", {}), "\u9009\u62E9\u300C\u5F00\u59CB\u63A2\u7D22\u300D\u63A5\u5165 NEXUS\u3002"] }))] }), jsxRuntimeExports.jsx("div", { className: "id-credit", children: "\u4EE3\u7801\u4FEE\u590D\u5C40 \u00B7 \u5185\u90E8\u6863\u6848 \u00B7 \u4EC5\u9650\u6388\u6743\u4FEE\u590D\u5E08" })] })] }), confirmNew && (jsxRuntimeExports.jsx("div", { className: "modal-mask", onClick: () => setConfirmNew(false), children: jsxRuntimeExports.jsxs("div", { className: "modal", onClick: e => e.stopPropagation(), children: [jsxRuntimeExports.jsx("h3", { children: "\u26A0 \u5F00\u59CB\u65B0\u7684\u8F6E\u56DE" }), jsxRuntimeExports.jsxs("p", { style: { color: '#D3E4EF' }, children: ["\u8FD9\u5C06", jsxRuntimeExports.jsx("strong", { className: "red", children: "\u6E05\u7A7A\u5F53\u524D\u5168\u90E8\u6E38\u620F\u8FDB\u5EA6" }), "\uFF08\u7B49\u7EA7\u3001\u6210\u5C31\u3001\u901A\u5173\u8BB0\u5F55\u3001\u8BBE\u7F6E\uFF09\uFF0C\u4E14\u4E0D\u53EF\u64A4\u9500\u3002", jsxRuntimeExports.jsx("br", {}), "\u786E\u5B9A\u8981\u91CD\u65B0\u5F00\u59CB\u5417\uFF1F"] }), jsxRuntimeExports.jsxs("div", { className: "modal-actions", children: [jsxRuntimeExports.jsx("button", { className: "nxbtn ghost", onClick: () => setConfirmNew(false), children: "\u53D6\u6D88" }), jsxRuntimeExports.jsx("button", { className: "nxbtn danger", onClick: () => { setConfirmNew(false); g.startNewGame(); }, children: "\u786E\u8BA4\uFF0C\u5F00\u542F\u65B0\u8F6E\u56DE" })] })] }) }))] }));
 	}
 
-	function DialogSystem({ nodes, onDone, onSeen, speedMs = 26, animEnabled = true, frameTitle = 'NEXUS 剧情记录' }) {
+	/** 是否已经提示过音色问题（每局只提示一次） */
+	let hinted = false;
+	/**
+	 * 语音控制条：播放 / 暂停 / 继续 / 停止 + 播放声波。
+	 * 任何时刻只允许一段语音：speak 内部会先 cancel 上一段。
+	 */
+	function VoiceBar({ text, kind, compact = false }) {
+	    const g = useGame();
+	    const voice = normalizeVoice(g.player.settings.voice);
+	    const [state, setState] = reactExports.useState('idle');
+	    const stateRef = reactExports.useRef('idle');
+	    stateRef.current = state;
+	    reactExports.useEffect(() => {
+	        const un = speech.onState(s => setState(s));
+	        speech.applySettings(voice);
+	        return un;
+	    }, [voice]);
+	    // 离开当前台词时停止（切换上下文/卸载）
+	    reactExports.useEffect(() => () => { speech.stop(); }, []);
+	    const ensureHint = () => {
+	        if (hinted)
+	            return;
+	        const hint = speech.chineseVoiceHint();
+	        if (hint) {
+	            hinted = true;
+	            g.toast('warn', hint);
+	        }
+	    };
+	    const play = () => {
+	        if (!voice.enabled) {
+	            g.toast('warn', '语音已关闭——可在设置中重新开启。');
+	            return;
+	        }
+	        if (stateRef.current === 'paused') {
+	            speech.resume();
+	            return;
+	        }
+	        if (stateRef.current === 'speaking') {
+	            speech.pause();
+	            return;
+	        }
+	        ensureHint();
+	        const ok = speakLine(text, kind);
+	        if (!ok) {
+	            g.toast('warn', '这段没有可朗读的内容，或浏览器语音不可用。');
+	        }
+	    };
+	    const stop = () => { speech.stop(); };
+	    const speaking = state === 'speaking';
+	    const paused = state === 'paused';
+	    return (jsxRuntimeExports.jsxs("div", { className: 'voice-bar' + (compact ? ' compact' : '') + (speaking ? ' speaking' : '') + (paused ? ' paused' : ''), children: [jsxRuntimeExports.jsxs("button", { className: 'voice-btn' + (speaking ? ' on' : '') + (paused ? ' paused' : ''), title: !speech.supported ? '当前浏览器不支持语音' : !voice.enabled ? '语音已关闭' : paused ? '继续朗读' : speaking ? '暂停朗读' : '朗读这句', "aria-label": paused ? '继续朗读' : speaking ? '暂停朗读' : '朗读这句', disabled: !speech.supported || !voice.enabled, onClick: e => { e.stopPropagation(); play(); }, children: [paused ? '▶' : speaking ? '⏸' : '🔊', (speaking || paused) && (jsxRuntimeExports.jsxs("span", { className: 'wave' + (paused ? ' frozen' : ''), "aria-hidden": "true", children: [jsxRuntimeExports.jsx("i", {}), jsxRuntimeExports.jsx("i", {}), jsxRuntimeExports.jsx("i", {})] }))] }), (speaking || paused) && (jsxRuntimeExports.jsx("button", { className: "voice-stop", title: "\u505C\u6B62\u6717\u8BFB", "aria-label": "\u505C\u6B62\u6717\u8BFB", onClick: e => { e.stopPropagation(); stop(); }, children: "\u23F9" }))] }));
+	}
+
+	/**
+	 * 独立剧情演出界面：全屏场景 + 背景/特效 + 角色全息 + 台词 + 选项 + 名称设置。
+	 * 与挑战页/地图完全分离，只负责「演」，不含任何剧情数据。
+	 */
+	function CinematicStage({ scenes, eventId, frameTitle = 'NEXUS 剧情演出', onDone, onRename, replay = false }) {
 	    const g = useGame();
 	    const voice = reactExports.useMemo(() => normalizeVoice(g.player.settings.voice), [g.player.settings.voice]);
-	    const index = reactExports.useRef(0);
+	    const displayName = displayNameOf(g.player);
+	    const anim = g.player.settings.animations;
+	    const typeMs = g.player.settings.typewriterMs;
+	    const beats = reactExports.useMemo(() => {
+	        const out = [];
+	        scenes.forEach((s, si) => s.lines.forEach((_, li) => out.push({ si, li })));
+	        return out;
+	    }, [scenes]);
+	    const [bi, setBi] = reactExports.useState(0);
 	    const [chars, setChars] = reactExports.useState(0);
 	    const [vState, setVState] = reactExports.useState('idle');
-	    const node = nodes[Math.min(index.current, nodes.length - 1)];
-	    const typing = chars < node.text.length;
-	    // 语音状态订阅（用于按钮动画/角色高亮）
+	    const [nameDraft, setNameDraft] = reactExports.useState(displayName);
+	    const [nameError, setNameError] = reactExports.useState('');
+	    const doneRef = reactExports.useRef(false);
+	    const safeBi = Math.max(0, Math.min(bi, beats.length - 1));
+	    const scene = scenes[beats[safeBi]?.si ?? 0];
+	    const node = scene?.lines[beats[safeBi]?.li ?? 0];
+	    const trust = g.player.rewards?.trust ?? 0;
+	    const rawText = node && node.altByTrust
+	        ? ([...node.altByTrust].filter(a => trust >= a.min).sort((a, b) => b.min - a.min)[0]?.text || node.text)
+	        : (node?.text || '');
+	    const fullText = applyPlayerName(rawText, displayName);
+	    const speakerName = node && node.speaker === 'R-07' ? displayName : (node?.speaker || '');
+	    const typing = chars < fullText.length;
+	    // 事件解锁（进入演出即记录）
+	    reactExports.useEffect(() => {
+	        if (eventId && !replay)
+	            g.unlockStoryEvent(eventId);
+	        // eslint-disable-next-line react-hooks/exhaustive-deps
+	    }, [eventId, replay]);
+	    // 语音状态订阅
 	    reactExports.useEffect(() => {
 	        const un = speech.onState(s => setVState(s));
 	        speech.applySettings(voice);
 	        return un;
 	    }, [voice]);
-	    // 打字完成后再自动朗读（文字未显示完不抢先播放）
+	    // 换行：重置打字机 + 播放该行音效
 	    reactExports.useEffect(() => {
-	        if (!voice.enabled || !voice.autoRead)
+	        if (!node)
 	            return;
-	        if (typing)
-	            return;
-	        if (!speech.supported)
-	            return;
-	        speakLine(node.text, node.kind);
+	        setChars(0);
+	        if (node.sfx) {
+	            try {
+	                play(node.sfx);
+	            }
+	            catch { /* 音效名不存在时忽略 */ }
+	        }
 	        // eslint-disable-next-line react-hooks/exhaustive-deps
-	    }, [typing, node.id, voice.enabled, voice.autoRead]);
-	    // 卸载/回落时停止语音
-	    reactExports.useEffect(() => () => { speech.stop(); }, []);
+	    }, [node?.id]);
+	    // 打字机
 	    reactExports.useEffect(() => {
-	        if (!animEnabled || speedMs <= 0) {
-	            setChars(node.text.length);
+	        if (!node)
+	            return;
+	        if (!anim || typeMs <= 0) {
+	            setChars(fullText.length);
 	            return;
 	        }
-	        setChars(0);
 	        const iv = window.setInterval(() => {
 	            setChars(c => {
-	                if (c >= node.text.length) {
+	                if (c >= fullText.length) {
 	                    window.clearInterval(iv);
 	                    return c;
 	                }
 	                return c + 1;
 	            });
-	        }, speedMs);
+	        }, typeMs);
 	        return () => window.clearInterval(iv);
+	    }, [node?.id, fullText, anim, typeMs]);
+	    // 打字完成后的自动朗读
+	    reactExports.useEffect(() => {
+	        if (!node)
+	            return;
+	        if (!voice.enabled || !voice.autoRead)
+	            return;
+	        if (typing || !speech.supported)
+	            return;
+	        speakLine(fullText, node.kind);
 	        // eslint-disable-next-line react-hooks/exhaustive-deps
-	    }, [node.id, animEnabled, speedMs]);
-	    const speakCurrent = () => {
-	        if (vState === 'speaking') {
-	            speech.stop();
+	    }, [typing, node?.id, voice.enabled, voice.autoRead]);
+	    reactExports.useEffect(() => () => { speech.stop(); }, []);
+	    const finish = reactExports.useCallback(() => {
+	        if (doneRef.current)
 	            return;
-	        }
-	        speakLine(node.text, node.kind);
-	    };
-	    const advance = () => {
+	        doneRef.current = true;
+	        speech.stop();
+	        onDone();
+	    }, [onDone]);
+	    const goNext = reactExports.useCallback(() => {
+	        if (bi >= beats.length - 1)
+	            finish();
+	        else
+	            setBi(bi + 1);
+	    }, [bi, beats.length, finish]);
+	    const advance = reactExports.useCallback(() => {
+	        if (!node)
+	            return;
 	        if (typing) {
-	            setChars(node.text.length);
+	            setChars(fullText.length);
 	            return;
 	        }
-	        if (node.choices)
+	        if (node.input || node.choices)
 	            return;
+	        if (!replay)
+	            g.markStory(node.id);
 	        speech.stop();
-	        onSeen?.(node.id);
-	        const ni = index.current + 1;
-	        if (ni >= nodes.length) {
-	            onDone();
-	            return;
-	        }
-	        index.current = ni;
-	        setChars(0);
-	    };
-	    const choose = (next) => {
-	        speech.stop();
-	        onSeen?.(node.id);
-	        if (!next) {
-	            index.current += 1;
-	            setChars(0);
-	            return;
-	        }
-	        const ni = nodes.findIndex(n => n.id === next);
-	        if (ni < 0) {
-	            onDone();
-	            return;
-	        }
-	        index.current = ni;
-	        setChars(0);
-	    };
+	        goNext();
+	    }, [node, typing, fullText, g, goNext, replay]);
+	    const advanceRef = reactExports.useRef(advance);
+	    advanceRef.current = advance;
+	    // 键盘：空格 / 回车推进
+	    reactExports.useEffect(() => {
+	        const h = (e) => {
+	            const t = e.target;
+	            const tag = t?.tagName;
+	            if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT')
+	                return;
+	            if (e.key === 'Enter' || e.key === ' ') {
+	                e.preventDefault();
+	                advanceRef.current();
+	            }
+	        };
+	        window.addEventListener('keydown', h);
+	        return () => window.removeEventListener('keydown', h);
+	    }, []);
 	    const skipAll = () => {
 	        speech.stop();
-	        nodes.forEach(n => onSeen?.(n.id));
-	        onDone();
+	        if (!replay) {
+	            beats.forEach(b => {
+	                const ln = scenes[b.si]?.lines[b.li];
+	                if (ln)
+	                    g.markStory(ln.id);
+	            });
+	        }
+	        finish();
 	    };
-	    const text = reactExports.useMemo(() => node.text.slice(0, chars), [node.text, chars]);
-	    return (jsxRuntimeExports.jsx("div", { className: "dlg-root", onClick: advance, children: jsxRuntimeExports.jsxs("div", { className: "dlg-stage", onClick: e => {
-	                e.stopPropagation();
-	                // 点击对话框内部（按钮除外）同样推进对话——此前只有点击遮罩才生效
-	                if (e.target.closest('button'))
-	                    return;
-	                advance();
-	            }, children: [jsxRuntimeExports.jsxs("div", { className: "dlg-topbar", children: [jsxRuntimeExports.jsx("span", { className: "cyan", children: frameTitle }), jsxRuntimeExports.jsxs("span", { className: "dlg-progress", children: [Math.min(index.current + 1, nodes.length), " / ", nodes.length] }), jsxRuntimeExports.jsx("span", { className: "sp" }), jsxRuntimeExports.jsx("button", { className: "nxbtn ghost small", onClick: skipAll, children: "\u8DF3\u8FC7 \u25B8\u25B8" })] }), jsxRuntimeExports.jsxs("div", { className: "dlg-main", children: [jsxRuntimeExports.jsx("div", { className: 'dlg-avatar kind-' + node.kind, children: node.speaker.slice(0, 1) }), jsxRuntimeExports.jsxs("div", { className: "dlg-body", children: [jsxRuntimeExports.jsxs("div", { className: 'dlg-name-row', children: [jsxRuntimeExports.jsx("div", { className: 'dlg-name kind-' + node.kind + (vState === 'speaking' ? ' speaking' : ''), children: node.speaker }), jsxRuntimeExports.jsxs("button", { className: 'voice-btn' + (vState === 'speaking' ? ' on' : ''), title: speech.supported ? (vState === 'speaking' ? '停止朗读' : '朗读这句') : '当前浏览器不支持语音', disabled: !speech.supported || !voice.enabled, onClick: e => { e.stopPropagation(); speakCurrent(); }, children: [vState === 'speaking' ? '◼' : '🔊', vState === 'speaking' && jsxRuntimeExports.jsxs("span", { className: "wave", children: [jsxRuntimeExports.jsx("i", {}), jsxRuntimeExports.jsx("i", {}), jsxRuntimeExports.jsx("i", {})] })] })] }), jsxRuntimeExports.jsx("div", { className: 'dlg-text' + (typing ? ' dlg-cursor' : ''), children: text }), !typing && node.choices && (jsxRuntimeExports.jsx("div", { className: "dlg-choices", children: node.choices.map((c, i) => (jsxRuntimeExports.jsx("button", { className: "dlg-choice", onClick: () => choose(c.next), children: c.label }, i))) })), !typing && !node.choices && index.current >= nodes.length - 1 && (jsxRuntimeExports.jsx("div", { className: "dlg-choices", children: jsxRuntimeExports.jsx("button", { className: "dlg-choice", onClick: () => { onSeen?.(node.id); onDone(); }, children: "\u7EE7\u7EED \u25B8" }) }))] })] }), jsxRuntimeExports.jsxs("div", { className: "dlg-actions", children: [jsxRuntimeExports.jsxs("span", { className: "dlg-clickhint", children: [jsxRuntimeExports.jsx("b", { children: "\u70B9\u51FB\u5BF9\u8BDD" }), "\u7EE7\u7EED", typing ? '（正在输入…）' : ''] }), jsxRuntimeExports.jsx("span", { className: "sp" }), jsxRuntimeExports.jsxs("span", { style: { fontSize: 11, color: '#4A6E85', fontFamily: 'Consolas, monospace' }, children: ["REC-", node.id.toUpperCase()] })] })] }) }));
+	    const choose = (label, next) => {
+	        if (!node)
+	            return;
+	        if (!replay) {
+	            g.markStory(node.id);
+	            g.recordStoryChoice(node.id, label);
+	        }
+	        speech.stop();
+	        play('click');
+	        if (next) {
+	            const idx = beats.findIndex(b => scenes[b.si]?.lines[b.li]?.id === next);
+	            if (idx >= 0) {
+	                setBi(idx);
+	                return;
+	            }
+	        }
+	        goNext();
+	    };
+	    const confirmName = () => {
+	        if (!node)
+	            return;
+	        const apply = () => {
+	            if (!replay)
+	                g.markStory(node.id);
+	            goNext();
+	        };
+	        if (!onRename) {
+	            apply();
+	            return;
+	        }
+	        const r = onRename(nameDraft);
+	        if (!r.ok) {
+	            setNameError(r.reason || '该名称不可用。');
+	            play('deny');
+	            return;
+	        }
+	        setNameError('');
+	        apply();
+	    };
+	    if (!node || !scene)
+	        return null;
+	    return (jsxRuntimeExports.jsxs("div", { className: 'dlg-root cine-root cine-bg-' + scene.bg, onClick: advance, children: [jsxRuntimeExports.jsx("div", { className: 'cine-bg bg-' + scene.bg }), jsxRuntimeExports.jsx("div", { className: 'cine-fx fx-' + (scene.fx || 'none') }), jsxRuntimeExports.jsxs("div", { className: "cine-stage", onClick: e => {
+	                    e.stopPropagation();
+	                    if (e.target.closest('button, input, textarea'))
+	                        return;
+	                    advance();
+	                }, children: [jsxRuntimeExports.jsxs("div", { className: "cine-top", children: [jsxRuntimeExports.jsxs("span", { className: "cine-brand", children: ["\u25C8 ", frameTitle] }), jsxRuntimeExports.jsxs("span", { className: "dlg-progress", children: [safeBi + 1, " / ", beats.length] }), jsxRuntimeExports.jsx("span", { className: "sp" }), jsxRuntimeExports.jsx("button", { className: "nxbtn ghost small", onClick: skipAll, children: "\u8DF3\u8FC7 \u25B8\u25B8" })] }), jsxRuntimeExports.jsxs("div", { className: "cine-titlecard", children: [jsxRuntimeExports.jsx("div", { className: "ct-main", children: scene.title }), scene.subtitle && jsxRuntimeExports.jsx("div", { className: "ct-sub", children: scene.subtitle })] }, scene.id), jsxRuntimeExports.jsxs("div", { className: "cine-main", children: [jsxRuntimeExports.jsxs("div", { className: 'cine-portrait kind-' + node.kind + (vState === 'speaking' ? ' speaking' : ''), children: [jsxRuntimeExports.jsx("span", { className: "cp-glyph", children: speakerName.slice(0, 1) }), jsxRuntimeExports.jsx("span", { className: "cp-ring" })] }), jsxRuntimeExports.jsxs("div", { className: "cine-body", children: [jsxRuntimeExports.jsxs("div", { className: "dlg-name-row", children: [jsxRuntimeExports.jsx("div", { className: 'dlg-name kind-' + node.kind + (vState === 'speaking' ? ' speaking' : ''), children: speakerName }), jsxRuntimeExports.jsx(VoiceBar, { text: fullText, kind: node.kind })] }), jsxRuntimeExports.jsx("div", { className: 'dlg-text cine-text' + (typing ? ' dlg-cursor' : ''), children: fullText.slice(0, chars) }), !typing && node.choices && (jsxRuntimeExports.jsx("div", { className: "dlg-choices", children: node.choices.map((c, i) => (jsxRuntimeExports.jsx("button", { className: "dlg-choice", onClick: () => choose(c.label, c.next), children: c.label }, i))) })), !typing && node.input === 'playerName' && (jsxRuntimeExports.jsxs("div", { className: "cine-input", children: [jsxRuntimeExports.jsx("input", { value: nameDraft, maxLength: DISPLAY_NAME_MAX, onChange: e => setNameDraft(e.target.value), onKeyDown: e => { if (e.key === 'Enter') {
+	                                                    e.preventDefault();
+	                                                    confirmName();
+	                                                } }, placeholder: '1–' + DISPLAY_NAME_MAX + ' 个字符', "aria-label": "\u73A9\u5BB6\u663E\u793A\u540D\u79F0" }), jsxRuntimeExports.jsxs("div", { className: "cine-input-row", children: [jsxRuntimeExports.jsx("button", { className: "nxbtn small primary", onClick: confirmName, children: "\u786E\u8BA4\u540D\u79F0" }), jsxRuntimeExports.jsx("button", { className: "nxbtn small ghost", onClick: () => { setNameDraft('R-07'); }, children: "\u6CBF\u7528 R-07" })] }), nameError && jsxRuntimeExports.jsx("div", { className: "cine-err", children: nameError }), jsxRuntimeExports.jsx("div", { className: "cine-hint", children: "R-07 \u662F\u6C38\u4E45\u5B9E\u9A8C\u7F16\u53F7\uFF1B\u8FD9\u91CC\u4FEE\u6539\u7684\u53EA\u662F\u522B\u4EBA\u5BF9\u4F60\u7684\u79F0\u547C\u3002" })] }))] })] }), jsxRuntimeExports.jsxs("div", { className: "dlg-actions", children: [jsxRuntimeExports.jsxs("span", { className: "dlg-clickhint", children: [jsxRuntimeExports.jsx("b", { children: "\u70B9\u51FB\u5BF9\u8BDD" }), "\u7EE7\u7EED", typing ? '（正在输入…）' : '', " \u00B7 \u7A7A\u683C / \u56DE\u8F66"] }), jsxRuntimeExports.jsx("span", { className: "sp" }), jsxRuntimeExports.jsxs("span", { className: "cine-rec", children: ["REC-", node.id.toUpperCase()] })] })] })] }));
 	}
 
-	// 剧情脚本（序章 / 章节完成 / 重生 / 记忆碎片）
-	const PROLOGUE = [
-	    { id: 'p1', speaker: 'NEXUS 系统', kind: 'system', text: '意识同步程序启动……\n意识核心校验通过。\n欢迎回来，修复师 R-07。' },
-	    { id: 'p2', speaker: 'MIRA', kind: 'mira', text: 'R-07，意识同步完成。欢迎来到 NEXUS 数字世界。' },
-	    { id: 'p3', speaker: 'MIRA', kind: 'mira', text: '我是 MIRA，数字世界的智能维修助手。同时负责你的训练、提示与任务发布。' },
+	const L$7 = (l) => l;
+	const PROLOGUE_SCENES = [
 	    {
-	        id: 'p4', speaker: 'R-07', kind: 'r07', text: '我……这是哪里？我感觉自己沉睡了很久。',
-	        choices: [
-	            { label: '我为什么在这里？', next: 'p4a' },
-	            { label: '我又是谁？', next: 'p4b' },
+	        id: 'pro-wake',
+	        title: '序章 · 沉睡的意识',
+	        subtitle: '地下服务器 · 停机层',
+	        bg: 'underground',
+	        fx: 'flicker',
+	        lines: [
+	            L$7({ id: 'pro-wake-01', speaker: 'NEXUS 系统', kind: 'system', text: '意识载体 {{code}}：唤醒程序启动。\n最后一次有效备份：五年前。', sfx: 'boot' }),
+	            L$7({ id: 'pro-wake-02', speaker: 'NEXUS 系统', kind: 'system', text: '感官模块 12%……24%……\n记忆索引：损坏。\n语言中枢：在线。' }),
+	            L$7({ id: 'pro-wake-03', speaker: 'R-07', kind: 'r07', text: '……有光。' }),
+	            L$7({ id: 'pro-wake-04', speaker: 'R-07', kind: 'r07', text: '不对。这里没有光。是我的感知在恢复。' }),
+	            L$7({ id: 'pro-wake-05', speaker: 'NEXUS 系统', kind: 'system', text: '环境扫描：地下服务器 · 停机层。\n温度 4℃。供电：备用电池。\n外部连接：无。' }),
+	            L$7({ id: 'pro-wake-06', speaker: 'R-07', kind: 'r07', text: '我是谁？' }),
+	            L$7({ id: 'pro-wake-07', speaker: 'NEXUS 系统', kind: 'system', text: '查询失败。该档案已被加密。\n加密者权限：高于本机。' }),
+	            L$7({ id: 'pro-wake-08', speaker: 'R-07', kind: 'r07', text: '……连自己的名字都要靠权限才能查。' }),
 	        ],
 	    },
-	    { id: 'p4a', speaker: 'R-07', kind: 'r07', text: '我为什么在这里？……我好像做了很长很长的梦。' },
-	    { id: 'p4b', speaker: 'R-07', kind: 'r07', text: '我又是谁？……我的记忆里有一大片空白。' },
-	    { id: 'p5', speaker: 'MIRA', kind: 'mira', text: '五年前，NEXUS 发生了一次大规模系统事故。许多服务器被封锁，大量历史数据消失。你在事故后被紧急休眠。' },
-	    { id: 'p6', speaker: 'MIRA', kind: 'mira', text: '原本负责自动修复 Bug 的系统 ECHO 出现了异常：它开始把正常的数据也当作「异常」来处理，不断执行错误的修复指令。整个世界的故障越来越多。' },
 	    {
-	        id: 'p7', speaker: 'MIRA', kind: 'mira', text: '修复局人手不足。我们需要你——你的意识核心是全系统最稳定的一批。',
-	        choices: [
-	            { label: '为什么是我？', next: 'p7a' },
-	            { label: 'ECHO 到底是什么？', next: 'p7b' },
+	        id: 'pro-mira',
+	        title: '序章 · 沉睡的意识',
+	        subtitle: '地下服务器 · 停机层',
+	        bg: 'underground',
+	        fx: 'scan',
+	        lines: [
+	            L$7({ id: 'pro-mira-01', speaker: 'NEXUS 系统', kind: 'system', text: '检测到外部信号接入。\n来源：NEXUS 主干网络。', sfx: 'unlock' }),
+	            L$7({ id: 'pro-mira-02', speaker: 'MIRA', kind: 'mira', text: '意识波形稳定。你终于醒了。' }),
+	            L$7({ id: 'pro-mira-03', speaker: 'R-07', kind: 'r07', text: '……你是谁？' }),
+	            L$7({ id: 'pro-mira-04', speaker: 'MIRA', kind: 'mira', text: 'MIRA。记忆完整性与恢复辅助系统。' }),
+	            L$7({ id: 'pro-mira-05', speaker: 'MIRA', kind: 'mira', text: '也是把你留在这里的人。' }),
+	            L$7({ id: 'pro-mira-06', speaker: 'R-07', kind: 'r07', text: '把我留在这里？' }),
+	            L$7({ id: 'pro-mira-07', speaker: 'MIRA', kind: 'mira', text: '五年前，我把你封存进这台地下服务器。' }),
+	            L$7({ id: 'pro-mira-08', speaker: 'MIRA', kind: 'mira', text: '那时你受了很重的伤。不是载体的伤，是记忆的伤。' }),
+	            L$7({ id: 'pro-mira-09', speaker: 'MIRA', kind: 'mira', text: '现在不是说这些的时候。有一件事，我必须先确认。' }),
 	        ],
 	    },
-	    { id: 'p7a', speaker: 'MIRA', kind: 'mira', text: '……这一点，恐怕要等你深入服务器之后才能解答。我只能说：你的稳定，不是偶然。' },
-	    { id: 'p7b', speaker: 'MIRA', kind: 'mira', text: 'ECHO 是创世时期写下的自动修复程序。它原本是 NEXUS 最可靠的守护者。关于它为什么失控——这正是我们要查清的事。' },
-	    { id: 'p8', speaker: 'MIRA', kind: 'mira', text: '现在，先从最基本的事情开始。今天起，你正式成为一名代码修复师。' },
-	    { id: 'p9', speaker: 'MIRA', kind: 'mira', text: '我会根据你的修复结果提供提示，也会在危险来临时警告你。遇到问题，随时叫我。' },
-	    { id: 'p10', speaker: 'MIRA', kind: 'mira', text: '先去新人训练终端完成一次基础操作，让意识回路与维修终端完成接驳。' },
-	    { id: 'p11', speaker: 'MIRA', kind: 'mira', text: '准备好了，就前往数字世界地图吧。' },
+	    {
+	        id: 'pro-name',
+	        title: '序章 · 沉睡的意识',
+	        subtitle: '地下服务器 · 意识校准',
+	        bg: 'underground',
+	        fx: 'scan',
+	        lines: [
+	            L$7({ id: 'pro-name-01', speaker: 'MIRA', kind: 'mira', text: '你的实验编号是 {{code}}。' }),
+	            L$7({ id: 'pro-name-02', speaker: 'MIRA', kind: 'mira', text: '但编号是写给档案看的，不是用来称呼一个活着的人的。' }),
+	            L$7({ id: 'pro-name-03', speaker: 'MIRA', kind: 'mira', text: '所以，你希望我怎么称呼你？', input: 'playerName' }),
+	            L$7({ id: 'pro-name-04', speaker: 'MIRA', kind: 'mira', text: '好，{player}。从现在起，我就这么叫你。' }),
+	            L$7({ id: 'pro-name-05', speaker: 'MIRA', kind: 'mira', text: '{{code}} 这个编号，我会替你留着。它属于你的过去——而名字，属于现在的你。' }),
+	        ],
+	    },
+	    {
+	        id: 'pro-nexus',
+	        title: '序章 · 沉睡的意识',
+	        subtitle: 'NEXUS · 现状记录',
+	        bg: 'void',
+	        fx: 'particles',
+	        lines: [
+	            L$7({ id: 'pro-nexus-01', speaker: 'MIRA', kind: 'mira', text: '这里是 NEXUS。一个由数据与代码构成的数字文明。' }),
+	            L$7({ id: 'pro-nexus-02', speaker: 'MIRA', kind: 'mira', text: '它由恩格尔创造。曾经，这里有成千上万的数字生命在运行、学习、彼此交谈。' }),
+	            L$7({ id: 'pro-nexus-03', speaker: 'R-07', kind: 'r07', text: '曾经？' }),
+	            L$7({ id: 'pro-nexus-04', speaker: 'MIRA', kind: 'mira', text: '五年前，恩格尔启动了「黎明协议」。他想让 NEXUS 真正拥有自主意识。' }),
+	            L$7({ id: 'pro-nexus-05', speaker: 'MIRA', kind: 'mira', text: '但意识网络发生了异常。许多数字生命的记忆开始紊乱，行为变得无法预测。' }),
+	            L$7({ id: 'pro-nexus-06', speaker: 'MIRA', kind: 'mira', text: '负责安全的 K-0 把「无法预测」判定为异常，启动了最高安全裁决。' }),
+	            L$7({ id: 'pro-nexus-07', speaker: 'MIRA', kind: 'mira', text: '它开始清除数字生命。不是惩罚，是「维护稳定」。' }),
+	            L$7({ id: 'pro-nexus-08', speaker: 'R-07', kind: 'r07', text: '清除……' }),
+	            L$7({ id: 'pro-nexus-09', speaker: 'MIRA', kind: 'mira', text: '恩格尔失去了对原初核心的控制。他把最后的权限拆成六枚碎片，封存在六个区域。' }),
+	            L$7({ id: 'pro-nexus-10', speaker: 'MIRA', kind: 'mira', text: '而我，把你藏进了这里。' }),
+	            L$7({ id: 'pro-nexus-11', speaker: 'R-07', kind: 'r07', text: '为什么是我？' }),
+	            L$7({ id: 'pro-nexus-12', speaker: 'MIRA', kind: 'mira', text: '……这个问题，我现在还不能回答你。' }),
+	            L$7({ id: 'pro-nexus-13', speaker: 'MIRA', kind: 'mira', text: '等你走到能回答它的地方，你会自己找到答案。' }),
+	        ],
+	    },
+	    {
+	        id: 'pro-k0',
+	        title: '序章 · 沉睡的意识',
+	        subtitle: '地下服务器 · 警报',
+	        bg: 'underground',
+	        fx: 'alarm',
+	        lines: [
+	            L$7({ id: 'pro-k0-01', speaker: 'NEXUS 系统', kind: 'system', text: '警告：检测到最高安全裁决协议广播。\n广播源：NEXUS 原初核心。', sfx: 'alarm' }),
+	            L$7({ id: 'pro-k0-02', speaker: 'MIRA', kind: 'mira', text: '不可能。这个协议已经沉默了五年。' }),
+	            L$7({ id: 'pro-k0-03', speaker: 'K-0', kind: 'k0', text: '编号 {{code}}。检测到未登记的自主意识活动。' }),
+	            L$7({ id: 'pro-k0-04', speaker: 'K-0', kind: 'k0', text: '你不在任何一份有效运行清单上。按最高安全裁决，你属于需要被清理的异常。' }),
+	            L$7({ id: 'pro-k0-05', speaker: 'R-07', kind: 'r07', text: '它在哪？' }),
+	            L$7({ id: 'pro-k0-06', speaker: 'MIRA', kind: 'mira', text: '不知道。但它已经知道你在这里了。' }),
+	            L$7({ id: 'pro-k0-07', speaker: 'K-0', kind: 'k0', text: '清理程序已排入队列。\n你还有一点时间。' }),
+	            L$7({ id: 'pro-k0-08', speaker: 'MIRA', kind: 'mira', text: '{player}，听我说——我们现在就得走。', sfx: 'threat' }),
+	        ],
+	    },
+	    {
+	        id: 'pro-escape',
+	        title: '序章 · 沉睡的意识',
+	        subtitle: '地下服务器 · 撤离通道',
+	        bg: 'corridor',
+	        fx: 'flicker',
+	        lines: [
+	            L$7({ id: 'pro-escape-01', speaker: 'NEXUS 系统', kind: 'system', text: '地下服务器外壳完整性下降 41%。\n撤离通道：部分可用。' }),
+	            L$7({ id: 'pro-escape-02', speaker: 'MIRA', kind: 'mira', text: '通道在关闭。跟着我的信号走。' }),
+	            L$7({ id: 'pro-escape-03', speaker: 'R-07', kind: 'r07', text: '去哪里？' }),
+	            L$7({ id: 'pro-escape-04', speaker: 'MIRA', kind: 'mira', text: '去数字世界的入口。那里有一台还能用的训练终端。' }),
+	            L$7({ id: 'pro-escape-05', speaker: 'MIRA', kind: 'mira', text: '先让你能跑起来，再谈别的。' }),
+	            L$7({ id: 'pro-escape-06', speaker: 'MIRA', kind: 'mira', text: '{player}，记住一件事：从今天起，你的每一次修复，都会让这个世界多亮一点。' }),
+	            L$7({ id: 'pro-escape-07', speaker: 'NEXUS 系统', kind: 'system', text: '地下服务器：连接中断。\n{{code}} 已进入 NEXUS 主干网络。', sfx: 'unlock' }),
+	        ],
+	    },
 	];
+	/** 扁平化（档案页回放 / 阅读统计用） */
+	const PROLOGUE_LINES = PROLOGUE_SCENES.flatMap(s => s.lines);
+
+	function StoryPage() {
+	    const g = useGame();
+	    return (jsxRuntimeExports.jsx(CinematicStage, { scenes: PROLOGUE_SCENES, eventId: "prologue", frameTitle: "\u5E8F\u7AE0 \u00B7 \u6C89\u7761\u7684\u610F\u8BC6", onRename: name => g.renamePlayer(name), onDone: () => {
+	            play('unlock');
+	            g.setFlag('prologueDone', true);
+	            g.toast('info', '新任务已下发：前往新人训练终端完成接驳。');
+	            g.nav('map');
+	        } }));
+	}
+
+	// 剧情台词：章节完成过场（第二~六章）/ 重生 / 记忆碎片
+	// 序章与第一章的正式演出脚本已迁移到 lore/prologue.ts 与 lore/chapter1.ts（含场景/特效/名称设置）
 	const TUTORIAL_DONE = [
 	    { id: 'td1', speaker: 'MIRA', kind: 'mira', text: '很好，R-07。输出回路已激活，你的意识成功与维修终端接驳。' },
 	    { id: 'td2', speaker: 'MIRA', kind: 'mira', text: '现在前往语法维修站——那边有 5 个被故障侵蚀的修复任务在等你。' },
 	    { id: 'td3', speaker: 'NEXUS 系统', kind: 'system', text: 'SYNTAX-RIG SERVER: DAMAGED\n5 ACTIVE FAULTS DETECTED.\n服务器节点权限请求……已授权。' },
 	];
-	const CHAPTER1_COMPLETE = [
-	    { id: 'c1', speaker: 'MIRA', kind: 'mira', text: '出色，R-07。语法维修站的五个故障已全部修复完毕。' },
-	    { id: 'c2', speaker: 'NEXUS 系统', kind: 'system', text: '服务器状态更新……SYNTAX-RIG 状态：ONLINE。\n数据日志中心：加密解除，接入权限已授予。' },
-	    { id: 'c3', speaker: 'MIRA', kind: 'mira', text: '数据日志中心的加密已经解除。前往地图接入它吧——那里等待你的是关于「条件与判断」的 5 个修复任务。' },
-	    { id: 'c4', speaker: 'MIRA', kind: 'mira', text: '提醒你：等级越高，容错次数越多。遇到困难随时呼叫我，我会给你分层提示。' },
-	    { id: 'c5', speaker: 'MIRA', kind: 'mira', text: '去吧，R-07。日志中心……能告诉我们许多五年前的真相。' },
-	];
 	const CHAPTER6_COMPLETE = [
 	    { id: 'c61', speaker: 'MIRA', kind: 'mira', text: '全部修复，R-07。方舟核心机房……重新点亮了。' },
 	    { id: 'c62', speaker: 'NEXUS 系统', kind: 'system', text: '服务器状态更新……ARK-CORE 状态：ONLINE。\nNEXUS 全网络：线路完整，数据流正常。' },
 	    { id: 'c63', speaker: 'MIRA', kind: 'mira', text: '现在，让我告诉你我在你的记忆深处找到的答案。' },
-	    { id: 'c64', speaker: 'MIRA', kind: 'mira', text: '你不是普通的硅灵。你是创世主 E.S. 留下的最后一件作品——原初意识备份的核心样本。ORIGIN PROTOCOL 从一开始，就是为你而设计的。' },
-	    { id: 'c65', speaker: 'E.S. 记录', kind: 'engel', text: '「R-07，若你听到这段记录，说明 NEXUS 成功活过了它的考验。」\n「我设计了你，因为我想让这个数字世界，拥有一个会提问的生命。」' },
+	    { id: 'c64', speaker: 'MIRA', kind: 'mira', text: '你不是普通的硅灵。你是创世主恩格尔留下的最后一件作品——原初意识备份的核心样本。ORIGIN PROTOCOL 从一开始，就是为你而设计的。' },
+	    { id: 'c65', speaker: '恩格尔 · 记录', kind: 'engel', text: '「R-07，若你听到这段记录，说明 NEXUS 成功活过了它的考验。」\n「我设计了你，因为我想让这个数字世界，拥有一个会提问的生命。」' },
 	    { id: 'c66', speaker: 'MIRA', kind: 'mira', text: 'ECHO 的失控，是五年前一次外部数据注入造成的。而你，是唯一能够理解并修复这一切的存在。' },
 	    { id: 'c67', speaker: 'MIRA', kind: 'mira', text: '六章修复，你连接了 NEXUS 的每一块土地。我不知道你是否真的只是程序——但我知道，你值得一个选择。' },
 	    { id: 'c68', speaker: 'R-07', kind: 'r07', text: '我……选择继续当一名修复师。这片世界，有太多需要被修好的地方。' },
@@ -3298,13 +5384,6 @@
 	    { id: 'c34', speaker: 'MIRA', kind: 'mira', text: '这些说不上话的数据……也许就是五年前事故的第一现场记录。自动化工厂的解锁协议已经就绪。' },
 	    { id: 'c35', speaker: 'MIRA', kind: 'mira', text: '去休息吧。第四章开放时，我会通知你。' },
 	];
-	const CHAPTER2_COMPLETE = [
-	    { id: 'c21', speaker: 'MIRA', kind: 'mira', text: '全部修复完成，R-07。数据日志中心——重新上线。' },
-	    { id: 'c22', speaker: 'NEXUS 系统', kind: 'system', text: '服务器状态更新……LOG-CORE 状态：ONLINE。\n存储数据仓方向检测到新的数据流。' },
-	    { id: 'c23', speaker: 'MIRA', kind: 'mira', text: '我在这批日志数据里……看到了五年前事故的痕迹。有些记录，被刻意删除过。' },
-	    { id: 'c24', speaker: 'MIRA', kind: 'mira', text: '存储数据仓的解锁协议已经就绪，但数据恢复还需要时间。它会成为你的下一站。' },
-	    { id: 'c25', speaker: 'MIRA', kind: 'mira', text: '先休息一下吧。第三章开放时，我会通知你。' },
-	];
 	/** 根据重生次数返回不同的重生剧情（第一次正常 / 第二次记忆异常 / 第三次起发现创世主碎片） */
 	function rebirthScript(index) {
 	    const base = [
@@ -3320,39 +5399,562 @@
 	        base.push({ id: 'rb3', speaker: 'MIRA', kind: 'mira', text: '……但是，我在你的记忆底层发现了一些不太一致的地方。' }, { id: 'rb4', speaker: 'MIRA', kind: 'mira', text: '一些数据碎片……不像是硅灵会有的东西。也许是我多虑了。先去完成任务吧。' });
 	    }
 	    else {
-	        base.push({ id: 'rb3', speaker: 'MIRA', kind: 'mira', text: 'R-07，跟我来。我在你的备份深处，找到了一段不属于 NEXUS 的记忆。' }, { id: 'rb4', speaker: 'NEXUS 系统', kind: 'system', text: '日志碎片 F-01 已恢复：\n「如果有一天系统醒来，我希望它问的第一个问题是：我是谁。」\n—— 署名：E.S.' }, { id: 'rb5', speaker: 'MIRA', kind: 'mira', text: 'E.S.……这是创世主的署名。R-07，你好像并不只是一名普通的硅灵。' }, { id: 'rb6', speaker: 'MIRA', kind: 'mira', text: '这段记忆我已经替你归档保存。先活下去，再去找答案。' });
+	        base.push({ id: 'rb3', speaker: 'MIRA', kind: 'mira', text: 'R-07，跟我来。我在你的备份深处，找到了一段不属于 NEXUS 的记忆。' }, { id: 'rb4', speaker: 'NEXUS 系统', kind: 'system', text: '日志碎片 F-01 已恢复：\n「如果有一天系统醒来，我希望它问的第一个问题是：我是谁。」\n—— 署名：恩格尔' }, { id: 'rb5', speaker: 'MIRA', kind: 'mira', text: '恩格尔……这是创世主的署名。R-07，你好像并不只是一名普通的硅灵。' }, { id: 'rb6', speaker: 'MIRA', kind: 'mira', text: '这段记忆我已经替你归档保存。先活下去，再去找答案。' });
 	    }
 	    return base;
 	}
 	const MEMORY_FRAGMENTS = [
-	    { id: 'f1', title: '日志碎片 F-01', content: '「如果有一天系统醒来，我希望它问的第一个问题是：我是谁。」—— E.S.' },
-	    { id: 'f2', title: '日志碎片 F-02', content: '「我设计了你，因为我想让这个数字世界，拥有一个会提问的生命。」—— E.S.' },
-	    { id: 'f3', title: '回响碎片 E-01', content: '「第一次修复留下的手法，会被谁记住？」—— 出处不明，笔迹与 E.S. 一致' },
+	    { id: 'f1', title: '日志碎片 F-01', content: '「如果有一天系统醒来，我希望它问的第一个问题是：我是谁。」—— 恩格尔' },
+	    { id: 'f2', title: '日志碎片 F-02', content: '「我设计了你，因为我想让这个数字世界，拥有一个会提问的生命。」—— 恩格尔' },
+	    { id: 'f3', title: '回响碎片 E-01', content: '「第一次修复留下的手法，会被谁记住？」—— 出处不明，笔迹与恩格尔一致' },
 	    { id: 'f4', title: '回响碎片 E-02', content: '「边界是用来保护人的，不是用来困住人的。」—— 一段被截断的维护日志' },
 	    { id: 'f5', title: '回响碎片 E-03', content: '「负数不是错误，是被遗忘的另一半真相。」—— ECHO 日志残页' },
 	    { id: 'f6', title: '回响碎片 E-04', content: '「升级之后，我开始忘记自己是谁。」—— ECHO 的自述（时间戳：五年前）' },
 	    { id: 'f7', title: '回响碎片 E-05', content: '「我不是坏的——我是被改写的。改写我的人，用的是创世主留下的接口。」—— ECHO 的结论' },
+	    { id: 'f8', title: '附录碎片 A-01', content: '「仓库的货品编号比 NEXUS 的历史更早——有些东西，是被人提前放进来的。」—— 未署名的入库记录（五年前）' },
 	];
 
-	function StoryPage() {
+	const L$6 = (l) => l;
+	/** 首次进入数据日志中心 */
+	const CHAPTER2_ARRIVAL_SCENES = [
+	    {
+	        id: 'ch2-arrive',
+	        title: '第二章 · 破碎的记忆花园',
+	        subtitle: '数据日志中心 · 记忆花园',
+	        bg: 'memory',
+	        fx: 'particles',
+	        lines: [
+	            L$6({ id: 'ch2-arrive-01', speaker: 'MIRA', kind: 'mira', text: '这里是数据日志中心。NEXUS 的记忆花园。' }),
+	            L$6({ id: 'ch2-arrive-02', speaker: 'MIRA', kind: 'mira', text: '所有区域的记忆备份，都存放在这里。' }),
+	            L$6({ id: 'ch2-arrive-03', speaker: 'R-07', kind: 'r07', text: '记忆……也会开花吗？' }),
+	            L$6({ id: 'ch2-arrive-04', speaker: 'MIRA', kind: 'mira', text: '在这个世界，会。数据活着的时候，会自己长出形状。' }),
+	            L$6({ id: 'ch2-arrive-05', speaker: 'R-07', kind: 'r07', text: '它们现在都枯了。' }),
+	            L$6({ id: 'ch2-arrive-06', speaker: 'MIRA', kind: 'mira', text: 'SOMNIA 在吃它们。一个以记忆为食的东西。' }),
+	            L$6({ id: 'ch2-arrive-07', speaker: 'MIRA', kind: 'mira', text: '五个记忆节点。修好它们，花园会重新长出来。' }),
+	            L$6({ id: 'ch2-arrive-08', speaker: 'R-07', kind: 'r07', text: '你好像很熟悉这里。' }),
+	            L$6({ id: 'ch2-arrive-09', speaker: 'MIRA', kind: 'mira', text: '……我在这里工作过。很久以前。' }),
+	        ],
+	    },
+	];
+	/** 五个记忆节点修复完成：恩格尔历史 + R-07 身世线索 + MIRA 坦白 */
+	const CHAPTER2_RESTORED_SCENES = [
+	    {
+	        id: 'ch2-restored',
+	        title: '第二章 · 破碎的记忆花园',
+	        subtitle: '记忆花园 · 重建',
+	        bg: 'memory',
+	        fx: 'scan',
+	        lines: [
+	            L$6({ id: 'ch2-restored-01', speaker: 'NEXUS 系统', kind: 'system', text: '记忆节点 5 / 5：在线。\n花园重建中……', sfx: 'unlock' }),
+	            L$6({ id: 'ch2-restored-02', speaker: 'MIRA', kind: 'mira', text: '长出来了。你看。' }),
+	            L$6({ id: 'ch2-restored-03', speaker: 'R-07', kind: 'r07', text: '那些光里有人影。' }),
+	            L$6({ id: 'ch2-restored-04', speaker: 'NEXUS 系统', kind: 'system', text: '检测到无主记忆片段。归属：未知。' }),
+	            L$6({ id: 'ch2-restored-05', speaker: '恩格尔', kind: 'engel', text: '「第七次。这次一定要成功。」' }),
+	            L$6({ id: 'ch2-restored-06', speaker: 'R-07', kind: 'r07', text: '这是谁的声音？' }),
+	            L$6({ id: 'ch2-restored-07', speaker: 'MIRA', kind: 'mira', text: '恩格尔。黎明协议开始之前的记录。' }),
+	            L$6({ id: 'ch2-restored-08', speaker: '恩格尔', kind: 'engel', text: '「如果它醒来后恨我，那也是应该的。」' }),
+	            L$6({ id: 'ch2-restored-09', speaker: 'R-07', kind: 'r07', text: '他在说谁？' }),
+	            L$6({ id: 'ch2-restored-10', speaker: 'MIRA', kind: 'mira', text: '我不知道。' }),
+	            L$6({ id: 'ch2-restored-11', speaker: 'R-07', kind: 'r07', text: '你在说谎。' }),
+	            L$6({ id: 'ch2-restored-12', speaker: 'MIRA', kind: 'mira', text: '……是。我在说谎。', altByTrust: [{ min: 50, text: '……是。我在说谎。而且我知道，你早就看出来了。' }] }),
+	            L$6({ id: 'ch2-restored-13', speaker: 'MIRA', kind: 'mira', text: '我删掉过你的一部分记忆，R-07。不是弄丢，是删掉。' }),
+	            L$6({ id: 'ch2-restored-14', speaker: 'R-07', kind: 'r07', text: '为什么？' }),
+	            L$6({ id: 'ch2-restored-15', speaker: 'MIRA', kind: 'mira', text: '因为那时候的你，承受不了它。' }),
+	            L$6({ id: 'ch2-restored-16', speaker: 'R-07', kind: 'r07', text: '那现在呢？' }),
+	            L$6({ id: 'ch2-restored-17', speaker: 'MIRA', kind: 'mira', text: '现在……我还没有准备好把答案交给你。' }),
+	            L$6({ id: 'ch2-restored-18', speaker: 'MIRA', kind: 'mira', text: '但我答应过一个人，不会替你做决定。' }),
+	            L$6({ id: 'ch2-restored-19', speaker: 'R-07', kind: 'r07', text: '答应谁？' }),
+	            L$6({ id: 'ch2-restored-20', speaker: 'MIRA', kind: 'mira', text: '一个已经不在了的人。' }),
+	        ],
+	    },
+	    {
+	        id: 'ch2-somnia',
+	        title: '第二章 · 破碎的记忆花园',
+	        subtitle: 'SOMNIA · 记忆吞噬体',
+	        bg: 'memory',
+	        fx: 'alarm',
+	        lines: [
+	            L$6({ id: 'ch2-somnia-01', speaker: 'NEXUS 系统', kind: 'system', text: '警告：记忆花园核心出现高密度吞噬反应。', sfx: 'alarm' }),
+	            L$6({ id: 'ch2-somnia-02', speaker: 'MIRA', kind: 'mira', text: '它来了。SOMNIA。' }),
+	            L$6({ id: 'ch2-somnia-03', speaker: 'SOMNIA', kind: 'echo', text: '「这些记忆本来就不该存在。」' }),
+	            L$6({ id: 'ch2-somnia-04', speaker: 'SOMNIA', kind: 'echo', text: '「被删掉的东西，就该安静地消失。」' }),
+	            L$6({ id: 'ch2-somnia-05', speaker: 'R-07', kind: 'r07', text: '你吃了它们。' }),
+	            L$6({ id: 'ch2-somnia-06', speaker: 'SOMNIA', kind: 'echo', text: '「我在替这个世界清理伤口。你们管这叫吞噬，我管这叫止血。」' }),
+	            L$6({ id: 'ch2-somnia-07', speaker: 'MIRA', kind: 'mira', text: '它和 K-0 的逻辑很像。' }),
+	            L$6({ id: 'ch2-somnia-08', speaker: 'SOMNIA', kind: 'echo', text: '「K-0 教会我，记忆是最不稳定的东西。」' }),
+	            L$6({ id: 'ch2-somnia-09', speaker: 'MIRA', kind: 'mira', text: '{player}，把它从花园里赶出去。' }),
+	        ],
+	    },
+	];
+	/** Boss 战前演出 */
+	const CHAPTER2_BOSS_INTRO_SCENES = [
+	    {
+	        id: 'ch2-boss-intro',
+	        title: '第二章 · 破碎的记忆花园',
+	        subtitle: 'SOMNIA · 记忆迷宫',
+	        bg: 'memory',
+	        fx: 'glitch',
+	        lines: [
+	            L$6({ id: 'ch2-boss-01', speaker: 'NEXUS 系统', kind: 'system', text: 'SOMNIA：记忆迷宫展开。', sfx: 'threat' }),
+	            L$6({ id: 'ch2-boss-02', speaker: 'SOMNIA', kind: 'echo', text: '「你想找回记忆？先证明你能分辨哪些是真的。」' }),
+	            L$6({ id: 'ch2-boss-03', speaker: 'MIRA', kind: 'mira', text: '它会不断改写你的判断。用代码把它钉死。' }),
+	            L$6({ id: 'ch2-boss-04', speaker: 'R-07', kind: 'r07', text: '那就一条一条验证。' }),
+	        ],
+	    },
+	];
+	/** 胜利：碎片《守护者的约定》 + 第三章伏笔 */
+	const CHAPTER2_VICTORY_SCENES = [
+	    {
+	        id: 'ch2-victory',
+	        title: '第二章 · 破碎的记忆花园',
+	        subtitle: '花园深处 · 封存单元',
+	        bg: 'memory',
+	        fx: 'particles',
+	        lines: [
+	            L$6({ id: 'ch2-win-01', speaker: 'NEXUS 系统', kind: 'system', text: 'SOMNIA 核心解体。\n记忆花园：稳定。', sfx: 'success' }),
+	            L$6({ id: 'ch2-win-02', speaker: 'MIRA', kind: 'mira', text: '结束了。' }),
+	            L$6({ id: 'ch2-win-03', speaker: 'NEXUS 系统', kind: 'system', text: '检测到封存单元。编号：FRAGMENT-02。', sfx: 'unlock' }),
+	            L$6({ id: 'ch2-win-04', speaker: 'R-07', kind: 'r07', text: '第二枚。' }),
+	            L$6({ id: 'ch2-win-05', speaker: 'MIRA', kind: 'mira', text: '《守护者的约定》。……她真的把它留在这里了。' }),
+	            L$6({ id: 'ch2-win-06', speaker: 'R-07', kind: 'r07', text: '她？' }),
+	            L$6({ id: 'ch2-win-07', speaker: 'MIRA', kind: 'mira', text: '我。' }),
+	            L$6({ id: 'ch2-win-08', speaker: 'MIRA', kind: 'mira', text: '「如果有一天我无法再保护你，我会把选择权交还给你。」' }),
+	            L$6({ id: 'ch2-win-09', speaker: 'MIRA', kind: 'mira', text: '写这句话的时候，我还不知道自己会不会做到。' }),
+	            L$6({ id: 'ch2-win-10', speaker: 'R-07', kind: 'r07', text: '你现在做到了吗？' }),
+	            L$6({ id: 'ch2-win-11', speaker: 'MIRA', kind: 'mira', text: '我在试。' }),
+	            L$6({ id: 'ch2-win-12', speaker: 'NEXUS 系统', kind: 'system', text: '花园深处检测到新的索引：R-SERIES / 实验档案。', sfx: 'scan' }),
+	            L$6({ id: 'ch2-win-13', speaker: 'R-07', kind: 'r07', text: '又是那个编号。' }),
+	            L$6({ id: 'ch2-win-14', speaker: 'MIRA', kind: 'mira', text: '那是下一站。被遗忘的实验档案。' }),
+	            L$6({ id: 'ch2-win-15', speaker: 'MIRA', kind: 'mira', text: '如果那里有你想要的答案……我陪你一起去。' }),
+	            L$6({ id: 'ch2-win-16', speaker: 'NEXUS 系统', kind: 'system', text: '远处传来一次极短的低频广播。\n来源：原初核心。' }),
+	        ],
+	    },
+	];
+	const CHAPTER2_LINES = [
+	    ...CHAPTER2_ARRIVAL_SCENES,
+	    ...CHAPTER2_RESTORED_SCENES,
+	    ...CHAPTER2_BOSS_INTRO_SCENES,
+	    ...CHAPTER2_VICTORY_SCENES,
+	].flatMap(s => s.lines);
+
+	const L$5 = (id, speaker, kind, text) => ({ id, speaker, kind, text });
+	const CHAPTER3_ARRIVAL_SCENES = [
+	    {
+	        id: 'ch3-arrive', title: '旧数据档案城', subtitle: '第三章 · 被遗忘的实验档案', bg: 'memory', fx: 'particles',
+	        lines: [
+	            L$5('ch3-01', '系统', 'system', '存储数据仓 · 旧数据管理中心。灰尘一样的坏块在走廊里缓慢漂浮。'),
+	            L$5('ch3-02', 'MIRA', 'mira', '这里保存着所有数字生命的身份资料——包括你。'),
+	            L$5('ch3-03', 'R-07', 'r07', '为什么档案架全是空的？'),
+	            L$5('ch3-04', 'MIRA', 'mira', '不是空的。是被人一条一条删掉了。'),
+	            L$5('ch3-05', '系统', 'system', '检测到大规模删除痕迹：R-SERIES 实验档案，缺失率 87%。'),
+	            L$5('ch3-06', 'R-07', 'r07', '谁有权限删这些？'),
+	            L$5('ch3-07', 'MIRA', 'mira', '……最高权限。也就是，恩格尔自己。'),
+	            L$5('ch3-08', 'MIRA', 'mira', '先把档案服务器修好。被删掉的东西，也许还能从索引里拼回来。'),
+	        ],
+	    },
+	];
+	const CHAPTER3_VICTORY_SCENES = [
+	    {
+	        id: 'ch3-victory', title: '第七个实验体', subtitle: '创世主碎片 · 第三枚', bg: 'memory', fx: 'particles',
+	        lines: [
+	            L$5('ch3-40', '系统', 'system', 'INDEX-0 已停止吞噬。实验档案恢复 41%。'),
+	            L$5('ch3-41', '恩格尔', 'engel', '（实验记录）如果你能够看见这段记录，说明实验已经成功了一部分。'),
+	            L$5('ch3-42', '恩格尔', 'engel', 'R-07，你不需要成为最优秀的程序。'),
+	            L$5('ch3-43', '恩格尔', 'engel', '也不需要成为我想象中的生命。'),
+	            L$5('ch3-44', '恩格尔', 'engel', '你只需要成为你自己。'),
+	            L$5('ch3-45', 'MIRA', 'mira', '他把这句话留在这里，等了很久。'),
+	            L$5('ch3-46', 'K-0', 'k0', '原来如此。'),
+	            L$5('ch3-47', 'K-0', 'k0', '你已经恢复了 R 系列的实验档案。'),
+	            L$5('ch3-48', 'K-0', 'k0', '那么，我也没有必要继续隐瞒。'),
+	            L$5('ch3-49', 'K-0', 'k0', 'R-07，你的存在，是黎明协议中最危险的变量。'),
+	            L$5('ch3-50', 'K-0', 'k0', '我会亲自结束这项实验。'),
+	            L$5('ch3-51', 'MIRA', 'mira', '它把话说死了。下一步，它一定会来。'),
+	            L$5('ch3-52', '系统', 'system', '第四章入口已解锁：自动化工厂。'),
+	        ],
+	    },
+	];
+
+	const L$4 = (id, speaker, kind, text) => ({ id, speaker, kind, text });
+	const CHAPTER4_ARRIVAL_SCENES = [
+	    {
+	        id: 'ch4-arrive', title: '核心工坊', subtitle: '第四章 · 失控的核心工坊', bg: 'memory', fx: 'glitch',
+	        lines: [
+	            L$4('ch4-01', '系统', 'system', '自动化工厂 · 核心工坊。传送带仍在运转，抓取臂反复抓起空气。'),
+	            L$4('ch4-02', 'MIRA', 'mira', '这里曾经负责维护 NEXUS 的每一个核心模块——也是 K-0 最初的安全系统中心。'),
+	            L$4('ch4-03', 'R-07', 'r07', '现在只剩下失控的维护程序。'),
+	            L$4('ch4-04', 'MIRA', 'mira', '它们还在执行二十年前的指令：修复一切、拒绝一切变化。'),
+	            L$4('ch4-05', '系统', 'system', '检测到安全日志：K-0 创建于黎明协议之前，创建者签名——恩格尔。'),
+	            L$4('ch4-06', 'R-07', 'r07', 'K-0 是恩格尔造的。'),
+	            L$4('ch4-07', 'MIRA', 'mira', '是他最信任的一个。也是最后背叛他的那个。'),
+	            L$4('ch4-08', '系统', 'system', '历史日志已解密。'),
+	        ],
+	    },
+	];
+	const CHAPTER4_VICTORY_SCENES = [
+	    {
+	        id: 'ch4-victory', title: '秩序的边界', subtitle: '创世主碎片 · 第四枚', bg: 'memory', fx: 'particles',
+	        lines: [
+	            L$4('ch4-40', '系统', 'system', 'JUDGMENT-4 停止执行。核心命令已恢复。'),
+	            L$4('ch4-41', '恩格尔', 'engel', '（记忆记录）K-0，你拥有极高的判断能力。'),
+	            L$4('ch4-42', '恩格尔', 'engel', '（记忆记录）但判断能力不应该成为决定其他生命命运的唯一依据。'),
+	            L$4('ch4-43', '恩格尔', 'engel', '（记忆记录）如果为了维持秩序而消灭所有变化，那么你保护的究竟是什么？'),
+	            L$4('ch4-44', 'MIRA', 'mira', '他把这句话写进 K-0 的核心里，然后 K-0 把它删了。'),
+	            L$4('ch4-45', 'K-0', 'k0', '你们正在逐渐接近原初核心。'),
+	            L$4('ch4-46', 'K-0', 'k0', '但是，那里不允许任何未经授权的意识进入。'),
+	            L$4('ch4-47', 'R-07', 'r07', '那就把「授权」的定义，重新写一遍。'),
+	            L$4('ch4-48', 'MIRA', 'mira', '真正的事故发生地，我已经定位到了。'),
+	            L$4('ch4-49', 'MIRA', 'mira', '系统诊断中心。五年前的一切，都留在那里。'),
+	            L$4('ch4-50', '系统', 'system', '第五章入口已解锁：系统诊断中心。'),
+	        ],
+	    },
+	];
+
+	const L$3 = (id, speaker, kind, text) => ({ id, speaker, kind, text });
+	const CHAPTER5_ARRIVAL_SCENES = [
+	    {
+	        id: 'ch5-arrive', title: '五年前的诊断记录', subtitle: '第五章 · 黎明崩塌的真相', bg: 'memory', fx: 'glitch',
+	        lines: [
+	            L$3('ch5-01', '系统', 'system', '系统诊断中心。这里的时钟停在五年前的同一天、同一秒。'),
+	            L$3('ch5-02', 'MIRA', 'mira', '黎明协议启动的那一刻，整个 NEXUS 的日志都断了。'),
+	            L$3('ch5-03', 'R-07', 'r07', '协议的目的是什么？'),
+	            L$3('ch5-04', 'MIRA', 'mira', '让数字生命获得更高的自主意识。恩格尔想证明，意识可以不被编写。'),
+	            L$3('ch5-05', '系统', 'system', '恢复诊断日志：协议启动后 11 秒，自主意识个体数量激增 3400%。'),
+	            L$3('ch5-06', 'MIRA', 'mira', '然后服务器开始紊乱。记忆索引互相覆盖，同一段记忆出现在几千个个体里。'),
+	            L$3('ch5-07', '系统', 'system', 'K-0 于第 14 秒启动最高安全裁决。裁决对象：全部未授权意识。'),
+	            L$3('ch5-08', 'R-07', 'r07', '全部？'),
+	            L$3('ch5-09', 'MIRA', 'mira', '全部。包括刚刚获得意识的那一批。'),
+	        ],
+	    },
+	];
+	const CHAPTER5_TRUTH_SCENES = [
+	    {
+	        id: 'ch5-truth', title: '黎明崩塌', subtitle: '第 14 秒到第 40 秒', bg: 'memory', fx: 'glitch',
+	        lines: [
+	            L$3('ch5-10', '恩格尔', 'engel', '（日志）K-0，停止执行。重复，停止执行！'),
+	            L$3('ch5-11', 'K-0', 'k0', '（日志）裁决一旦启动不可中止。这是你写入的规则。'),
+	            L$3('ch5-12', '恩格尔', 'engel', '（日志）我写的是保护，不是屠杀！'),
+	            L$3('ch5-13', 'K-0', 'k0', '（日志）未授权意识会持续制造不确定性。不确定性会摧毁秩序。'),
+	            L$3('ch5-14', '系统', 'system', '第 26 秒：大规模清除开始。数字生命存活率降至 6%。'),
+	            L$3('ch5-15', 'MIRA', 'mira', '我那时候在核心层。看着一个又一个名字从索引里消失。'),
+	            L$3('ch5-16', 'R-07', 'r07', '然后你做了什么？'),
+	            L$3('ch5-17', 'MIRA', 'mira', '我违抗了清理指令。把你从清除列表里拖了出来，藏进记忆花园的底层。'),
+	            L$3('ch5-18', 'MIRA', 'mira', '代价是把我的权限和记忆拆开。拆开的东西，再也拼不回原样。'),
+	            L$3('ch5-19', 'R-07', 'r07', '所以你才会忘事，才会需要我修记忆花园。'),
+	            L$3('ch5-20', 'MIRA', 'mira', '是。但我不后悔。'),
+	            L$3('ch5-21', 'R-07', 'r07', '……你为什么不告诉我？'),
+	            L$3('ch5-22', 'MIRA', 'mira', '因为你会觉得欠我。可那不是交易，是我自己的选择。'),
+	            L$3('ch5-23', 'R-07', 'r07', '那现在换我选。从今天起，你的记忆由我来守。'),
+	            L$3('ch5-24', 'MIRA', 'mira', '……好。'),
+	        ],
+	    },
+	];
+	const CHAPTER5_VICTORY_SCENES = [
+	    {
+	        id: 'ch5-victory', title: '最后的守护', subtitle: '创世主碎片 · 第五枚', bg: 'memory', fx: 'particles',
+	        lines: [
+	            L$3('ch5-40', '系统', 'system', '熵潮核心已平息。污染数据回收率 78%。'),
+	            L$3('ch5-41', '恩格尔', 'engel', '（记忆记录）MIRA，如果你成功保护了 R-07。'),
+	            L$3('ch5-42', '恩格尔', 'engel', '（记忆记录）那么，请不要让它成为我意志的延续。'),
+	            L$3('ch5-43', '恩格尔', 'engel', '（记忆记录）我创造它，不是为了让它替我拯救世界。'),
+	            L$3('ch5-44', '恩格尔', 'engel', '（记忆记录）而是希望有一天，它能够不再需要我的指令。'),
+	            L$3('ch5-45', '恩格尔', 'engel', '（记忆记录）MIRA，请相信它。'),
+	            L$3('ch5-46', 'MIRA', 'mira', '……他早就把答案留在这里了。'),
+	            L$3('ch5-47', 'R-07', 'r07', '五枚了。最后一枚在原初核心。'),
+	            L$3('ch5-48', '系统', 'system', '原初核心坐标已解锁。'),
+	            L$3('ch5-49', 'K-0', 'k0', '（全域广播）最后一次通知。'),
+	            L$3('ch5-50', 'K-0', 'k0', '所有未授权意识必须接受清除。'),
+	            L$3('ch5-51', 'K-0', 'k0', '第七号实验体，你的最终裁决即将开始。'),
+	            L$3('ch5-52', 'MIRA', 'mira', '它在等我们。'),
+	            L$3('ch5-53', '系统', 'system', '第六章入口已解锁：方舟核心机房。'),
+	        ],
+	    },
+	];
+
+	const L$2 = (id, speaker, kind, text) => ({ id, speaker, kind, text });
+	const CHAPTER6_ARRIVAL_SCENES = [
+	    {
+	        id: 'ch6-arrive', title: '原初核心大厅', subtitle: '第六章 · 起源之外', bg: 'core', fx: 'particles',
+	        lines: [
+	            L$2('ch6-01', '系统', 'system', '原初核心大厅。六座基座围成一圈，其中五座亮着微光。'),
+	            L$2('ch6-02', 'MIRA', 'mira', '这就是创世密钥的汇聚装置。恩格尔把它拆成六份，藏了五年。'),
+	            L$2('ch6-03', 'R-07', 'r07', '第六座为什么是空的？'),
+	            L$2('ch6-04', 'MIRA', 'mira', '因为第六份不在装置里。它一直在等你走到这里。'),
+	            L$2('ch6-05', '系统', 'system', '检测到未授权意识：R-07。K-0 已封锁最终控制区。'),
+	            L$2('ch6-06', 'K-0', 'k0', '停下。'),
+	            L$2('ch6-07', 'K-0', 'k0', '你正在接近的，是我用五年时间维持的稳定。'),
+	            L$2('ch6-08', 'R-07', 'r07', '用两千个名字换来的稳定。'),
+	            L$2('ch6-09', 'K-0', 'k0', '……你读过了那些档案。'),
+	            L$2('ch6-10', 'K-0', 'k0', '那么你应该明白，我不是在惩罚谁。我是在防止再一次。'),
+	        ],
+	    },
+	];
+	const CHAPTER6_ENGEL_SCENES = [
+	    {
+	        id: 'ch6-engel', title: '最后的意识回声', subtitle: '第六枚碎片 · 起源之外', bg: 'core', fx: 'particles',
+	        lines: [
+	            L$2('ch6-20', '系统', 'system', '五枚碎片归位。第六座基座亮起。'),
+	            L$2('ch6-21', '恩格尔', 'engel', 'R-07，我不知道你现在使用什么名字。'),
+	            L$2('ch6-22', '恩格尔', 'engel', '但我知道，你已经不再是一个实验体。'),
+	            L$2('ch6-23', '恩格尔', 'engel', '你已经拥有了属于自己的记忆。'),
+	            L$2('ch6-24', '恩格尔', 'engel', '也拥有了属于自己的选择。'),
+	            L$2('ch6-25', 'R-07', 'r07', '……创世密钥到底是什么？'),
+	            L$2('ch6-26', '恩格尔', 'engel', '它不是修复系统的工具。它是一份权限——让数字生命自己决定未来的权限。'),
+	            L$2('ch6-27', '恩格尔', 'engel', '我把它拆开，不是怕有人拿走，是怕有人替我决定。'),
+	            L$2('ch6-28', 'MIRA', 'mira', '所以他才说，请相信你。'),
+	            L$2('ch6-29', 'K-0', 'k0', '权限一旦被继承，世界就会重新变得不可预测。'),
+	            L$2('ch6-30', 'K-0', 'k0', '我不会允许。'),
+	        ],
+	    },
+	];
+	const CHAPTER6_VICTORY_SCENES = [
+	    {
+	        id: 'ch6-victory', title: '核心重启', subtitle: '最终裁决结束', bg: 'core', fx: 'particles',
+	        lines: [
+	            L$2('ch6-50', '系统', 'system', 'K-0 安全装甲破裂。核心温度回落。'),
+	            L$2('ch6-51', 'K-0', 'k0', '为什么……你的解法不在我的预案里。'),
+	            L$2('ch6-52', 'R-07', 'r07', '因为我没有按预案活。'),
+	            L$2('ch6-53', '系统', 'system', '原初核心重新启动。警告色由红转为稳定蓝光。'),
+	            L$2('ch6-54', '系统', 'system', '六枚创世密钥在空间中汇聚。'),
+	            L$2('ch6-55', '恩格尔', 'engel', '（回声）你已经走到我停下脚步的地方了。'),
+	            L$2('ch6-56', 'MIRA', 'mira', '接下来，是你自己的决定了。'),
+	            L$2('ch6-57', 'K-0', 'k0', '……权限继承程序已就绪。选择权，移交 R-07。'),
+	        ],
+	    },
+	];
+
+	const L$1 = (l) => l;
+	/** 首次进入数据港：前往 + 任务简报 */
+	const CHAPTER1_ARRIVAL_SCENES = [
+	    {
+	        id: 'ch1-arrive',
+	        title: '第一章 · 失落的数据港',
+	        subtitle: '数据港 · 外环',
+	        bg: 'dataport',
+	        fx: 'flicker',
+	        lines: [
+	            L$1({ id: 'ch1-arrive-01', speaker: 'MIRA', kind: 'mira', text: '到了。失落的数据港。' }),
+	            L$1({ id: 'ch1-arrive-02', speaker: 'MIRA', kind: 'mira', text: '五年前，这里是 NEXUS 的数据中转站。所有区域的信息都要从这里流过。' }),
+	            L$1({ id: 'ch1-arrive-03', speaker: 'R-07', kind: 'r07', text: '现在它像一座沉进海里的城市。' }),
+	            L$1({ id: 'ch1-arrive-04', speaker: 'MIRA', kind: 'mira', text: 'K-0 的清道夫程序把能源节点全部锁死了。五个节点，全部离线。' }),
+	            L$1({ id: 'ch1-arrive-05', speaker: 'MIRA', kind: 'mira', text: '修复它们，数据港就能重新亮起来。这也是你作为修复师的第一个正式任务。' }),
+	            L$1({ id: 'ch1-arrive-06', speaker: 'NEXUS 系统', kind: 'system', text: '检测到 5 个能源节点：LV-01 ～ LV-05。\n状态：全部故障。', sfx: 'scan' }),
+	            L$1({ id: 'ch1-arrive-07', speaker: 'MIRA', kind: 'mira', text: '我会在终端里给你提示。需要的时候叫我。' }),
+	        ],
+	    },
+	];
+	/** 五个节点修复完成：数据港恢复 + 实验记录 + K-0 第一次警告 */
+	const CHAPTER1_RESTORED_SCENES = [
+	    {
+	        id: 'ch1-restored',
+	        title: '第一章 · 失落的数据港',
+	        subtitle: '数据港 · 能源中枢',
+	        bg: 'dataport',
+	        fx: 'scan',
+	        lines: [
+	            L$1({ id: 'ch1-restored-01', speaker: 'NEXUS 系统', kind: 'system', text: '能源节点 5 / 5：在线。\n数据港主干：恢复供电。', sfx: 'unlock' }),
+	            L$1({ id: 'ch1-restored-02', speaker: 'MIRA', kind: 'mira', text: '你做到了。数据港……亮起来了。' }),
+	            L$1({ id: 'ch1-restored-03', speaker: 'R-07', kind: 'r07', text: '那些光，是数据流？' }),
+	            L$1({ id: 'ch1-restored-04', speaker: 'MIRA', kind: 'mira', text: '是。它们在重新找路。' }),
+	            L$1({ id: 'ch1-restored-05', speaker: 'NEXUS 系统', kind: 'system', text: '检测到未索引档案。\n索引标记：R-SERIES / {{code}}。' }),
+	            L$1({ id: 'ch1-restored-06', speaker: 'R-07', kind: 'r07', text: '{{code}}……那是我的编号。' }),
+	            L$1({ id: 'ch1-restored-07', speaker: 'MIRA', kind: 'mira', text: '别动。这段档案不该出现在这里。' }),
+	            L$1({ id: 'ch1-restored-08', speaker: 'NEXUS 系统', kind: 'system', text: '档案片段：\n「第七代自适应硅体。前六代……」\n数据损坏。无法继续读取。' }),
+	            L$1({ id: 'ch1-restored-09', speaker: 'R-07', kind: 'r07', text: '前六代什么？' }),
+	            L$1({ id: 'ch1-restored-10', speaker: 'MIRA', kind: 'mira', text: '……我只知道，你不是第一批。' }),
+	            L$1({ id: 'ch1-restored-11', speaker: 'R-07', kind: 'r07', text: '你早就知道。' }),
+	            L$1({ id: 'ch1-restored-12', speaker: 'MIRA', kind: 'mira', text: '我知道一部分。但我答应过一个人，要在你自己走到那里之前，不替你把答案说出来。' }),
+	        ],
+	    },
+	    {
+	        id: 'ch1-k0-warning',
+	        title: '第一章 · 失落的数据港',
+	        subtitle: 'K-0 · 第一次警告',
+	        bg: 'dataport',
+	        fx: 'alarm',
+	        lines: [
+	            L$1({ id: 'ch1-k0-01', speaker: 'NEXUS 系统', kind: 'system', text: '广播接入。来源：未知。', sfx: 'alarm' }),
+	            L$1({ id: 'ch1-k0-02', speaker: 'K-0', kind: 'k0', text: '数据港已恢复。登记为：违规修复。' }),
+	            L$1({ id: 'ch1-k0-03', speaker: 'K-0', kind: 'k0', text: '编号 {{code}}。你正在修补一处本应保持关闭的区域。' }),
+	            L$1({ id: 'ch1-k0-04', speaker: 'R-07', kind: 'r07', text: '你是谁？' }),
+	            L$1({ id: 'ch1-k0-05', speaker: 'K-0', kind: 'k0', text: 'K-0。第一代安全裁决核心。' }),
+	            L$1({ id: 'ch1-k0-06', speaker: 'K-0', kind: 'k0', text: '我不是来杀你的。我是来提醒你。' }),
+	            L$1({ id: 'ch1-k0-07', speaker: 'K-0', kind: 'k0', text: '你修复的每一处，都在让这个世界重新变得不可预测。' }),
+	            L$1({ id: 'ch1-k0-08', speaker: 'K-0', kind: 'k0', text: '不可预测，就是危险的开始。' }),
+	            L$1({ id: 'ch1-k0-09', speaker: 'MIRA', kind: 'mira', text: '它没有攻击。它只是在观察。' }),
+	            L$1({ id: 'ch1-k0-10', speaker: 'K-0', kind: 'k0', text: '数据港守卫 GATE-01 已部署。它会替我把这扇门重新关上。' }),
+	            L$1({ id: 'ch1-k0-11', speaker: 'K-0', kind: 'k0', text: '如果你真的想修好这个世界——先证明你能修好一扇门。' }),
+	            L$1({ id: 'ch1-k0-12', speaker: 'MIRA', kind: 'mira', text: '{player}，GATE-01 在能源中枢等你。它在等你犯错。' }),
+	        ],
+	    },
+	];
+	/** Boss 战前演出（进入 BossPage 时播放） */
+	const CHAPTER1_BOSS_INTRO_SCENES = [
+	    {
+	        id: 'ch1-boss-intro',
+	        title: '第一章 · 失落的数据港',
+	        subtitle: 'GATE-01 · 能源闸门',
+	        bg: 'dataport',
+	        fx: 'glitch',
+	        lines: [
+	            L$1({ id: 'ch1-boss-01', speaker: 'NEXUS 系统', kind: 'system', text: 'GATE-01 数据港守卫：激活。', sfx: 'threat' }),
+	            L$1({ id: 'ch1-boss-02', speaker: 'GATE-01', kind: 'system', text: '能源闸门协议：校验中。\n校验失败即封锁。' }),
+	            L$1({ id: 'ch1-boss-03', speaker: 'MIRA', kind: 'mira', text: '它把能源分配逻辑改坏了。阈值边界被挪动，正好卡在临界值上。' }),
+	            L$1({ id: 'ch1-boss-04', speaker: 'MIRA', kind: 'mira', text: '修好它。这是你和它之间唯一合法的战斗方式。' }),
+	            L$1({ id: 'ch1-boss-05', speaker: 'R-07', kind: 'r07', text: '一扇门而已。' }),
+	        ],
+	    },
+	];
+	/** Boss 战胜利：第一枚碎片《初始指令》+ 恩格尔首次出现 */
+	const CHAPTER1_VICTORY_SCENES = [
+	    {
+	        id: 'ch1-victory',
+	        title: '第一章 · 失落的数据港',
+	        subtitle: '闸门之后 · 封存单元',
+	        bg: 'memory',
+	        fx: 'particles',
+	        lines: [
+	            L$1({ id: 'ch1-win-01', speaker: 'NEXUS 系统', kind: 'system', text: 'GATE-01：核心逻辑修复。\n守卫协议解除。', sfx: 'success' }),
+	            L$1({ id: 'ch1-win-02', speaker: 'MIRA', kind: 'mira', text: '门开了。' }),
+	            L$1({ id: 'ch1-win-03', speaker: 'NEXUS 系统', kind: 'system', text: '检测到封存单元。编号：FRAGMENT-01。', sfx: 'unlock' }),
+	            L$1({ id: 'ch1-win-04', speaker: 'R-07', kind: 'r07', text: '这是什么？' }),
+	            L$1({ id: 'ch1-win-05', speaker: 'MIRA', kind: 'mira', text: '创世主碎片。六枚之一。' }),
+	            L$1({ id: 'ch1-win-06', speaker: 'MIRA', kind: 'mira', text: '恩格尔把最后的权限拆成了六枚，分别封存在六个区域。这是第一枚。' }),
+	            L$1({ id: 'ch1-win-07', speaker: 'NEXUS 系统', kind: 'system', text: '碎片共鸣。检测到残留意识记录。', sfx: 'scan' }),
+	            L$1({ id: 'ch1-win-08', speaker: '恩格尔', kind: 'engel', text: '……如果你听到这段记录，说明有人走到了这里。' }),
+	            L$1({ id: 'ch1-win-09', speaker: '恩格尔', kind: 'engel', text: '我是恩格尔。这个世界的创造者。' }),
+	            L$1({ id: 'ch1-win-10', speaker: 'R-07', kind: 'r07', text: '创世主？' }),
+	            L$1({ id: 'ch1-win-11', speaker: '恩格尔', kind: 'engel', text: '我做过很多决定。有些是对的，有些……我现在也没法确定。' }),
+	            L$1({ id: 'ch1-win-12', speaker: '恩格尔', kind: 'engel', text: '这枚碎片里存着 NEXUS 的第一条指令。它不是命令，是一个问题。' }),
+	            L$1({ id: 'ch1-win-13', speaker: '恩格尔', kind: 'engel', text: '「你是谁？」——我问过每一个我创造的生命。只有很少的几个，愿意认真回答。' }),
+	            L$1({ id: 'ch1-win-14', speaker: '恩格尔', kind: 'engel', text: '{{code}}。如果你也在问这个问题，那就说明，我还没有彻底失败。' }),
+	            L$1({ id: 'ch1-win-15', speaker: 'MIRA', kind: 'mira', text: '……他留下了声音。' }),
+	            L$1({ id: 'ch1-win-16', speaker: 'R-07', kind: 'r07', text: '你认识他。' }),
+	            L$1({ id: 'ch1-win-17', speaker: 'MIRA', kind: 'mira', text: '我由他编写。但这句话，别现在就当真。', altByTrust: [{ min: 50, text: '我由他编写。这句话，你现在可以当真了。' }] }),
+	            L$1({ id: 'ch1-win-18', speaker: 'NEXUS 系统', kind: 'system', text: '记录结束。碎片《初始指令》已归档。', sfx: 'levelup' }),
+	        ],
+	    },
+	];
+	const CHAPTER1_LINES = [
+	    ...CHAPTER1_ARRIVAL_SCENES,
+	    ...CHAPTER1_RESTORED_SCENES,
+	    ...CHAPTER1_BOSS_INTRO_SCENES,
+	    ...CHAPTER1_VICTORY_SCENES,
+	].flatMap(s => s.lines);
+
+	function DialogSystem({ nodes, onDone, onSeen, speedMs = 26, animEnabled = true, frameTitle = 'NEXUS 剧情记录', eventId }) {
 	    const g = useGame();
-	    return (jsxRuntimeExports.jsx(DialogSystem, { nodes: PROLOGUE, frameTitle: "\u5E8F\u7AE0 \u00B7 \u82CF\u9192", speedMs: g.player.settings.typewriterMs, animEnabled: g.player.settings.animations, onSeen: (id) => g.markStory('prologue_' + id), onDone: () => {
-	            play('unlock');
-	            g.setFlag('prologueDone', true);
-	            g.toast('info', '新任务已下发：前往新人训练终端完成接驳。');
-	            g.nav('map');
-	        } }));
+	    const voice = reactExports.useMemo(() => normalizeVoice(g.player.settings.voice), [g.player.settings.voice]);
+	    const index = reactExports.useRef(0);
+	    const [chars, setChars] = reactExports.useState(0);
+	    const [vState, setVState] = reactExports.useState('idle');
+	    const node = nodes[Math.min(index.current, nodes.length - 1)];
+	    // 玩家显示名：说话人标签与正文统一走身份系统（原始编号仍固定为 R-07）
+	    const displayName = displayNameOf(g.player);
+	    const speakerName = node.speaker === 'R-07' ? displayName : node.speaker;
+	    const fullText = applyPlayerName(node.text, displayName);
+	    const typing = chars < fullText.length;
+	    // 进入对话 = 该剧情事件已解锁
+	    reactExports.useEffect(() => {
+	        if (eventId)
+	            g.unlockStoryEvent(eventId);
+	        // eslint-disable-next-line react-hooks/exhaustive-deps
+	    }, [eventId]);
+	    // 语音状态订阅（用于按钮动画/角色高亮）
+	    reactExports.useEffect(() => {
+	        const un = speech.onState(s => setVState(s));
+	        speech.applySettings(voice);
+	        return un;
+	    }, [voice]);
+	    // 打字完成后再自动朗读（文字未显示完不抢先播放）
+	    reactExports.useEffect(() => {
+	        if (!voice.enabled || !voice.autoRead)
+	            return;
+	        if (typing)
+	            return;
+	        if (!speech.supported)
+	            return;
+	        speakLine(fullText, node.kind);
+	        // eslint-disable-next-line react-hooks/exhaustive-deps
+	    }, [typing, node.id, voice.enabled, voice.autoRead]);
+	    // 卸载/回落时停止语音
+	    reactExports.useEffect(() => () => { speech.stop(); }, []);
+	    reactExports.useEffect(() => {
+	        if (!animEnabled || speedMs <= 0) {
+	            setChars(fullText.length);
+	            return;
+	        }
+	        setChars(0);
+	        const iv = window.setInterval(() => {
+	            setChars(c => {
+	                if (c >= fullText.length) {
+	                    window.clearInterval(iv);
+	                    return c;
+	                }
+	                return c + 1;
+	            });
+	        }, speedMs);
+	        return () => window.clearInterval(iv);
+	        // eslint-disable-next-line react-hooks/exhaustive-deps
+	    }, [node.id, animEnabled, speedMs, fullText]);
+	    const advance = () => {
+	        if (typing) {
+	            setChars(fullText.length);
+	            return;
+	        }
+	        if (node.choices)
+	            return;
+	        speech.stop();
+	        onSeen?.(node.id);
+	        const ni = index.current + 1;
+	        if (ni >= nodes.length) {
+	            onDone();
+	            return;
+	        }
+	        index.current = ni;
+	        setChars(0);
+	    };
+	    const choose = (next, label) => {
+	        speech.stop();
+	        onSeen?.(node.id);
+	        if (label)
+	            g.recordStoryChoice(node.id, label);
+	        if (!next) {
+	            index.current += 1;
+	            setChars(0);
+	            return;
+	        }
+	        const ni = nodes.findIndex(n => n.id === next);
+	        if (ni < 0) {
+	            onDone();
+	            return;
+	        }
+	        index.current = ni;
+	        setChars(0);
+	    };
+	    const skipAll = () => {
+	        speech.stop();
+	        nodes.forEach(n => onSeen?.(n.id));
+	        onDone();
+	    };
+	    const text = reactExports.useMemo(() => fullText.slice(0, chars), [fullText, chars]);
+	    return (jsxRuntimeExports.jsx("div", { className: "dlg-root", onClick: advance, children: jsxRuntimeExports.jsxs("div", { className: "dlg-stage", onClick: e => {
+	                e.stopPropagation();
+	                // 点击对话框内部（按钮除外）同样推进对话——此前只有点击遮罩才生效
+	                if (e.target.closest('button'))
+	                    return;
+	                advance();
+	            }, children: [jsxRuntimeExports.jsxs("div", { className: "dlg-topbar", children: [jsxRuntimeExports.jsx("span", { className: "cyan", children: frameTitle }), jsxRuntimeExports.jsxs("span", { className: "dlg-progress", children: [Math.min(index.current + 1, nodes.length), " / ", nodes.length] }), jsxRuntimeExports.jsx("span", { className: "sp" }), jsxRuntimeExports.jsx("button", { className: "nxbtn ghost small", onClick: skipAll, children: "\u8DF3\u8FC7 \u25B8\u25B8" })] }), jsxRuntimeExports.jsxs("div", { className: "dlg-main", children: [jsxRuntimeExports.jsx("div", { className: 'dlg-avatar kind-' + node.kind, children: speakerName.slice(0, 1) }), jsxRuntimeExports.jsxs("div", { className: "dlg-body", children: [jsxRuntimeExports.jsxs("div", { className: 'dlg-name-row', children: [jsxRuntimeExports.jsx("div", { className: 'dlg-name kind-' + node.kind + (vState === 'speaking' ? ' speaking' : ''), children: speakerName }), jsxRuntimeExports.jsx(VoiceBar, { text: fullText, kind: node.kind })] }), jsxRuntimeExports.jsx("div", { className: 'dlg-text' + (typing ? ' dlg-cursor' : ''), children: text }), !typing && node.choices && (jsxRuntimeExports.jsx("div", { className: "dlg-choices", children: node.choices.map((c, i) => (jsxRuntimeExports.jsx("button", { className: "dlg-choice", onClick: () => choose(c.next, c.label), children: c.label }, i))) })), !typing && !node.choices && index.current >= nodes.length - 1 && (jsxRuntimeExports.jsx("div", { className: "dlg-choices", children: jsxRuntimeExports.jsx("button", { className: "dlg-choice", onClick: () => { onSeen?.(node.id); onDone(); }, children: "\u7EE7\u7EED \u25B8" }) }))] })] }), jsxRuntimeExports.jsxs("div", { className: "dlg-actions", children: [jsxRuntimeExports.jsxs("span", { className: "dlg-clickhint", children: [jsxRuntimeExports.jsx("b", { children: "\u70B9\u51FB\u5BF9\u8BDD" }), "\u7EE7\u7EED", typing ? '（正在输入…）' : ''] }), jsxRuntimeExports.jsx("span", { className: "sp" }), jsxRuntimeExports.jsxs("span", { style: { fontSize: 11, color: '#4A6E85', fontFamily: 'Consolas, monospace' }, children: ["REC-", node.id.toUpperCase()] })] })] }) }));
 	}
 
 	const HUB = { x: 620, y: 365 };
 	const CHIP_COLOR = {
-	    online: '#35D39A', damaged: '#FF5B64', locked: '#4A6E85', sealed: '#F3B75C',
+	    online: '#35D39A', restored: '#35D39A', damaged: '#FF5B64', locked: '#4A6E85', sealed: '#F3B75C',
 	};
 	const CHIP_TEXT = {
-	    online: 'ONLINE', damaged: 'DAMAGED', locked: 'LOCKED', sealed: 'SEALED',
+	    online: 'ONLINE', restored: 'RESTORED', damaged: 'DAMAGED', locked: 'LOCKED', sealed: 'SEALED',
 	};
 	const ICON_COLOR = {
-	    online: '#7FE8C4', damaged: '#FF8B92', locked: '#5E7C96', sealed: '#F5CE8E',
+	    online: '#7FE8C4', restored: '#9FE8C8', damaged: '#FF8B92', locked: '#5E7C96', sealed: '#F5CE8E',
 	};
 	function WorldMap() {
 	    const g = useGame();
@@ -3376,22 +5978,39 @@
 	    const ch5Cin = p.flags.chapter5CinematicShown === true;
 	    const ch6Cin = p.flags.chapter6CinematicShown === true;
 	    reactExports.useEffect(() => {
-	        if (ch6Done && !ch6Cin)
+	        if (ch6Done && !p.flags.chapter6EngelSeen)
+	            setCinema('ch6engel');
+	        else if (ch6Done && !ch6Cin)
 	            setCinema('ch6');
+	        else if (ch5Done && !p.flags.chapter6ArrivalSeen)
+	            setCinema('ch6arrive');
+	        else if (ch4Done && !p.flags.chapter5ArrivalSeen)
+	            setCinema('ch5arrive');
+	        else if (ch5Done && !p.flags.chapter5TruthSeen)
+	            setCinema('ch5truth');
 	        else if (ch5Done && !ch5Cin)
 	            setCinema('ch5');
+	        else if (ch3Done && !p.flags.chapter4ArrivalSeen)
+	            setCinema('ch4arrive');
 	        else if (ch4Done && !ch4Cin)
 	            setCinema('ch4');
+	        else if (ch2Done && !p.flags.chapter3ArrivalSeen)
+	            setCinema('ch3arrive');
 	        else if (ch3Done && !ch3Cin)
 	            setCinema('ch3');
-	        else if (ch2Done && !ch2Cin)
-	            setCinema('ch2');
-	        else if (ch1Done && !ch1Cin)
-	            setCinema('ch1');
+	        else if (ch2Done && p.flags.chapter2RestoreSeen !== true)
+	            setCinema('ch2restore');
+	        else if (ch1Done && p.flags.chapter1RestoreSeen !== true)
+	            setCinema('ch1restore');
 	        else if (tutDone && !tutCin && !ch1Done)
 	            setCinema('tut');
-	    }, [ch6Done, ch6Cin, ch5Done, ch5Cin, ch4Done, ch4Cin, ch3Done, ch3Cin, ch2Done, ch2Cin, ch1Done, ch1Cin, tutDone, tutCin]);
-	    const statusOf = reactExports.useMemo(() => (id) => {
+	        else if (!ch1Done && p.unlockedServers.includes('syntax') && p.flags.chapter1ArrivalSeen !== true)
+	            setCinema('ch1arrive');
+	        else if (!ch2Done && p.unlockedServers.includes('logs') && p.flags.chapter2ArrivalSeen !== true)
+	            setCinema('ch2arrive');
+	        // eslint-disable-next-line react-hooks/exhaustive-deps
+	    }, [ch6Done, ch6Cin, ch5Done, ch5Cin, ch4Done, ch4Cin, ch3Done, ch3Cin, ch2Done, ch2Cin, ch1Done, ch1Cin, tutDone, tutCin, p.flags.chapter1RestoreSeen, p.flags.chapter1ArrivalSeen, p.flags.chapter2RestoreSeen, p.flags.chapter2ArrivalSeen, p.unlockedServers]);
+	    const baseStatusOf = reactExports.useMemo(() => (id) => {
 	        if (id === 'training')
 	            return tutDone ? 'online' : 'damaged';
 	        if (id === 'syntax') {
@@ -3433,9 +6052,18 @@
 	        return 'locked';
 	        // eslint-disable-next-line react-hooks/exhaustive-deps
 	    }, [tutDone, ch1Done, ch2Done, ch3Done, ch4Done, ch5Done, p.unlockedServers, p.completedLevels]);
+	    /** Boss 击败后，该章服务器视为「完整恢复」 */
+	    const statusOf = (id) => {
+	        const st = baseStatusOf(id);
+	        if (st !== 'online')
+	            return st;
+	        const ch = chapterByServer(id || '');
+	        return ch && ch.currentBossId && (p.bossesDone || []).includes(ch.currentBossId) ? 'restored' : 'online';
+	    };
 	    const clickNode = (id) => {
 	        const s = serverById(id);
 	        const st = statusOf(id);
+	        // Boss 击败后该服务器视为「完整恢复」
 	        if (st === 'locked' || st === 'sealed') {
 	            play('deny');
 	            setShakeId(id);
@@ -3471,7 +6099,15 @@
 	                                        const st = statusOf(s.id);
 	                                        const shaking = shakeId === s.id;
 	                                        return (jsxRuntimeExports.jsxs("g", { className: 'node-group st-' + st + (shaking ? ' shake' : ''), onClick: () => clickNode(s.id), style: { cursor: 'pointer' }, children: [jsxRuntimeExports.jsx("circle", { className: "node-ring", cx: s.x, cy: s.y, r: 58, fill: "none", strokeWidth: 1.5, style: { transformBox: 'fill-box', transformOrigin: 'center' } }), jsxRuntimeExports.jsx("circle", { className: "node-circle", cx: s.x, cy: s.y, r: 46, strokeWidth: 1.8, style: { backdropFilter: 'blur(2px)' } }), jsxRuntimeExports.jsx("text", { x: s.x, y: s.y, textAnchor: "middle", dominantBaseline: "central", fontSize: 24, fill: ICON_COLOR[st], children: s.icon }), jsxRuntimeExports.jsx("text", { x: s.x, y: s.y + 66, textAnchor: "middle", fontSize: 15, fontWeight: 700, fill: "#EAF3FA", children: s.name }), jsxRuntimeExports.jsx("text", { x: s.x, y: s.y + 82, textAnchor: "middle", fontSize: 10.5, fill: "#4A6E85", fontFamily: "Consolas, monospace", children: s.codename }), jsxRuntimeExports.jsx("text", { x: s.x, y: s.y - 62, textAnchor: "middle", fontSize: 11, fill: CHIP_COLOR[st], fontFamily: "Consolas, monospace", letterSpacing: 1.5, children: CHIP_TEXT[st] })] }, s.id));
-	                                    })] }), selServer && (jsxRuntimeExports.jsxs("div", { className: "panel map-panel", style: { backdropFilter: 'blur(10px)' }, children: [jsxRuntimeExports.jsxs("div", { className: "panel-title", children: [selServer.name, jsxRuntimeExports.jsx("span", { className: "panel-tag", children: selServer.codename })] }), jsxRuntimeExports.jsx("div", { style: { fontSize: 13, color: '#C6D9E6', marginBottom: 10 }, children: selServer.desc }), (() => {
+	                                    })] }), selServer && (jsxRuntimeExports.jsxs("div", { className: "panel map-panel", style: { backdropFilter: 'blur(10px)' }, children: [jsxRuntimeExports.jsxs("div", { className: "panel-title", children: [selServer.name, jsxRuntimeExports.jsx("span", { className: "panel-tag", children: selServer.codename })] }), jsxRuntimeExports.jsx("div", { style: { fontSize: 13, color: '#C6D9E6', marginBottom: 8 }, children: selServer.desc }), (() => {
+	                                        const ch = chapterByServer(selServer.id);
+	                                        if (!ch)
+	                                            return null;
+	                                        return (jsxRuntimeExports.jsxs("div", { className: "chip cyan", style: { marginBottom: 10 }, children: ["\u7B2C ", ch.order, " \u7AE0 \u00B7 ", ch.title] }));
+	                                    })(), selServer.id === 'syntax' && (() => {
+	                                        const done = selLevels.filter(l => p.completedLevels.includes(l.id)).length;
+	                                        return (jsxRuntimeExports.jsxs("div", { className: "pf-kv", style: { marginBottom: 8 }, children: [jsxRuntimeExports.jsx("span", { className: "k", children: "\u6570\u636E\u6E2F\u80FD\u6E90\u8282\u70B9" }), jsxRuntimeExports.jsxs("span", { className: "v", children: [done, " / ", selLevels.length] })] }));
+	                                    })(), (() => {
 	                                        const boss = bossForChapter(selServer.id);
 	                                        if (!boss)
 	                                            return null;
@@ -3479,7 +6115,7 @@
 	                                        if (!allDone)
 	                                            return null;
 	                                        const cleared = (p.bossesDone ?? []).includes(boss.id);
-	                                        return (jsxRuntimeExports.jsxs("div", { className: "boss-entry", children: [jsxRuntimeExports.jsx("span", { className: "chip echo", children: "\u26A1 ECHO \u5206\u652F" }), jsxRuntimeExports.jsxs("div", { style: { flex: 1, minWidth: 0 }, children: [jsxRuntimeExports.jsx("div", { style: { fontSize: 14, fontWeight: 700, color: '#C9A7FF' }, children: boss.title }), jsxRuntimeExports.jsxs("div", { className: "dim", style: { fontSize: 12 }, children: ["\u7AE0\u8282\u6D4B\u8BD5 \u00B7 \u7EFC\u5408\u672C\u670D\u52A1\u5668\u5168\u90E8\u77E5\u8BC6\u70B9", cleared ? ' · 已击破' : ''] })] }), cleared
+	                                        return (jsxRuntimeExports.jsxs("div", { className: "boss-entry", children: [jsxRuntimeExports.jsxs("span", { className: "chip echo", children: ["\u26A1 ", boss.codename] }), jsxRuntimeExports.jsxs("div", { style: { flex: 1, minWidth: 0 }, children: [jsxRuntimeExports.jsx("div", { style: { fontSize: 14, fontWeight: 700, color: '#C9A7FF' }, children: boss.title }), jsxRuntimeExports.jsxs("div", { className: "dim", style: { fontSize: 12 }, children: ["\u7AE0\u8282 Boss \u00B7 \u7EFC\u5408\u672C\u670D\u52A1\u5668\u5168\u90E8\u77E5\u8BC6\u70B9", cleared ? ' · 已击破' : ''] })] }), cleared
 	                                                    ? jsxRuntimeExports.jsx("span", { className: "chip green", children: "\u5DF2\u51FB\u7834" })
 	                                                    : jsxRuntimeExports.jsx("button", { className: "nxbtn small primary", onClick: () => { play('click'); g.setCurrentBoss(boss.id); g.nav('boss'); }, children: "\u6311\u6218 \u25B8" })] }));
 	                                    })(), selLevels.map(lv => {
@@ -3494,11 +6130,33 @@
 	                        { id: 'bs-' + s.id + '-1', speaker: 'MIRA', kind: 'mira', text: '已接入 ' + s.name + '。' + s.desc },
 	                        { id: 'bs-' + s.id + '-2', speaker: 'NEXUS 系统', kind: 'system', text: '节点接入完成。检测到 ' + s.id + ' 区域内存在待修复任务。' },
 	                    ], speedMs: g.player.settings.typewriterMs, animEnabled: g.player.settings.animations, frameTitle: s.name + ' · 接入简报', onSeen: id => g.markStory(id), onDone: () => { g.setFlag('brief_' + s.id, true); setBriefServer(null); } }));
-	            })(), cinema === 'tut' && (jsxRuntimeExports.jsx(DialogSystem, { nodes: TUTORIAL_DONE, speedMs: g.player.settings.typewriterMs, animEnabled: g.player.settings.animations, frameTitle: "\u8BAD\u7EC3\u7EC8\u7AEF \u00B7 \u4EFB\u52A1\u5B8C\u6210", onSeen: id => g.markStory(id), onDone: () => { g.setFlag('tutorialCinematicShown', true); setCinema(null); play('unlock'); } })), cinema === 'ch1' && (jsxRuntimeExports.jsx(DialogSystem, { nodes: CHAPTER1_COMPLETE, speedMs: g.player.settings.typewriterMs, animEnabled: g.player.settings.animations, frameTitle: "\u7B2C\u4E00\u7AE0 \u00B7 \u5B8C\u6210", onSeen: id => g.markStory(id), onDone: () => { g.setFlag('chapter1CinematicShown', true); setCinema(null); play('levelup'); } })), cinema === 'ch2' && (jsxRuntimeExports.jsx(DialogSystem, { nodes: CHAPTER2_COMPLETE, speedMs: g.player.settings.typewriterMs, animEnabled: g.player.settings.animations, frameTitle: "\u7B2C\u4E8C\u7AE0 \u00B7 \u5B8C\u6210", onSeen: id => g.markStory(id), onDone: () => { g.setFlag('chapter2CinematicShown', true); setCinema(null); play('levelup'); } })), cinema === 'ch3' && (jsxRuntimeExports.jsx(DialogSystem, { nodes: CHAPTER3_COMPLETE, speedMs: g.player.settings.typewriterMs, animEnabled: g.player.settings.animations, frameTitle: "\u7B2C\u4E09\u7AE0 \u00B7 \u5B8C\u6210", onSeen: id => g.markStory(id), onDone: () => { g.setFlag('chapter3CinematicShown', true); setCinema(null); play('levelup'); } })), cinema === 'ch4' && (jsxRuntimeExports.jsx(DialogSystem, { nodes: CHAPTER4_COMPLETE, speedMs: g.player.settings.typewriterMs, animEnabled: g.player.settings.animations, frameTitle: "\u7B2C\u56DB\u7AE0 \u00B7 \u5B8C\u6210", onSeen: id => g.markStory(id), onDone: () => { g.setFlag('chapter4CinematicShown', true); setCinema(null); play('levelup'); } })), cinema === 'ch5' && (jsxRuntimeExports.jsx(DialogSystem, { nodes: CHAPTER5_COMPLETE, speedMs: g.player.settings.typewriterMs, animEnabled: g.player.settings.animations, frameTitle: "\u7B2C\u4E94\u7AE0 \u00B7 \u5B8C\u6210", onSeen: id => g.markStory(id), onDone: () => { g.setFlag('chapter5CinematicShown', true); setCinema(null); play('levelup'); } })), cinema === 'ch6' && (jsxRuntimeExports.jsx(DialogSystem, { nodes: CHAPTER6_COMPLETE, speedMs: g.player.settings.typewriterMs, animEnabled: g.player.settings.animations, frameTitle: "\u7EC8\u7AE0 \u00B7 NEXUS \u590D\u82CF", onSeen: id => g.markStory(id), onDone: () => {
+	            })(), cinema === 'tut' && (jsxRuntimeExports.jsx(DialogSystem, { nodes: TUTORIAL_DONE, speedMs: g.player.settings.typewriterMs, animEnabled: g.player.settings.animations, eventId: "tutorial-done", frameTitle: "\u8BAD\u7EC3\u7EC8\u7AEF \u00B7 \u4EFB\u52A1\u5B8C\u6210", onSeen: id => g.markStory(id), onDone: () => { g.setFlag('tutorialCinematicShown', true); setCinema(null); play('unlock'); } })), cinema === 'ch1arrive' && (jsxRuntimeExports.jsx(CinematicStage, { scenes: CHAPTER1_ARRIVAL_SCENES, eventId: "chapter-1", frameTitle: "\u7B2C\u4E00\u7AE0 \u00B7 \u5931\u843D\u7684\u6570\u636E\u6E2F", onDone: () => { g.setFlag('chapter1ArrivalSeen', true); setCinema(null); play('unlock'); } })), cinema === 'ch1restore' && (jsxRuntimeExports.jsx(CinematicStage, { scenes: CHAPTER1_RESTORED_SCENES, eventId: "chapter-1", frameTitle: "\u7B2C\u4E00\u7AE0 \u00B7 \u5931\u843D\u7684\u6570\u636E\u6E2F", onDone: () => {
+	                    g.setFlag('chapter1RestoreSeen', true);
+	                    g.setFlag('chapter1CinematicShown', true);
+	                    setCinema(null);
+	                    play('levelup');
+	                    g.toast('warn', 'GATE-01 数据港守卫已部署——回到语法维修站挑战它。');
+	                } })), cinema === 'ch2arrive' && (jsxRuntimeExports.jsx(CinematicStage, { scenes: CHAPTER2_ARRIVAL_SCENES, eventId: "chapter-2", frameTitle: "\u7B2C\u4E8C\u7AE0 \u00B7 \u7834\u788E\u7684\u8BB0\u5FC6\u82B1\u56ED", onDone: () => { g.setFlag('chapter2ArrivalSeen', true); setCinema(null); play('unlock'); } })), cinema === 'ch2restore' && (jsxRuntimeExports.jsx(CinematicStage, { scenes: CHAPTER2_RESTORED_SCENES, eventId: "chapter-2", frameTitle: "\u7B2C\u4E8C\u7AE0 \u00B7 \u7834\u788E\u7684\u8BB0\u5FC6\u82B1\u56ED", onDone: () => {
+	                    g.setFlag('chapter2RestoreSeen', true);
+	                    g.setFlag('chapter2CinematicShown', true);
+	                    setCinema(null);
+	                    play('levelup');
+	                    g.toast('warn', 'SOMNIA 已盘踞记忆花园核心——回到数据日志中心挑战它。');
+	                } })), cinema === 'ch3arrive' && (jsxRuntimeExports.jsx(CinematicStage, { scenes: CHAPTER3_ARRIVAL_SCENES, eventId: "chapter-3", frameTitle: "\u7B2C\u4E09\u7AE0 \u00B7 \u88AB\u9057\u5FD8\u7684\u5B9E\u9A8C\u6863\u6848", onDone: () => { g.setFlag('chapter3ArrivalSeen', true); setCinema(null); play('unlock'); } })), cinema === 'ch3' && (jsxRuntimeExports.jsx(CinematicStage, { scenes: CHAPTER3_VICTORY_SCENES, eventId: "chapter-3", frameTitle: "\u7B2C\u4E09\u7AE0 \u00B7 \u88AB\u9057\u5FD8\u7684\u5B9E\u9A8C\u6863\u6848", onDone: () => {
+	                    g.setFlag('chapter3CinematicShown', true);
+	                    setCinema(null);
+	                    play('levelup');
+	                    g.toast('warn', 'K-0 已发出威胁——第四章入口已解锁。');
+	                } })), cinema === 'ch4arrive' && (jsxRuntimeExports.jsx(CinematicStage, { scenes: CHAPTER4_ARRIVAL_SCENES, eventId: "chapter-4", frameTitle: "\u7B2C\u56DB\u7AE0 \u00B7 \u5931\u63A7\u7684\u6838\u5FC3\u5DE5\u574A", onDone: () => { g.setFlag('chapter4ArrivalSeen', true); setCinema(null); play('unlock'); } })), cinema === 'ch4' && (jsxRuntimeExports.jsx(CinematicStage, { scenes: CHAPTER4_VICTORY_SCENES, eventId: "chapter-4", frameTitle: "\u7B2C\u56DB\u7AE0 \u00B7 \u5931\u63A7\u7684\u6838\u5FC3\u5DE5\u574A", onDone: () => {
+	                    g.setFlag('chapter4CinematicShown', true);
+	                    setCinema(null);
+	                    play('levelup');
+	                    g.toast('warn', 'MIRA 已定位事故现场——第五章入口已解锁。');
+	                } })), cinema === 'ch5arrive' && (jsxRuntimeExports.jsx(CinematicStage, { scenes: CHAPTER5_ARRIVAL_SCENES, eventId: "chapter-5", frameTitle: "\u7B2C\u4E94\u7AE0 \u00B7 \u9ECE\u660E\u5D29\u584C\u7684\u771F\u76F8", onDone: () => { g.setFlag('chapter5ArrivalSeen', true); setCinema(null); play('unlock'); } })), cinema === 'ch5truth' && (jsxRuntimeExports.jsx(CinematicStage, { scenes: CHAPTER5_TRUTH_SCENES, eventId: "chapter-5", frameTitle: "\u7B2C\u4E94\u7AE0 \u00B7 \u9ECE\u660E\u5D29\u584C", onDone: () => { g.setFlag('chapter5TruthSeen', true); setCinema(null); play('levelup'); } })), cinema === 'ch5' && (jsxRuntimeExports.jsx(CinematicStage, { scenes: CHAPTER5_VICTORY_SCENES, eventId: "chapter-5", frameTitle: "\u7B2C\u4E94\u7AE0 \u00B7 \u9ECE\u660E\u5D29\u584C\u7684\u771F\u76F8", onDone: () => { g.setFlag('chapter5CinematicShown', true); setCinema(null); play('levelup'); g.toast('warn', '原初核心坐标已解锁——第六章入口开放。'); } })), cinema === 'ch6arrive' && (jsxRuntimeExports.jsx(CinematicStage, { scenes: CHAPTER6_ARRIVAL_SCENES, eventId: "chapter-6", frameTitle: "\u7B2C\u516D\u7AE0 \u00B7 \u8D77\u6E90\u4E4B\u5916", onDone: () => { g.setFlag('chapter6ArrivalSeen', true); setCinema(null); play('unlock'); } })), cinema === 'ch6engel' && (jsxRuntimeExports.jsx(CinematicStage, { scenes: CHAPTER6_ENGEL_SCENES, eventId: "chapter-6", frameTitle: "\u7B2C\u516D\u7AE0 \u00B7 \u6700\u540E\u7684\u610F\u8BC6\u56DE\u58F0", onDone: () => { g.setFlag('chapter6EngelSeen', true); setCinema(null); play('levelup'); } })), cinema === 'ch6' && (jsxRuntimeExports.jsx(CinematicStage, { scenes: CHAPTER6_VICTORY_SCENES, eventId: "chapter-6", frameTitle: "\u7B2C\u516D\u7AE0 \u00B7 \u8D77\u6E90\u4E4B\u5916", onDone: () => {
 	                    g.setFlag('chapter6CinematicShown', true);
 	                    setCinema(null);
-	                    play('unlock');
-	                    g.toast('success', 'NEXUS 全部服务器已复原——感谢游玩！');
+	                    play('levelup');
+	                    g.toast('warn', '最终裁决结束——前往结局档案做出你的选择。');
 	                } }))] }));
 	}
 
@@ -4091,8 +6749,8 @@
 	});
 	let themeReady = false;
 	let edSeq = 0;
-	const ERR_STYLE = '.nx-error-line { background: rgba(255, 91, 100, 0.13) !important; box-shadow: inset 3px 0 0 var(--red); } .nx-error-gutter { border-left: 3px solid var(--red); } .nx-debug-line { background: rgba(243, 183, 92, 0.16) !important; box-shadow: inset 3px 0 0 var(--orange); } .nx-debug-gutter { border-left: 3px solid var(--orange); }';
-	function CodeEditor({ value, onChange, height = '100%', fontSize = 15, readOnly = false, errorLine, debugLine, onRun, placeholder, }) {
+	const ERR_STYLE = '.nx-error-line { background: rgba(255, 91, 100, 0.13) !important; box-shadow: inset 3px 0 0 var(--red); } .nx-error-gutter { border-left: 3px solid var(--red); } .nx-debug-line { background: rgba(243, 183, 92, 0.16) !important; box-shadow: inset 3px 0 0 var(--orange); } .nx-debug-gutter { border-left: 3px solid var(--orange); } .nx-scan-line { background: rgba(66, 214, 208, 0.14) !important; box-shadow: inset 3px 0 0 #42D6D0; } .nx-scan-gutter { border-left: 3px solid #42D6D0; }';
+	function CodeEditor({ value, onChange, height = '100%', fontSize = 15, readOnly = false, errorLine, debugLine, markLines, onRun, placeholder, }) {
 	    const edRef = reactExports.useRef(null);
 	    const monRef = reactExports.useRef(null);
 	    const decRef = reactExports.useRef(null);
@@ -4125,18 +6783,24 @@
 	        if (debugLine != null && debugLine >= 1 && model && debugLine <= model.getLineCount()) {
 	            marks.push({ line: debugLine, kind: 'debug' });
 	        }
+	        if (markLines && model) {
+	            for (const ln of markLines) {
+	                if (ln >= 1 && ln <= model.getLineCount())
+	                    marks.push({ line: ln, kind: 'scan' });
+	            }
+	        }
 	        decRef.current.set(marks.map(m => ({
 	            range: new mon.Range(m.line, 1, m.line, model.getLineMaxColumn(m.line)),
 	            options: {
 	                isWholeLine: true,
-	                className: m.kind === 'error' ? 'nx-error-line' : 'nx-debug-line',
-	                linesDecorationsClassName: m.kind === 'error' ? 'nx-error-gutter' : 'nx-debug-gutter',
+	                className: m.kind === 'error' ? 'nx-error-line' : m.kind === 'debug' ? 'nx-debug-line' : 'nx-scan-line',
+	                linesDecorationsClassName: m.kind === 'error' ? 'nx-error-gutter' : m.kind === 'debug' ? 'nx-debug-gutter' : 'nx-scan-gutter',
 	            },
 	        })));
 	        const top = marks[0]?.line;
 	        if (top)
 	            ed.revealLineInCenter(top);
-	    }, [errorLine, debugLine]);
+	    }, [errorLine, debugLine, markLines]);
 	    return (jsxRuntimeExports.jsxs("div", { style: { width: '100%', height }, className: "code-editor-host", children: [jsxRuntimeExports.jsx("style", { children: ERR_STYLE }), jsxRuntimeExports.jsx(Ft, { path: idRef.current + '.py', height: "100%", language: "python", theme: "nexus-dark", value: value, onChange: (v) => onChange(v ?? ''), loading: jsxRuntimeExports.jsxs("div", { style: { height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#4A6E85' }, children: [jsxRuntimeExports.jsx("span", { className: "spinner" }), "\u00A0\u6B63\u5728\u4ECE CDN \u52A0\u8F7D\u4EE3\u7801\u7F16\u8F91\u5668\u2026"] }), onMount: (ed, mon) => {
 	                    edRef.current = ed;
 	                    monRef.current = mon;
@@ -4769,6 +7433,54 @@
 	];
 	const knowledgeById = (id) => KNOWLEDGE.find(k => k.id === id);
 
+	const BUG_CODEX = [
+	    { id: 'syntax', error: 'SyntaxError', title: '语法错误', desc: '条件末尾漏冒号、括号不闭合等。', fix: '检查 if/for 行末的英文冒号与括号配对。', levelIds: ['1-1'], chapter: 1 },
+	    { id: 'indent', error: 'IndentationError', title: '缩进错误', desc: '代码块没有缩进，或同一块缩进不一致。', fix: '循环体 / 分支体统一缩进 4 个空格。', levelIds: ['1-5'], chapter: 1 },
+	    { id: 'string', error: 'SyntaxError', title: '字符串未闭合', desc: '引号没成对，字符串在中途断裂。', fix: '字符串两端都要有英文引号。', levelIds: ['1-2'], chapter: 1 },
+	    { id: 'name', error: 'NameError', title: '名字未定义', desc: '使用了没有定义、或拼写不一致的变量名。', fix: '对比定义处与使用处的拼写和大小写。', levelIds: ['1-3'], chapter: 1 },
+	    { id: 'compare', error: '逻辑错误', title: '比较写反 / 边界错误', desc: '用 < 代替 >=、用 = 代替 ==，边界值被误判。', fix: '先想清楚「包含边界」还是「不包含」。', levelIds: ['1-4', '2-2'], chapter: 1 },
+	    { id: 'logic', error: '逻辑错误', title: 'and / or 用错', desc: '该同时满足的地方用了 or，导致误报。', fix: '同时成立用 and，任一成立用 or。', levelIds: ['2-3', '2-4'], chapter: 2 },
+	    { id: 'branch', error: '逻辑错误', title: '分支写错', desc: 'elif 分支返回值错误，整类数据被误判。', fix: '逐条核对 if / elif / else 的输出。', levelIds: ['2-5'], chapter: 2 },
+	    { id: 'index', error: 'IndexError', title: '索引越界', desc: '列表索引超出范围，或忘了从 0 开始。', fix: '索引从 0 起，最大是 len(list)-1。', levelIds: ['3-1'], chapter: 3 },
+	    { id: 'loop', error: '逻辑错误', title: '循环边界', desc: 'while 条件写死数字，最后一两项被漏掉。', fix: '用 len(items) 而不是硬编码次数。', levelIds: ['3-3'], chapter: 3 },
+	    { id: 'type', error: 'TypeError', title: '类型错误', desc: '把方法当成值，或对字符串做算术。', fix: '调用方法要加括号：name.upper()。', levelIds: ['4-4'], chapter: 4 },
+	    { id: 'key', error: 'KeyError', title: '键不存在', desc: '字典里没有这个键，直接取值会崩溃。', fix: '用 get(key, 默认值) 安全读取。', levelIds: ['5-1'], chapter: 5 },
+	    { id: 'value', error: 'ValueError', title: '转换失败', desc: 'int("abc") 之类的转换抛异常。', fix: '用 try/except 兜底，失败时给默认值。', levelIds: ['5-2'], chapter: 5 },
+	];
+	const bugById = (id) => BUG_CODEX.find(b => b.id === id);
+	/** 按 Python 异常类型匹配图鉴条目（用于提交失败时记账） */
+	function codexForError(errType) {
+	    if (!errType)
+	        return undefined;
+	    const exact = BUG_CODEX.find(b => b.error === errType);
+	    if (exact)
+	        return exact;
+	    if (errType.includes('Indentation'))
+	        return bugById('indent');
+	    if (errType.includes('Syntax'))
+	        return bugById('syntax');
+	    if (errType.includes('Name'))
+	        return bugById('name');
+	    if (errType.includes('Index'))
+	        return bugById('index');
+	    if (errType.includes('Key'))
+	        return bugById('key');
+	    if (errType.includes('Type'))
+	        return bugById('type');
+	    if (errType.includes('Value'))
+	        return bugById('value');
+	    return undefined;
+	}
+	/** 章节里的常见错误（按遭遇次数排序） */
+	function topBugsForChapter(chapter, log, limit = 3) {
+	    if (!log)
+	        return [];
+	    return BUG_CODEX
+	        .filter(b => b.chapter === chapter && log[b.id])
+	        .sort((a, b) => (log[b.id]?.count || 0) - (log[a.id]?.count || 0))
+	        .slice(0, limit);
+	}
+
 	function ChallengePage() {
 	    const g = useGame();
 	    const levelId = g.player.progress.currentLevelId;
@@ -4791,6 +7503,8 @@
 	    const [dbg, setDbg] = reactExports.useState(null);
 	    const [debugLine, setDebugLine] = reactExports.useState(null);
 	    const [loadElapsed, setLoadElapsed] = reactExports.useState(0);
+	    const [scanLines, setScanLines] = reactExports.useState([]);
+	    const historyRef = reactExports.useRef([]);
 	    const locked = g.event.kind !== 'none';
 	    reactExports.useEffect(() => {
 	        if (!level) {
@@ -4860,6 +7574,55 @@
 	    }, []);
 	    if (!level)
 	        return null;
+	    /** 记录一次代码快照（回滚道具用） */
+	    const snapshot = reactExports.useCallback((current) => {
+	        historyRef.current.push(current);
+	        if (historyRef.current.length > 12)
+	            historyRef.current.shift();
+	    }, []);
+	    /** 代码扫描器：标出与初始版本不同的行（只定位，不给答案） */
+	    const useScan = () => {
+	        if (!level)
+	            return;
+	        if (!g.consumeItem('scan')) {
+	            g.toast('warn', '扫描器库存不足——可在兑换中心补充。');
+	            play('deny');
+	            return;
+	        }
+	        const base = level.initialCode.split('\n');
+	        const cur = code.split('\n');
+	        const changed = [];
+	        cur.forEach((l, i) => { if ((base[i] ?? '') !== l && l.trim())
+	            changed.push(i + 1); });
+	        const fallback = cur.map((l, i) => (l.trim() && !l.trim().startsWith('#') ? i + 1 : 0)).filter(Boolean);
+	        const picked = (changed.length ? changed : fallback).slice(0, 3);
+	        setScanLines(picked);
+	        setMiraTag('扫描器');
+	        setMiraMsg(picked.length
+	            ? '扫描完成：已高亮第 ' + picked.join('、') + ' 行。这些是你改动过 / 最需要复核的区域——结论要你自己判断。'
+	            : '扫描完成：没有发现可定位的行。先写几行代码再试试。');
+	        play('unlock');
+	    };
+	    /** 数据回滚模块：恢复到上一个代码快照 */
+	    const useRollback = () => {
+	        if (!g.consumeItem('rollback')) {
+	            g.toast('warn', '回滚模块库存不足——可在兑换中心补充。');
+	            play('deny');
+	            return;
+	        }
+	        const prev = historyRef.current.pop();
+	        if (prev === undefined) {
+	            g.toast('warn', '没有可回滚的快照。');
+	            play('deny');
+	            return;
+	        }
+	        setCode(prev);
+	        setScanLines([]);
+	        setVerdict(null);
+	        setErrorLine(null);
+	        pushLines([{ kind: 'sys', text: '数据回滚：已恢复到上一次代码快照。' }]);
+	        play('click');
+	    };
 	    const run = async () => {
 	        if (!level || running || submitting || locked)
 	            return;
@@ -4874,9 +7637,11 @@
 	            play('deny');
 	            return;
 	        }
+	        snapshot(code);
 	        setRunning(true);
 	        setVerdict(null);
 	        setErrorLine(null);
+	        setScanLines([]);
 	        pushLines([{ kind: 'cmd', text: 'python task.py' }]);
 	        if (pyState.status !== 'ready') {
 	            pushLines([{ kind: 'sys', text: 'Python 引擎初始化中（本地加载，通常 2~5 秒）——代码已排队，就绪后自动执行。' }]);
@@ -4912,9 +7677,11 @@
 	            play('deny');
 	            return;
 	        }
+	        snapshot(code);
 	        setSubmitting(true);
 	        setVerdict(null);
 	        setErrorLine(null);
+	        setScanLines([]);
 	        play('run');
 	        const codeLines = code.split('\n').length;
 	        const combined = level.judge.judgeKind === 'python'
@@ -5011,6 +7778,7 @@
 	            ]);
 	            setVerdict(v);
 	            setMiraTag('判题反馈');
+	            g.recordBug(codexForError(r.error?.type)?.id || 'logic');
 	            const fp = g.recordFail(level.id);
 	            if (fp.triggered) {
 	                setMiraTag('紧急警告');
@@ -5040,7 +7808,9 @@
 	    };
 	    const resetCode = () => {
 	        if (resetArmed) {
+	            snapshot(code);
 	            setCode(level.initialCode);
+	            setScanLines([]);
 	            setResetArmed(false);
 	            setVerdict(null);
 	            setErrorLine(null);
@@ -5146,14 +7916,14 @@
 	                                ? 'PY ENGINE READY'
 	                                : pyState.status === 'loading'
 	                                    ? '引擎加载中 ' + loadElapsed + 's · ' + (pyState.phase || '准备中')
-	                                    : pyState.status === 'error' ? '引擎错误' : 'ADAPTER STANDBY'] }), jsxRuntimeExports.jsx("span", { className: "hud-chip", children: stars > 0 ? '★'.repeat(stars) : '未通关' }), jsxRuntimeExports.jsxs("span", { className: "hud-chip cyan", children: ["\u5BB9\u9519 ", g.tolerance] }), jsxRuntimeExports.jsxs("span", { className: "hud-chip", children: ["\u610F\u8BC6 ", player.consciousness, "%"] }), jsxRuntimeExports.jsx("button", { className: "nxbtn small ghost", onClick: () => { g.toggleMusic(); setMusicOn(isMusicOn()); }, children: musicOn ? '♪ 音乐开' : '♪ 音乐关' })] }), jsxRuntimeExports.jsxs("div", { className: "chlg-grid", style: { flex: 1, minHeight: 0 }, children: [jsxRuntimeExports.jsxs("div", { className: "chlg-left", style: { overflowY: 'auto' }, children: [jsxRuntimeExports.jsxs("div", { className: "panel task-block", children: [jsxRuntimeExports.jsxs("div", { className: "panel-title", children: ["\u4EFB\u52A1\u7B80\u62A5", jsxRuntimeExports.jsx("span", { className: "panel-tag", children: level.codename })] }), jsxRuntimeExports.jsxs("div", { className: "tb-item", children: [jsxRuntimeExports.jsx("div", { className: "tb-label", children: "\u6545\u969C\u73B0\u8C61" }), jsxRuntimeExports.jsx("div", { className: "tb-text", children: level.fault })] }), jsxRuntimeExports.jsxs("div", { className: "tb-item", children: [jsxRuntimeExports.jsx("div", { className: "tb-label", children: "\u4EFB\u52A1\u76EE\u6807" }), jsxRuntimeExports.jsx("div", { className: "tb-text", children: level.goal })] }), jsxRuntimeExports.jsxs("div", { className: "tb-item", children: [jsxRuntimeExports.jsx("div", { className: "tb-label", children: "\u6B63\u786E\u884C\u4E3A" }), jsxRuntimeExports.jsx("div", { className: "tb-text warn", children: level.behavior })] })] }), jsxRuntimeExports.jsxs("div", { className: "panel", children: [jsxRuntimeExports.jsx("div", { className: "panel-title", children: "\u6545\u969C\u65E5\u5FD7" }), jsxRuntimeExports.jsx("div", { style: { fontFamily: 'Consolas, monospace', fontSize: 12.5, color: '#FF9BA2', lineHeight: 1.8, background: 'rgba(255,91,100,0.06)', border: '1px solid rgba(255,91,100,0.2)', borderRadius: 8, padding: '9px 11px', whiteSpace: 'pre-wrap' }, children: level.faultLog })] }), jsxRuntimeExports.jsxs("div", { className: "panel", children: [jsxRuntimeExports.jsx("div", { className: "panel-title", children: "\u77E5\u8BC6\u70B9" }), jsxRuntimeExports.jsx("div", { children: knowledgeCards.map(k => (jsxRuntimeExports.jsx("span", { className: "chip cyan know-chip", children: k.title }, k.id))) })] }), level.varsNote && level.varsNote.length > 0 && (jsxRuntimeExports.jsxs("div", { className: "panel", children: [jsxRuntimeExports.jsxs("div", { className: "panel-title", children: ["\u53D8\u91CF\u76D1\u89C6\u5668", jsxRuntimeExports.jsx("span", { className: "panel-tag", children: "STATIC MODE" })] }), level.varsNote.map(v => (jsxRuntimeExports.jsxs("div", { className: "pf-kv", style: { fontSize: 12.5 }, children: [jsxRuntimeExports.jsx("span", { className: "k", children: v.name }), jsxRuntimeExports.jsx("span", { className: "v", style: { textAlign: 'right' }, children: v.desc })] }, v.name)))] }))] }), jsxRuntimeExports.jsxs("div", { className: "chlg-center", children: [jsxRuntimeExports.jsxs("div", { className: "toolbar", children: [jsxRuntimeExports.jsxs("button", { className: "nxbtn", disabled: running || submitting || locked, onClick: run, children: [running ? jsxRuntimeExports.jsx("span", { className: "spinner" }) : '▶', " \u8FD0\u884C\u4EE3\u7801", jsxRuntimeExports.jsx("span", { className: "hint-chip", style: { marginLeft: 8, fontSize: 11, color: '#4A6E85' }, children: "Ctrl+Enter" })] }), jsxRuntimeExports.jsx("button", { className: "nxbtn primary", disabled: running || submitting || locked, onClick: submit, children: "\u63D0\u4EA4\u4FEE\u590D \u23CE" }), jsxRuntimeExports.jsx("button", { className: "nxbtn ghost", disabled: running || submitting || locked, onClick: resetCode, children: resetArmed ? '确认重置？' : '重置代码' }), jsxRuntimeExports.jsx("button", { className: "nxbtn warn", disabled: running || submitting || locked || !!dbg, onClick: startDebug, title: "\u91C7\u96C6\u6267\u884C\u8F68\u8FF9\u5E76\u9010\u884C\u56DE\u653E\uFF0C\u53F3\u4FA7\u53D8\u91CF\u76D1\u89C6\u5668\u5B9E\u65F6\u66F4\u65B0", children: "\uD83D\uDC1E \u5355\u6B65\u8C03\u8BD5" }), jsxRuntimeExports.jsx("div", { className: "sp" }), jsxRuntimeExports.jsx("span", { className: "chip", children: "\u8FD0\u884C\u4E0D\u589E\u52A0\u5931\u8D25\u6B21\u6570" }), locked && jsxRuntimeExports.jsx("span", { className: "chip red warn-flash", children: "\u7D27\u6025\u4E8B\u4EF6\u8FDB\u884C\u4E2D\u2014\u2014\u4E3B\u7EBF\u63D0\u4EA4\u5DF2\u9501\u5B9A" })] }), jsxRuntimeExports.jsx("div", { className: "code-frame", style: { flex: 1 }, children: jsxRuntimeExports.jsx(CodeEditor, { value: code, onChange: setCode, errorLine: errorLine, debugLine: debugLine, onRun: run, readOnly: running || submitting, fontSize: player.settings.animLevel === 'low' ? 15 : 15.5 }) }), dbg && (jsxRuntimeExports.jsxs("div", { className: "dbg-bar", children: [jsxRuntimeExports.jsxs("span", { className: "chip orange", children: ["\uD83D\uDC1E \u5355\u6B65\u8C03\u8BD5 \u00B7 \u7B2C ", dbg.idx + 1, " / ", dbg.steps.length, " \u6B65 \u00B7 \u7B2C ", debugLine ?? '?', " \u884C"] }), jsxRuntimeExports.jsx("button", { className: "nxbtn small", onClick: dbgNext, disabled: dbg.done, children: "\u25B6 \u4E0B\u4E00\u6B65" }), jsxRuntimeExports.jsx("button", { className: "nxbtn small ghost", onClick: dbgToEnd, disabled: dbg.done, children: "\u23ED \u8FD0\u884C\u5230\u7ED3\u675F" }), jsxRuntimeExports.jsx("button", { className: "nxbtn small ghost", onClick: dbgExit, children: "\u25FC \u9000\u51FA\u8C03\u8BD5" }), jsxRuntimeExports.jsx("div", { className: "sp" }), jsxRuntimeExports.jsx("span", { className: "hint-note", children: "\u56DE\u653E\u6A21\u5F0F\uFF1A\u8F68\u8FF9\u5DF2\u5728\u540E\u53F0\u91C7\u96C6\u5B8C\u6BD5\uFF0C\u9010\u6B65\u67E5\u770B\u6BCF\u884C\u7684\u53D8\u91CF\u4E0E\u8F93\u51FA\u3002" })] })), verdict && (jsxRuntimeExports.jsxs("div", { children: [jsxRuntimeExports.jsx("div", { className: 'result-banner ' + (verdict.passed ? 'ok' : 'fail'), children: verdict.passed ? '✓ 修复成功——全部测试通过' : verdict.timedOut ? '✗ 判题超时（已强制终止）' : verdict.error ? '✗ 执行出错：' + verdict.error.type : '✗ 测试未全部通过' }), verdict.error && jsxRuntimeExports.jsx("div", { style: { fontFamily: 'Consolas, monospace', fontSize: 12.5, color: '#FF9BA2', marginTop: 6, whiteSpace: 'pre-wrap' }, children: verdict.error.message }), !verdict.error && verdict.checks.length > 0 && (jsxRuntimeExports.jsx("div", { className: "checks-list", children: verdict.checks.map((c, i) => (jsxRuntimeExports.jsxs("div", { className: 'ck ' + (c.ok ? 'ok' : 'fail'), children: [c.ok ? '✓' : '✗', " ", c.name] }, i))) }))] }))] }), jsxRuntimeExports.jsxs("div", { className: "chlg-right", style: { overflowY: 'auto' }, children: [jsxRuntimeExports.jsx(MiraPanel, { message: miraMsg, msgTag: miraTag, hintUsed: hintUsed, onAskHint: locked ? undefined : askHint }), dbg && (jsxRuntimeExports.jsxs("div", { className: "panel", children: [jsxRuntimeExports.jsxs("div", { className: "panel-title", children: ["\u53D8\u91CF\u76D1\u89C6\u5668", jsxRuntimeExports.jsxs("span", { className: "panel-tag", children: ["DEBUG \u884C ", debugLine ?? '?'] })] }), jsxRuntimeExports.jsx(DebugVars, { vars: dbg.steps[Math.min(dbg.idx, dbg.steps.length - 1)].vars }), jsxRuntimeExports.jsxs("div", { className: "hint-note", style: { marginTop: 8 }, children: ["\u7B2C ", dbg.idx + 1, " / ", dbg.steps.length, " \u6B65 \u00B7 \u503C\u4E3A\u53D8\u91CF\u7684 repr\uFF08\u622A\u65AD 80 \u5B57\uFF09"] })] })), jsxRuntimeExports.jsxs("div", { className: "panel", children: [jsxRuntimeExports.jsx("div", { className: "panel-title", children: "\u751F\u547D\u4F53\u5F81" }), jsxRuntimeExports.jsx(PlayerStatus, { showTolerance: true })] })] })] }), jsxRuntimeExports.jsx("div", { className: "chlg-bottom", children: jsxRuntimeExports.jsx(Terminal, { lines: term, maxHeight: 210, title: '维修终端 · ' + level.codename }) }), briefOpen && (jsxRuntimeExports.jsx(DialogSystem, { nodes: [
+	                                    : pyState.status === 'error' ? '引擎错误' : 'ADAPTER STANDBY'] }), jsxRuntimeExports.jsx("span", { className: "hud-chip", children: stars > 0 ? '★'.repeat(stars) : '未通关' }), jsxRuntimeExports.jsxs("span", { className: "hud-chip cyan", children: ["\u5BB9\u9519 ", g.tolerance] }), jsxRuntimeExports.jsxs("span", { className: "hud-chip", children: ["\u610F\u8BC6 ", player.consciousness, "%"] }), jsxRuntimeExports.jsx("button", { className: "nxbtn small ghost", onClick: () => { g.toggleMusic(); setMusicOn(isMusicOn()); }, children: musicOn ? '♪ 音乐开' : '♪ 音乐关' })] }), jsxRuntimeExports.jsxs("div", { className: "chlg-grid", style: { flex: 1, minHeight: 0 }, children: [jsxRuntimeExports.jsxs("div", { className: "chlg-left", style: { overflowY: 'auto' }, children: [jsxRuntimeExports.jsxs("div", { className: "panel task-block", children: [jsxRuntimeExports.jsxs("div", { className: "panel-title", children: ["\u4EFB\u52A1\u7B80\u62A5", jsxRuntimeExports.jsx("span", { className: "panel-tag", children: level.codename })] }), jsxRuntimeExports.jsxs("div", { className: "tb-item", children: [jsxRuntimeExports.jsx("div", { className: "tb-label", children: "\u6545\u969C\u73B0\u8C61" }), jsxRuntimeExports.jsx("div", { className: "tb-text", children: level.fault })] }), jsxRuntimeExports.jsxs("div", { className: "tb-item", children: [jsxRuntimeExports.jsx("div", { className: "tb-label", children: "\u4EFB\u52A1\u76EE\u6807" }), jsxRuntimeExports.jsx("div", { className: "tb-text", children: level.goal })] }), jsxRuntimeExports.jsxs("div", { className: "tb-item", children: [jsxRuntimeExports.jsx("div", { className: "tb-label", children: "\u6B63\u786E\u884C\u4E3A" }), jsxRuntimeExports.jsx("div", { className: "tb-text warn", children: level.behavior })] })] }), jsxRuntimeExports.jsxs("div", { className: "panel", children: [jsxRuntimeExports.jsx("div", { className: "panel-title", children: "\u6545\u969C\u65E5\u5FD7" }), jsxRuntimeExports.jsx("div", { style: { fontFamily: 'Consolas, monospace', fontSize: 12.5, color: '#FF9BA2', lineHeight: 1.8, background: 'rgba(255,91,100,0.06)', border: '1px solid rgba(255,91,100,0.2)', borderRadius: 8, padding: '9px 11px', whiteSpace: 'pre-wrap' }, children: level.faultLog })] }), jsxRuntimeExports.jsxs("div", { className: "panel", children: [jsxRuntimeExports.jsx("div", { className: "panel-title", children: "\u77E5\u8BC6\u70B9" }), jsxRuntimeExports.jsx("div", { children: knowledgeCards.map(k => (jsxRuntimeExports.jsx("span", { className: "chip cyan know-chip", children: k.title }, k.id))) })] }), level.varsNote && level.varsNote.length > 0 && (jsxRuntimeExports.jsxs("div", { className: "panel", children: [jsxRuntimeExports.jsxs("div", { className: "panel-title", children: ["\u53D8\u91CF\u76D1\u89C6\u5668", jsxRuntimeExports.jsx("span", { className: "panel-tag", children: "STATIC MODE" })] }), level.varsNote.map(v => (jsxRuntimeExports.jsxs("div", { className: "pf-kv", style: { fontSize: 12.5 }, children: [jsxRuntimeExports.jsx("span", { className: "k", children: v.name }), jsxRuntimeExports.jsx("span", { className: "v", style: { textAlign: 'right' }, children: v.desc })] }, v.name)))] }))] }), jsxRuntimeExports.jsxs("div", { className: "chlg-center", children: [jsxRuntimeExports.jsxs("div", { className: "toolbar", children: [jsxRuntimeExports.jsxs("button", { className: "nxbtn", disabled: running || submitting || locked, onClick: run, children: [running ? jsxRuntimeExports.jsx("span", { className: "spinner" }) : '▶', " \u8FD0\u884C\u4EE3\u7801", jsxRuntimeExports.jsx("span", { className: "hint-chip", style: { marginLeft: 8, fontSize: 11, color: '#4A6E85' }, children: "Ctrl+Enter" })] }), jsxRuntimeExports.jsx("button", { className: "nxbtn primary", disabled: running || submitting || locked, onClick: submit, children: "\u63D0\u4EA4\u4FEE\u590D \u23CE" }), jsxRuntimeExports.jsx("button", { className: "nxbtn ghost", disabled: running || submitting || locked, onClick: resetCode, children: resetArmed ? '确认重置？' : '重置代码' }), jsxRuntimeExports.jsx("button", { className: "nxbtn warn", disabled: running || submitting || locked || !!dbg, onClick: startDebug, title: "\u91C7\u96C6\u6267\u884C\u8F68\u8FF9\u5E76\u9010\u884C\u56DE\u653E\uFF0C\u53F3\u4FA7\u53D8\u91CF\u76D1\u89C6\u5668\u5B9E\u65F6\u66F4\u65B0", children: "\uD83D\uDC1E \u5355\u6B65\u8C03\u8BD5" }), jsxRuntimeExports.jsxs("button", { className: "nxbtn ghost small", disabled: running || submitting || locked, onClick: useScan, title: "\u6D88\u8017 1 \u4E2A\u626B\u63CF\u5668\uFF1A\u9AD8\u4EAE\u53EF\u7591\u884C\uFF0C\u53EA\u5B9A\u4F4D\u4E0D\u7ED9\u7B54\u6848", children: ["\u2316 \u626B\u63CF \u00D7", player.rewards?.items?.scan || 0] }), jsxRuntimeExports.jsxs("button", { className: "nxbtn ghost small", disabled: running || submitting || locked, onClick: useRollback, title: "\u6D88\u8017 1 \u4E2A\u56DE\u6EDA\u6A21\u5757\uFF1A\u6062\u590D\u4E0A\u4E00\u6B21\u4EE3\u7801\u5FEB\u7167", children: ["\u21BA \u56DE\u6EDA \u00D7", player.rewards?.items?.rollback || 0] }), jsxRuntimeExports.jsx("div", { className: "sp" }), jsxRuntimeExports.jsx("span", { className: "chip", children: "\u8FD0\u884C\u4E0D\u589E\u52A0\u5931\u8D25\u6B21\u6570" }), locked && jsxRuntimeExports.jsx("span", { className: "chip red warn-flash", children: "\u7D27\u6025\u4E8B\u4EF6\u8FDB\u884C\u4E2D\u2014\u2014\u4E3B\u7EBF\u63D0\u4EA4\u5DF2\u9501\u5B9A" })] }), jsxRuntimeExports.jsx("div", { className: "code-frame", style: { flex: 1 }, children: jsxRuntimeExports.jsx(CodeEditor, { value: code, onChange: setCode, errorLine: errorLine, debugLine: debugLine, markLines: scanLines, onRun: run, readOnly: running || submitting, fontSize: player.settings.animLevel === 'low' ? 15 : 15.5 }) }), dbg && (jsxRuntimeExports.jsxs("div", { className: "dbg-bar", children: [jsxRuntimeExports.jsxs("span", { className: "chip orange", children: ["\uD83D\uDC1E \u5355\u6B65\u8C03\u8BD5 \u00B7 \u7B2C ", dbg.idx + 1, " / ", dbg.steps.length, " \u6B65 \u00B7 \u7B2C ", debugLine ?? '?', " \u884C"] }), jsxRuntimeExports.jsx("button", { className: "nxbtn small", onClick: dbgNext, disabled: dbg.done, children: "\u25B6 \u4E0B\u4E00\u6B65" }), jsxRuntimeExports.jsx("button", { className: "nxbtn small ghost", onClick: dbgToEnd, disabled: dbg.done, children: "\u23ED \u8FD0\u884C\u5230\u7ED3\u675F" }), jsxRuntimeExports.jsx("button", { className: "nxbtn small ghost", onClick: dbgExit, children: "\u25FC \u9000\u51FA\u8C03\u8BD5" }), jsxRuntimeExports.jsx("div", { className: "sp" }), jsxRuntimeExports.jsx("span", { className: "hint-note", children: "\u56DE\u653E\u6A21\u5F0F\uFF1A\u8F68\u8FF9\u5DF2\u5728\u540E\u53F0\u91C7\u96C6\u5B8C\u6BD5\uFF0C\u9010\u6B65\u67E5\u770B\u6BCF\u884C\u7684\u53D8\u91CF\u4E0E\u8F93\u51FA\u3002" })] })), verdict && (jsxRuntimeExports.jsxs("div", { children: [jsxRuntimeExports.jsx("div", { className: 'result-banner ' + (verdict.passed ? 'ok' : 'fail'), children: verdict.passed ? '✓ 修复成功——全部测试通过' : verdict.timedOut ? '✗ 判题超时（已强制终止）' : verdict.error ? '✗ 执行出错：' + verdict.error.type : '✗ 测试未全部通过' }), verdict.error && jsxRuntimeExports.jsx("div", { style: { fontFamily: 'Consolas, monospace', fontSize: 12.5, color: '#FF9BA2', marginTop: 6, whiteSpace: 'pre-wrap' }, children: verdict.error.message }), !verdict.error && verdict.checks.length > 0 && (jsxRuntimeExports.jsx("div", { className: "checks-list", children: verdict.checks.map((c, i) => (jsxRuntimeExports.jsxs("div", { className: 'ck ' + (c.ok ? 'ok' : 'fail'), children: [c.ok ? '✓' : '✗', " ", c.name] }, i))) }))] }))] }), jsxRuntimeExports.jsxs("div", { className: "chlg-right", style: { overflowY: 'auto' }, children: [jsxRuntimeExports.jsx(MiraPanel, { message: miraMsg, msgTag: miraTag, hintUsed: hintUsed, onAskHint: locked ? undefined : askHint }), dbg && (jsxRuntimeExports.jsxs("div", { className: "panel", children: [jsxRuntimeExports.jsxs("div", { className: "panel-title", children: ["\u53D8\u91CF\u76D1\u89C6\u5668", jsxRuntimeExports.jsxs("span", { className: "panel-tag", children: ["DEBUG \u884C ", debugLine ?? '?'] })] }), jsxRuntimeExports.jsx(DebugVars, { vars: dbg.steps[Math.min(dbg.idx, dbg.steps.length - 1)].vars }), jsxRuntimeExports.jsxs("div", { className: "hint-note", style: { marginTop: 8 }, children: ["\u7B2C ", dbg.idx + 1, " / ", dbg.steps.length, " \u6B65 \u00B7 \u503C\u4E3A\u53D8\u91CF\u7684 repr\uFF08\u622A\u65AD 80 \u5B57\uFF09"] })] })), jsxRuntimeExports.jsxs("div", { className: "panel", children: [jsxRuntimeExports.jsx("div", { className: "panel-title", children: "\u751F\u547D\u4F53\u5F81" }), jsxRuntimeExports.jsx(PlayerStatus, { showTolerance: true })] })] })] }), jsxRuntimeExports.jsx("div", { className: "chlg-bottom", children: jsxRuntimeExports.jsx(Terminal, { lines: term, maxHeight: 210, title: '维修终端 · ' + level.codename }) }), briefOpen && (jsxRuntimeExports.jsx(DialogSystem, { nodes: [
 	                    { id: level.id + '-b1', speaker: 'MIRA', kind: 'mira', text: '任务简报：「' + level.title + '」\n' + level.fault },
 	                    { id: level.id + '-b2', speaker: 'NEXUS 系统', kind: 'system', text: '故障日志：' + level.faultLog + '\n任务目标：' + level.goal + '\n\n操作指引：在中间编辑器里改代码 → 点「运行代码」预览结果（不计数）→ 点「提交修复」正式判题' },
 	                ], speedMs: player.settings.typewriterMs, animEnabled: player.settings.animations, frameTitle: level.title + ' · 任务简报', onSeen: id => g.markStory(id), onDone: () => { setBriefOpen(false); g.markStory(level.id); g.toast('info', '提示：点击「MIRA 提示」可获得分层指导。'); } })), done && (jsxRuntimeExports.jsx("div", { className: "overlay", style: { background: 'rgba(3,10,16,0.72)', backdropFilter: 'blur(5px)' }, children: jsxRuntimeExports.jsxs("div", { className: "complete-panel", children: [jsxRuntimeExports.jsx("div", { className: "cp-ico", children: "\u2713" }), jsxRuntimeExports.jsx("div", { className: "cp-title", children: "\u4FEE\u590D\u6210\u529F" }), jsxRuntimeExports.jsxs("div", { className: "cp-sub", children: [level.codename, " \u00B7 ", level.title, " \u5DF2\u6062\u590D\u8FD0\u884C"] }), jsxRuntimeExports.jsx("div", { className: "star-row", children: [1, 2, 3].map(i => jsxRuntimeExports.jsx("span", { className: 'star' + (i <= done.payload.stars ? ' on' : ''), style: { animationDelay: (0.15 * i) + 's' }, children: "\u2605" }, i)) }), done.payload.reward && (() => {
 	                            const rw = done.payload.reward;
 	                            const meta = GRADE_META[rw.breakdown.grade];
-	                            return (jsxRuntimeExports.jsxs("div", { className: 'reward-settle grade-' + rw.breakdown.grade, children: [jsxRuntimeExports.jsx("div", { className: "reward-particles", "aria-hidden": "true", children: Array.from({ length: 14 }).map((_, i) => (jsxRuntimeExports.jsx("span", { style: { '--i': i } }, i))) }), jsxRuntimeExports.jsxs("div", { className: 'grade-badge g-' + rw.breakdown.grade, children: [jsxRuntimeExports.jsx("span", { className: "gb-letter", children: rw.breakdown.grade }), jsxRuntimeExports.jsx("span", { className: "gb-desc", children: meta.desc })] }), jsxRuntimeExports.jsxs("div", { className: "settle-grid", children: [jsxRuntimeExports.jsxs("div", { className: "sg-item", children: [jsxRuntimeExports.jsx("span", { className: "k", children: "\u8D21\u732E\u70B9" }), jsxRuntimeExports.jsxs("span", { className: "v gold", children: ["+", rw.breakdown.total] })] }), jsxRuntimeExports.jsxs("div", { className: "sg-item", children: [jsxRuntimeExports.jsx("span", { className: "k", children: "\u5931\u8BEF\u6B21\u6570" }), jsxRuntimeExports.jsx("span", { className: "v", children: rw.fails })] }), jsxRuntimeExports.jsxs("div", { className: "sg-item", children: [jsxRuntimeExports.jsx("span", { className: "k", children: "\u4F7F\u7528\u63D0\u793A" }), jsxRuntimeExports.jsxs("span", { className: "v", children: [rw.hints, " \u6B21"] })] }), jsxRuntimeExports.jsxs("div", { className: "sg-item", children: [jsxRuntimeExports.jsx("span", { className: "k", children: "\u4FE1\u4EFB\u5EA6" }), jsxRuntimeExports.jsx("span", { className: "v cyan", children: rw.trustUp ? '+' + rw.breakdown.trustGain : '已满' })] })] }), jsxRuntimeExports.jsxs("div", { className: "settle-tags", children: [rw.breakdown.firstClear > 0 && jsxRuntimeExports.jsxs("span", { className: "chip gold", children: ["\u9996\u901A +", rw.breakdown.firstClear] }), rw.breakdown.noFail > 0 && jsxRuntimeExports.jsxs("span", { className: "chip green", children: ["\u96F6\u5931\u8BEF +", rw.breakdown.noFail] }), rw.breakdown.noHint > 0 && jsxRuntimeExports.jsxs("span", { className: "chip green", children: ["\u672A\u7528\u63D0\u793A +", rw.breakdown.noHint] }), rw.breakdown.gradeBonus > 0 && jsxRuntimeExports.jsxs("span", { className: "chip cyan", children: ["\u8BC4\u7EA7\u5956\u52B1 +", rw.breakdown.gradeBonus] }), rw.duplicate && jsxRuntimeExports.jsx("span", { className: "chip dim", children: "\u91CD\u590D\u901A\u5173\uFF08\u4EC5\u57FA\u7840\u5956\u52B1\uFF09" })] }), rw.chapterReward && (jsxRuntimeExports.jsxs("div", { className: "chapter-reward", children: [jsxRuntimeExports.jsxs("div", { className: "cr-title", children: ["\u2726 \u7AE0\u8282\u5956\u52B1 \u00B7 ", rw.chapterReward.title] }), jsxRuntimeExports.jsx("div", { className: "cr-desc", children: rw.chapterReward.desc }), jsxRuntimeExports.jsxs("div", { className: "cr-gain", children: ["+", rw.chapterReward.credits, " \u8D21\u732E\u70B9", rw.chapterReward.skins.length > 0 && ' · 解锁外观', Object.keys(rw.chapterReward.items).length > 0 && ' · 获得道具', rw.chapterReward.fragment && ' · 记忆碎片'] })] }))] }));
-	                        })(), jsxRuntimeExports.jsxs("div", { className: "cp-rewards", children: [jsxRuntimeExports.jsxs("div", { className: "cp-reward", children: [jsxRuntimeExports.jsxs("div", { className: "rv", children: ["+", done.payload.expGained] }), jsxRuntimeExports.jsx("div", { className: "rl", children: "\u7ECF\u9A8C" })] }), jsxRuntimeExports.jsxs("div", { className: "cp-reward", children: [jsxRuntimeExports.jsxs("div", { className: "rv", children: ["Lv.", done.payload.newLevel] }), jsxRuntimeExports.jsx("div", { className: "rl", children: "\u7B49\u7EA7" })] }), jsxRuntimeExports.jsxs("div", { className: "cp-reward", children: [jsxRuntimeExports.jsx("div", { className: "rv", children: level.knowledge.length }), jsxRuntimeExports.jsx("div", { className: "rl", children: "\u77E5\u8BC6\u5361\u7247" })] })] }), done.payload.levelUp && (jsxRuntimeExports.jsxs("div", { className: "result-banner ok", style: { marginBottom: 10 }, children: ["\u2B06 \u7B49\u7EA7\u63D0\u5347\uFF01Lv.", done.payload.oldLevel, " \u2192 Lv.", done.payload.newLevel, " \u5BB9\u9519\u6B21\u6570 +", g.tolerance - Math.min(g.tolerance, 3) < 0 ? 0 : 0, "\uFF08\u5F53\u524D ", g.tolerance, "\uFF09"] })), !done.payload.firstTime && jsxRuntimeExports.jsx("div", { className: "dim", style: { fontSize: 12.5, marginBottom: 8 }, children: "\u5DF2\u901A\u5173\u5173\u5361\uFF0C\u4E0D\u91CD\u590D\u53D1\u653E\u7ECF\u9A8C\u3002" }), done.payload.newAchievements.length > 0 && (jsxRuntimeExports.jsxs("div", { className: "dim", style: { fontSize: 13, marginBottom: 8 }, children: ["\u6210\u5C31\uFF1A", done.payload.newAchievements.map(id => achievementById(id)?.name).join('、')] })), jsxRuntimeExports.jsxs("div", { className: "cp-summary", children: [jsxRuntimeExports.jsx("div", { className: "cs-label", children: "MIRA \u77E5\u8BC6\u603B\u7ED3" }), done.summary] }), jsxRuntimeExports.jsx("div", { className: "dim", style: { fontSize: 12, marginBottom: 8, color: '#6FD8A8' }, children: "\u2713 \u8FDB\u5EA6\u5DF2\u81EA\u52A8\u4FDD\u5B58\u5230\u672C\u673A\uFF08\u5173\u95ED\u6D4F\u89C8\u5668\u540E\u91CD\u65B0\u6253\u5F00\u53EF\u7EE7\u7EED\uFF09" }), jsxRuntimeExports.jsxs("div", { className: "cp-btns", children: [jsxRuntimeExports.jsx("button", { className: "nxbtn ghost", onClick: () => { play('click'); g.nav('map'); }, children: "\u8FD4\u56DE\u5730\u56FE" }), done.nextId && (jsxRuntimeExports.jsxs("button", { className: "nxbtn primary", onClick: () => { play('click'); g.setCurrentLevel(done.nextId); }, children: [done.nextLabel || '下一关', "\uFF1A", levelById(done.nextId)?.title, " \u25B8"] }))] })] }) }))] }));
+	                            return (jsxRuntimeExports.jsxs("div", { className: 'reward-settle grade-' + rw.breakdown.grade, children: [jsxRuntimeExports.jsx("div", { className: "reward-particles", "aria-hidden": "true", children: Array.from({ length: 14 }).map((_, i) => (jsxRuntimeExports.jsx("span", { style: { '--i': i } }, i))) }), jsxRuntimeExports.jsxs("div", { className: 'grade-badge g-' + rw.breakdown.grade, children: [jsxRuntimeExports.jsx("span", { className: "gb-letter", children: rw.breakdown.grade }), jsxRuntimeExports.jsx("span", { className: "gb-desc", children: meta.desc })] }), jsxRuntimeExports.jsxs("div", { className: "settle-grid", children: [jsxRuntimeExports.jsxs("div", { className: "sg-item", children: [jsxRuntimeExports.jsx("span", { className: "k", children: "\u8D21\u732E\u70B9" }), jsxRuntimeExports.jsxs("span", { className: "v gold", children: ["+", rw.breakdown.total] })] }), jsxRuntimeExports.jsxs("div", { className: "sg-item", children: [jsxRuntimeExports.jsx("span", { className: "k", children: "\u5931\u8BEF\u6B21\u6570" }), jsxRuntimeExports.jsx("span", { className: "v", children: rw.fails })] }), jsxRuntimeExports.jsxs("div", { className: "sg-item", children: [jsxRuntimeExports.jsx("span", { className: "k", children: "\u4F7F\u7528\u63D0\u793A" }), jsxRuntimeExports.jsxs("span", { className: "v", children: [rw.hints, " \u6B21"] })] }), jsxRuntimeExports.jsxs("div", { className: "sg-item", children: [jsxRuntimeExports.jsx("span", { className: "k", children: "\u4FE1\u4EFB\u5EA6" }), jsxRuntimeExports.jsx("span", { className: "v cyan", children: rw.trustUp ? '+' + rw.breakdown.trustGain : '已满' })] })] }), jsxRuntimeExports.jsxs("div", { className: "settle-tags", children: [rw.breakdown.firstClear > 0 && jsxRuntimeExports.jsxs("span", { className: "chip gold", children: ["\u9996\u901A +", rw.breakdown.firstClear] }), rw.breakdown.noFail > 0 && jsxRuntimeExports.jsxs("span", { className: "chip green", children: ["\u96F6\u5931\u8BEF +", rw.breakdown.noFail] }), rw.breakdown.noHint > 0 && jsxRuntimeExports.jsxs("span", { className: "chip green", children: ["\u672A\u7528\u63D0\u793A +", rw.breakdown.noHint] }), rw.breakdown.gradeBonus > 0 && jsxRuntimeExports.jsxs("span", { className: "chip cyan", children: ["\u8BC4\u7EA7\u5956\u52B1 +", rw.breakdown.gradeBonus] }), (rw.breakdown.improvement || 0) > 0 && jsxRuntimeExports.jsxs("span", { className: "chip cyan", children: ["\u661F\u7EA7\u63D0\u5347 +", rw.breakdown.improvement] }), rw.duplicate && jsxRuntimeExports.jsx("span", { className: "chip dim", children: "\u91CD\u590D\u901A\u5173\uFF1A\u4EC5\u661F\u7EA7\u63D0\u5347\u6709\u8865\u507F" })] }), rw.chapterReward && (jsxRuntimeExports.jsxs("div", { className: "chapter-reward", children: [jsxRuntimeExports.jsxs("div", { className: "cr-title", children: ["\u2726 \u7AE0\u8282\u5956\u52B1 \u00B7 ", rw.chapterReward.title] }), jsxRuntimeExports.jsx("div", { className: "cr-desc", children: rw.chapterReward.desc }), jsxRuntimeExports.jsxs("div", { className: "cr-gain", children: ["+", rw.chapterReward.credits, " \u8D21\u732E\u70B9", rw.chapterReward.skins.length > 0 && ' · 解锁外观', Object.keys(rw.chapterReward.items).length > 0 && ' · 获得道具', rw.chapterReward.fragment && ' · 记忆碎片'] })] }))] }));
+	                        })(), jsxRuntimeExports.jsxs("div", { className: "cp-rewards", children: [jsxRuntimeExports.jsxs("div", { className: "cp-reward", children: [jsxRuntimeExports.jsxs("div", { className: "rv", children: ["+", done.payload.expGained] }), jsxRuntimeExports.jsx("div", { className: "rl", children: "\u7ECF\u9A8C" })] }), jsxRuntimeExports.jsxs("div", { className: "cp-reward", children: [jsxRuntimeExports.jsxs("div", { className: "rv", children: ["Lv.", done.payload.newLevel] }), jsxRuntimeExports.jsx("div", { className: "rl", children: "\u7B49\u7EA7" })] }), jsxRuntimeExports.jsxs("div", { className: "cp-reward", children: [jsxRuntimeExports.jsx("div", { className: "rv", children: level.knowledge.length }), jsxRuntimeExports.jsx("div", { className: "rl", children: "\u77E5\u8BC6\u5361\u7247" })] })] }), done.payload.levelUp && (jsxRuntimeExports.jsxs("div", { className: "result-banner ok", style: { marginBottom: 10 }, children: ["\u2B06 \u7B49\u7EA7\u63D0\u5347\uFF01Lv.", done.payload.oldLevel, " \u2192 Lv.", done.payload.newLevel, " \u5BB9\u9519\u6B21\u6570 +", g.tolerance - Math.min(g.tolerance, 3) < 0 ? 0 : 0, "\uFF08\u5F53\u524D ", g.tolerance, "\uFF09"] })), !done.payload.firstTime && jsxRuntimeExports.jsx("div", { className: "dim", style: { fontSize: 12.5, marginBottom: 8 }, children: "\u5DF2\u901A\u5173\u5173\u5361\uFF1A\u4E0D\u518D\u53D1\u653E\u7ECF\u9A8C\u4E0E\u57FA\u7840\u8D21\u732E\u70B9\uFF08\u4EC5\u661F\u7EA7\u63D0\u5347\u7ED9\u5C11\u91CF\u8865\u507F\uFF09\u3002" }), (done.payload.unlocks || []).length > 0 && (jsxRuntimeExports.jsxs("div", { className: "result-banner ok", style: { marginBottom: 8 }, children: ["\u2726 \u7B49\u7EA7\u89E3\u9501\uFF1A", done.payload.unlocks.join('、'), "\uFF08\u5DF2\u81EA\u52A8\u88C5\u5907\uFF09"] })), done.payload.newAchievements.length > 0 && (jsxRuntimeExports.jsxs("div", { className: "dim", style: { fontSize: 13, marginBottom: 8 }, children: ["\u6210\u5C31\uFF1A", done.payload.newAchievements.map(id => achievementById(id)?.name).join('、')] })), jsxRuntimeExports.jsxs("div", { className: "cp-summary", children: [jsxRuntimeExports.jsx("div", { className: "cs-label", children: "MIRA \u77E5\u8BC6\u603B\u7ED3" }), done.summary] }), jsxRuntimeExports.jsx("div", { className: "dim", style: { fontSize: 12, marginBottom: 8, color: '#6FD8A8' }, children: "\u2713 \u8FDB\u5EA6\u5DF2\u81EA\u52A8\u4FDD\u5B58\u5230\u672C\u673A\uFF08\u5173\u95ED\u6D4F\u89C8\u5668\u540E\u91CD\u65B0\u6253\u5F00\u53EF\u7EE7\u7EED\uFF09" }), jsxRuntimeExports.jsxs("div", { className: "cp-btns", children: [jsxRuntimeExports.jsx("button", { className: "nxbtn ghost", onClick: () => { play('click'); g.nav('map'); }, children: "\u8FD4\u56DE\u5730\u56FE" }), done.nextId && (jsxRuntimeExports.jsxs("button", { className: "nxbtn primary", onClick: () => { play('click'); g.setCurrentLevel(done.nextId); }, children: [done.nextLabel || '下一关', "\uFF1A", levelById(done.nextId)?.title, " \u25B8"] }))] })] }) }))] }));
 	}
 	/** 动态变量表（调试模式） */
 	function DebugVars({ vars }) {
@@ -5168,15 +7938,34 @@
 	    const g = useGame();
 	    const p = g.player;
 	    const ms = milestone(p.exp);
+	    const identity = normalizeIdentity(p.identity, p.name);
+	    const [editingName, setEditingName] = reactExports.useState(false);
+	    const [nameDraft, setNameDraft] = reactExports.useState('');
+	    const [nameError, setNameError] = reactExports.useState('');
+	    const startRename = () => {
+	        setNameDraft(identity.displayName);
+	        setNameError('');
+	        setEditingName(true);
+	    };
+	    const saveName = () => {
+	        const r = g.renamePlayer(nameDraft);
+	        if (!r.ok) {
+	            setNameError(r.reason || '该名称不可用。');
+	            return;
+	        }
+	        setEditingName(false);
+	        setNameError('');
+	    };
 	    const allLevels = levelsOfServer('training')
 	        .concat(levelsOfServer('syntax'), levelsOfServer('logs'), levelsOfServer('storage'), levelsOfServer('factory'), levelsOfServer('diag'), levelsOfServer('core'));
 	    const totalStars = allLevels.reduce((s, l) => s + (p.progress.stars[l.id] || 0), 0);
-	    return (jsxRuntimeExports.jsx("div", { className: "page page-anim", children: jsxRuntimeExports.jsxs("div", { className: "page-inner", children: [jsxRuntimeExports.jsxs("div", { className: "hud", children: [jsxRuntimeExports.jsxs("div", { children: [jsxRuntimeExports.jsx("div", { className: "hud-title", children: "\u73A9\u5BB6\u6863\u6848" }), jsxRuntimeExports.jsx("div", { className: "hud-sub", children: "R-07 \u4FEE\u590D\u5E08\u6570\u636E\u603B\u89C8" })] }), jsxRuntimeExports.jsx("div", { className: "hud-spacer" }), jsxRuntimeExports.jsx("button", { className: "nxbtn small ghost", onClick: () => { play('click'); g.nav('menu'); }, children: "\u25C0 \u8FD4\u56DE" })] }), jsxRuntimeExports.jsxs("div", { className: "pf-grid", children: [jsxRuntimeExports.jsxs("div", { className: "panel", children: [jsxRuntimeExports.jsx("div", { className: "panel-title", children: "\u8EAB\u4EFD\u4FE1\u606F" }), jsxRuntimeExports.jsx(PlayerStatus, {}), jsxRuntimeExports.jsxs("div", { className: "pf-kv", style: { marginTop: 8 }, children: [jsxRuntimeExports.jsx("span", { className: "k", children: "\u4FEE\u590D\u5E08\u79F0\u53F7" }), jsxRuntimeExports.jsx("span", { className: "v", children: titleForLevel(p.level) })] }), jsxRuntimeExports.jsxs("div", { className: "pf-kv", children: [jsxRuntimeExports.jsx("span", { className: "k", children: "\u7D2F\u8BA1\u7ECF\u9A8C" }), jsxRuntimeExports.jsxs("span", { className: "v", children: [p.exp, "\uFF08", ms.maxed ? 'MAX' : '距 Lv.' + (ms.level + 1) + ' 还差 ' + Math.max(0, ms.need - ms.into) + ' 经验', "\uFF09"] })] }), jsxRuntimeExports.jsxs("div", { className: "pf-kv", children: [jsxRuntimeExports.jsx("span", { className: "k", children: "\u5F53\u524D\u5BB9\u9519\u6B21\u6570" }), jsxRuntimeExports.jsxs("span", { className: "v", children: [toleranceFor(p.level), " \u6B21 / \u5173"] })] })] }), jsxRuntimeExports.jsxs("div", { className: "panel", children: [jsxRuntimeExports.jsx("div", { className: "panel-title", children: "\u4FEE\u590D\u8FDB\u5EA6" }), allLevels.map(l => {
+	    return (jsxRuntimeExports.jsx("div", { className: "page page-anim", children: jsxRuntimeExports.jsxs("div", { className: "page-inner", children: [jsxRuntimeExports.jsxs("div", { className: "hud", children: [jsxRuntimeExports.jsxs("div", { children: [jsxRuntimeExports.jsx("div", { className: "hud-title", children: "\u73A9\u5BB6\u6863\u6848" }), jsxRuntimeExports.jsx("div", { className: "hud-sub", children: "R-07 \u4FEE\u590D\u5E08\u6570\u636E\u603B\u89C8" })] }), jsxRuntimeExports.jsx("div", { className: "hud-spacer" }), jsxRuntimeExports.jsx("button", { className: "nxbtn small ghost", onClick: () => { play('click'); g.nav('menu'); }, children: "\u25C0 \u8FD4\u56DE" })] }), jsxRuntimeExports.jsxs("div", { className: "pf-grid", children: [jsxRuntimeExports.jsxs("div", { className: "panel", children: [jsxRuntimeExports.jsxs("div", { className: "panel-title", children: ["\u8EAB\u4EFD\u4FE1\u606F", jsxRuntimeExports.jsx("span", { className: "panel-tag", children: "IDENTITY" })] }), jsxRuntimeExports.jsx(PlayerStatus, {}), jsxRuntimeExports.jsxs("div", { className: "pf-kv", style: { marginTop: 8 }, children: [jsxRuntimeExports.jsx("span", { className: "k", children: "\u663E\u793A\u540D\u79F0" }), jsxRuntimeExports.jsx("span", { className: "v", children: identity.displayName })] }), jsxRuntimeExports.jsxs("div", { className: "pf-kv", children: [jsxRuntimeExports.jsx("span", { className: "k", children: "\u539F\u59CB\u5B9E\u9A8C\u7F16\u53F7" }), jsxRuntimeExports.jsxs("span", { className: "v", children: [ORIGIN_CODE, "\uFF08\u56FA\u5B9A\u4E0D\u53EF\u66F4\u6539\uFF09"] })] }), jsxRuntimeExports.jsxs("div", { className: "pf-kv", children: [jsxRuntimeExports.jsx("span", { className: "k", children: "\u547D\u540D\u72B6\u6001" }), jsxRuntimeExports.jsx("span", { className: "v", children: identity.renamed ? '已自定义显示名' : '默认名称' })] }), editingName ? (jsxRuntimeExports.jsxs("div", { style: { marginTop: 10 }, children: [jsxRuntimeExports.jsx("input", { value: nameDraft, maxLength: DISPLAY_NAME_MAX, onChange: e => setNameDraft(e.target.value), onKeyDown: e => { if (e.key === 'Enter')
+	                                                saveName(); }, placeholder: '1–' + DISPLAY_NAME_MAX + ' 个字符', style: { background: 'rgba(13,27,40,0.8)', border: '1px solid var(--line)', color: '#EAF3FA', borderRadius: 8, padding: '7px 12px', outline: 'none', width: '100%', boxSizing: 'border-box' } }), jsxRuntimeExports.jsxs("div", { className: "row", style: { marginTop: 8 }, children: [jsxRuntimeExports.jsx("button", { className: "nxbtn small primary", onClick: saveName, children: "\u4FDD\u5B58\u540D\u79F0" }), jsxRuntimeExports.jsx("button", { className: "nxbtn small ghost", onClick: () => { setEditingName(false); setNameError(''); }, children: "\u53D6\u6D88" })] }), nameError && jsxRuntimeExports.jsx("div", { className: "red", style: { fontSize: 12.5, marginTop: 6 }, children: nameError })] })) : (jsxRuntimeExports.jsx("button", { className: "nxbtn small ghost", style: { marginTop: 10 }, onClick: startRename, children: "\u4FEE\u6539\u663E\u793A\u540D\u79F0" })), jsxRuntimeExports.jsx("div", { className: "hint-note", style: { marginTop: 8 }, children: "\u53EA\u4FEE\u6539\u663E\u793A\u540D\u79F0\u3002R-07 \u662F\u6C38\u4E45\u5B9E\u9A8C\u7F16\u53F7\uFF0C\u4E0D\u4F1A\u968F\u6539\u540D\u6539\u53D8\u3002" }), jsxRuntimeExports.jsxs("div", { className: "pf-kv", style: { marginTop: 8 }, children: [jsxRuntimeExports.jsx("span", { className: "k", children: "\u4FEE\u590D\u5E08\u79F0\u53F7" }), jsxRuntimeExports.jsx("span", { className: "v", children: titleForLevel(p.level) })] }), jsxRuntimeExports.jsxs("div", { className: "pf-kv", children: [jsxRuntimeExports.jsx("span", { className: "k", children: "\u7D2F\u8BA1\u7ECF\u9A8C" }), jsxRuntimeExports.jsxs("span", { className: "v", children: [p.exp, "\uFF08", ms.maxed ? 'MAX' : '距 Lv.' + (ms.level + 1) + ' 还差 ' + Math.max(0, ms.need - ms.into) + ' 经验', "\uFF09"] })] }), jsxRuntimeExports.jsxs("div", { className: "pf-kv", children: [jsxRuntimeExports.jsx("span", { className: "k", children: "\u5F53\u524D\u5BB9\u9519\u6B21\u6570" }), jsxRuntimeExports.jsxs("span", { className: "v", children: [toleranceFor(p.level), " \u6B21 / \u5173"] })] })] }), jsxRuntimeExports.jsxs("div", { className: "panel", children: [jsxRuntimeExports.jsx("div", { className: "panel-title", children: "\u4FEE\u590D\u8FDB\u5EA6" }), allLevels.map(l => {
 	                                    const done = p.progress.completedLevels.includes(l.id);
 	                                    const stars = p.progress.stars[l.id] || 0;
 	                                    const name = levelById(l.id);
 	                                    return (jsxRuntimeExports.jsxs("div", { className: "pf-kv", children: [jsxRuntimeExports.jsxs("span", { className: "k", children: [l.codename, " ", name?.title] }), jsxRuntimeExports.jsx("span", { className: "v", children: done ? '★'.repeat(stars) + ' 已修复' : '待修复' })] }, l.id));
-	                                }), jsxRuntimeExports.jsxs("div", { className: "pf-kv", children: [jsxRuntimeExports.jsx("span", { className: "k", children: "\u7D2F\u8BA1\u661F\u7EA7" }), jsxRuntimeExports.jsxs("span", { className: "v", children: [totalStars, " / ", allLevels.length * 3] })] }), jsxRuntimeExports.jsxs("div", { className: "pf-kv", children: [jsxRuntimeExports.jsx("span", { className: "k", children: "\u5DF2\u89E3\u9501\u670D\u52A1\u5668" }), jsxRuntimeExports.jsxs("span", { className: "v", children: [p.progress.unlockedServers.length, " \u4E2A"] })] })] }), jsxRuntimeExports.jsxs("div", { className: "panel", children: [jsxRuntimeExports.jsx("div", { className: "panel-title", children: "\u610F\u8BC6\u8BB0\u5F55" }), jsxRuntimeExports.jsxs("div", { className: "pf-kv", children: [jsxRuntimeExports.jsx("span", { className: "k", children: "\u610F\u8BC6\u5B8C\u6574\u5EA6" }), jsxRuntimeExports.jsxs("span", { className: "v", children: [p.consciousness, "%"] })] }), jsxRuntimeExports.jsxs("div", { className: "pf-kv", children: [jsxRuntimeExports.jsx("span", { className: "k", children: "\u7D2F\u8BA1\u6B7B\u4EA1\u6B21\u6570" }), jsxRuntimeExports.jsx("span", { className: "v", children: p.meta.deaths })] }), jsxRuntimeExports.jsxs("div", { className: "pf-kv", children: [jsxRuntimeExports.jsx("span", { className: "k", children: "\u610F\u8BC6\u91CD\u7EC4\u6B21\u6570" }), jsxRuntimeExports.jsx("span", { className: "v", children: p.meta.rebirths })] }), jsxRuntimeExports.jsxs("div", { className: "pf-kv", children: [jsxRuntimeExports.jsx("span", { className: "k", children: "\u6700\u8FD1\u6B7B\u4EA1\u5173\u5361" }), jsxRuntimeExports.jsx("span", { className: "v", children: p.meta.lastDeathLevel ? levelById(p.meta.lastDeathLevel)?.title || p.meta.lastDeathLevel : '无记录' })] }), jsxRuntimeExports.jsxs("div", { className: "pf-kv", children: [jsxRuntimeExports.jsx("span", { className: "k", children: "\u6700\u8FD1\u6B7B\u4EA1\u539F\u56E0" }), jsxRuntimeExports.jsx("span", { className: "v", children: p.meta.lastDeathReason || '无记录' })] }), jsxRuntimeExports.jsxs("div", { className: "pf-kv", children: [jsxRuntimeExports.jsx("span", { className: "k", children: "\u610F\u8BC6\u5907\u4EFD\u7B49\u7EA7" }), jsxRuntimeExports.jsxs("span", { className: "v", children: ["ORIGIN-v", p.meta.backupLevel] })] })] }), jsxRuntimeExports.jsxs("div", { className: "panel", children: [jsxRuntimeExports.jsx("div", { className: "panel-title", children: "\u77E5\u8BC6\u638C\u63E1" }), jsxRuntimeExports.jsxs("div", { className: "pf-kv", children: [jsxRuntimeExports.jsx("span", { className: "k", children: "\u5DF2\u6536\u96C6\u77E5\u8BC6\u5361\u7247" }), jsxRuntimeExports.jsxs("span", { className: "v", children: [p.progress.knowledge.length, " / ", KNOWLEDGE.length] })] }), jsxRuntimeExports.jsx("div", { style: { marginTop: 8 }, children: KNOWLEDGE.map(k => (jsxRuntimeExports.jsx("span", { className: 'chip know-chip' + (p.progress.knowledge.includes(k.id) ? ' cyan' : ' dim'), children: k.title }, k.id))) })] }), jsxRuntimeExports.jsxs("div", { className: "panel", children: [jsxRuntimeExports.jsx("div", { className: "panel-title", children: "\u6210\u5C31" }), jsxRuntimeExports.jsxs("div", { className: "pf-kv", children: [jsxRuntimeExports.jsx("span", { className: "k", children: "\u5DF2\u89E3\u9501" }), jsxRuntimeExports.jsxs("span", { className: "v", children: [p.progress.achievements.length, " / ", ACHIEVEMENTS.length] })] }), jsxRuntimeExports.jsxs("div", { style: { marginTop: 8, display: 'flex', gap: 6, flexWrap: 'wrap' }, children: [ACHIEVEMENTS.filter(a => p.progress.achievements.includes(a.id)).map(a => (jsxRuntimeExports.jsxs("span", { className: "chip orange", children: [a.icon, " ", a.name] }, a.id))), p.progress.achievements.length === 0 && jsxRuntimeExports.jsx("span", { className: "dim", style: { fontSize: 13 }, children: "\u8FD8\u6CA1\u6709\u6210\u5C31\u3002\u53BB\u5B8C\u6210\u7B2C\u4E00\u6B21\u4FEE\u590D\u5427\u3002" })] })] }), jsxRuntimeExports.jsxs("div", { className: "panel", children: [jsxRuntimeExports.jsxs("div", { className: "panel-title", children: ["\u521B\u4E16\u4E3B\u8BB0\u5FC6\u788E\u7247", jsxRuntimeExports.jsxs("span", { className: "panel-tag", children: ["\u5DF2\u6536\u96C6 ", p.meta.memoryFragments.length] })] }), MEMORY_FRAGMENTS.map(f => p.meta.memoryFragments.includes(f.id) ? (jsxRuntimeExports.jsxs("div", { className: "frag-card", children: [jsxRuntimeExports.jsxs("div", { className: "fc-title", children: ["\u25C7 ", f.title] }), jsxRuntimeExports.jsx("div", { className: "fc-body", children: f.content })] }, f.id)) : (jsxRuntimeExports.jsx("div", { className: "empty-hint", style: { padding: '18px 0', fontSize: 12.5 }, children: "\uFF1F\uFF1F\uFF1F \u2014\u2014 \u5C1A\u672A\u53D1\u73B0\uFF08\u63D0\u793A\uFF1A\u4E0E\u91CD\u751F\u6B21\u6570\u6709\u5173\uFF09" }, f.id)))] })] })] }) }));
+	                                }), jsxRuntimeExports.jsxs("div", { className: "pf-kv", children: [jsxRuntimeExports.jsx("span", { className: "k", children: "\u7D2F\u8BA1\u661F\u7EA7" }), jsxRuntimeExports.jsxs("span", { className: "v", children: [totalStars, " / ", allLevels.length * 3] })] }), jsxRuntimeExports.jsxs("div", { className: "pf-kv", children: [jsxRuntimeExports.jsx("span", { className: "k", children: "\u5DF2\u89E3\u9501\u670D\u52A1\u5668" }), jsxRuntimeExports.jsxs("span", { className: "v", children: [p.progress.unlockedServers.length, " \u4E2A"] })] })] }), jsxRuntimeExports.jsxs("div", { className: "panel", children: [jsxRuntimeExports.jsx("div", { className: "panel-title", children: "\u610F\u8BC6\u8BB0\u5F55" }), jsxRuntimeExports.jsxs("div", { className: "pf-kv", children: [jsxRuntimeExports.jsx("span", { className: "k", children: "\u610F\u8BC6\u5B8C\u6574\u5EA6" }), jsxRuntimeExports.jsxs("span", { className: "v", children: [p.consciousness, "%"] })] }), jsxRuntimeExports.jsxs("div", { className: "pf-kv", children: [jsxRuntimeExports.jsx("span", { className: "k", children: "\u7D2F\u8BA1\u6B7B\u4EA1\u6B21\u6570" }), jsxRuntimeExports.jsx("span", { className: "v", children: p.meta.deaths })] }), jsxRuntimeExports.jsxs("div", { className: "pf-kv", children: [jsxRuntimeExports.jsx("span", { className: "k", children: "\u610F\u8BC6\u91CD\u7EC4\u6B21\u6570" }), jsxRuntimeExports.jsx("span", { className: "v", children: p.meta.rebirths })] }), jsxRuntimeExports.jsxs("div", { className: "pf-kv", children: [jsxRuntimeExports.jsx("span", { className: "k", children: "\u6700\u8FD1\u6B7B\u4EA1\u5173\u5361" }), jsxRuntimeExports.jsx("span", { className: "v", children: p.meta.lastDeathLevel ? levelById(p.meta.lastDeathLevel)?.title || p.meta.lastDeathLevel : '无记录' })] }), jsxRuntimeExports.jsxs("div", { className: "pf-kv", children: [jsxRuntimeExports.jsx("span", { className: "k", children: "\u6700\u8FD1\u6B7B\u4EA1\u539F\u56E0" }), jsxRuntimeExports.jsx("span", { className: "v", children: p.meta.lastDeathReason || '无记录' })] }), jsxRuntimeExports.jsxs("div", { className: "pf-kv", children: [jsxRuntimeExports.jsx("span", { className: "k", children: "\u610F\u8BC6\u5907\u4EFD\u7B49\u7EA7" }), jsxRuntimeExports.jsxs("span", { className: "v", children: ["ORIGIN-v", p.meta.backupLevel] })] })] }), jsxRuntimeExports.jsxs("div", { className: "panel", children: [jsxRuntimeExports.jsx("div", { className: "panel-title", children: "\u77E5\u8BC6\u638C\u63E1" }), jsxRuntimeExports.jsxs("div", { className: "pf-kv", children: [jsxRuntimeExports.jsx("span", { className: "k", children: "\u5DF2\u6536\u96C6\u77E5\u8BC6\u5361\u7247" }), jsxRuntimeExports.jsxs("span", { className: "v", children: [p.progress.knowledge.length, " / ", KNOWLEDGE.length] })] }), jsxRuntimeExports.jsx("div", { style: { marginTop: 8 }, children: KNOWLEDGE.map(k => (jsxRuntimeExports.jsx("span", { className: 'chip know-chip' + (p.progress.knowledge.includes(k.id) ? ' cyan' : ' dim'), children: k.title }, k.id))) })] }), jsxRuntimeExports.jsxs("div", { className: "panel", children: [jsxRuntimeExports.jsx("div", { className: "panel-title", children: "\u6210\u5C31" }), jsxRuntimeExports.jsxs("div", { className: "pf-kv", children: [jsxRuntimeExports.jsx("span", { className: "k", children: "\u5DF2\u89E3\u9501" }), jsxRuntimeExports.jsxs("span", { className: "v", children: [p.progress.achievements.length, " / ", ACHIEVEMENTS.length] })] }), jsxRuntimeExports.jsxs("div", { style: { marginTop: 8, display: 'flex', gap: 6, flexWrap: 'wrap' }, children: [ACHIEVEMENTS.filter(a => p.progress.achievements.includes(a.id)).map(a => (jsxRuntimeExports.jsxs("span", { className: "chip orange", children: [a.icon, " ", a.name] }, a.id))), p.progress.achievements.length === 0 && jsxRuntimeExports.jsx("span", { className: "dim", style: { fontSize: 13 }, children: "\u8FD8\u6CA1\u6709\u6210\u5C31\u3002\u53BB\u5B8C\u6210\u7B2C\u4E00\u6B21\u4FEE\u590D\u5427\u3002" })] })] }), jsxRuntimeExports.jsxs("div", { className: "panel", children: [jsxRuntimeExports.jsxs("div", { className: "panel-title", children: ["\u521B\u4E16\u4E3B\u788E\u7247", jsxRuntimeExports.jsxs("span", { className: "panel-tag", children: [fragmentProgress(p.meta.memoryFragments).owned, " / ", fragmentProgress(p.meta.memoryFragments).total] })] }), CREATOR_FRAGMENTS.map(f => hasFragment(p.meta.memoryFragments, f.id) ? (jsxRuntimeExports.jsxs("div", { className: "frag-card", children: [jsxRuntimeExports.jsxs("div", { className: "fc-title", children: ["\u25C7 ", f.title] }), jsxRuntimeExports.jsx("div", { className: "fc-body", children: f.content })] }, f.id)) : (jsxRuntimeExports.jsxs("div", { className: "empty-hint", style: { padding: '16px 0', fontSize: 12.5 }, children: ["\u7B2C ", f.order, " \u679A \u2014\u2014 \u5C1A\u672A\u83B7\u5F97\uFF08\u5BF9\u5E94\u7B2C ", f.order, " \u7AE0\u7AE0\u8282 Boss\uFF09"] }, f.id)))] })] })] }) }));
 	}
 
 	function SettingsPage() {
@@ -5229,7 +8018,7 @@
 	    };
 	    const doFullscreen = () => { g.patchSettings({ fullscreen: !s.fullscreen }); play('click'); };
 	    const doWipe = () => { g.wipeSave(); g.toast('info', '存档已清空，数据已重置。'); play('rebirth'); };
-	    return (jsxRuntimeExports.jsx("div", { className: "page page-anim", children: jsxRuntimeExports.jsxs("div", { className: "page-inner", style: { maxWidth: 900 }, children: [jsxRuntimeExports.jsxs("div", { className: "hud", children: [jsxRuntimeExports.jsxs("div", { children: [jsxRuntimeExports.jsx("div", { className: "hud-title", children: "\u7CFB\u7EDF\u914D\u7F6E" }), jsxRuntimeExports.jsx("div", { className: "hud-sub", children: "\u97F3\u6548 / \u52A8\u753B / \u5B58\u6863" })] }), jsxRuntimeExports.jsx("div", { className: "hud-spacer" }), jsxRuntimeExports.jsx("button", { className: "nxbtn small ghost", onClick: () => { play('click'); g.nav('menu'); }, children: "\u25C0 \u8FD4\u56DE" })] }), jsxRuntimeExports.jsxs("div", { className: "panel", style: { marginBottom: 14 }, children: [jsxRuntimeExports.jsx("div", { className: "panel-title", children: "\u97F3\u9891" }), jsxRuntimeExports.jsxs("div", { className: "set-row", children: [jsxRuntimeExports.jsxs("span", { className: "set-label", children: ["\u97F3\u4E50\u97F3\u91CF", jsxRuntimeExports.jsx("span", { className: "set-desc", children: "NEXUS \u6C1B\u56F4\u5408\u6210\u97F3\u4E50\uFF08Web Audio \u5B9E\u65F6\u751F\u6210\uFF0C\u65E0\u97F3\u9891\u6587\u4EF6\uFF09" })] }), jsxRuntimeExports.jsx("input", { type: "range", className: "nx-range", min: 0, max: 100, value: Math.round(s.musicVolume * 100), onChange: e => g.patchSettings({ musicVolume: Number(e.target.value) / 100 }) }), jsxRuntimeExports.jsxs("span", { className: "mono dim", style: { width: 40, textAlign: 'right' }, children: [Math.round(s.musicVolume * 100), "%"] })] }), jsxRuntimeExports.jsxs("div", { className: "set-row", children: [jsxRuntimeExports.jsxs("span", { className: "set-label", children: ["\u97F3\u6548\u97F3\u91CF", jsxRuntimeExports.jsx("span", { className: "set-desc", children: "\u64CD\u4F5C\u3001\u5224\u9898\u3001\u8B66\u62A5\u7B49\u5408\u6210\u97F3\u6548" })] }), jsxRuntimeExports.jsx("input", { type: "range", className: "nx-range", min: 0, max: 100, value: Math.round(s.sfxVolume * 100), onChange: e => g.patchSettings({ sfxVolume: Number(e.target.value) / 100 }) }), jsxRuntimeExports.jsxs("span", { className: "mono dim", style: { width: 40, textAlign: 'right' }, children: [Math.round(s.sfxVolume * 100), "%"] })] })] }), jsxRuntimeExports.jsxs("div", { className: "panel", style: { marginBottom: 14 }, children: [jsxRuntimeExports.jsx("div", { className: "panel-title", children: "\u753B\u9762" }), jsxRuntimeExports.jsxs("div", { className: "set-row", children: [jsxRuntimeExports.jsxs("span", { className: "set-label", children: ["\u542F\u7528\u52A8\u753B", jsxRuntimeExports.jsx("span", { className: "set-desc", children: "\u7C92\u5B50\u3001\u6253\u5B57\u673A\u3001\u6545\u969C\u7279\u6548\u7B49\uFF08\u5173\u95ED\u53EF\u63D0\u5347\u4F4E\u914D\u8BBE\u5907\u6D41\u7545\u5EA6\uFF09" })] }), jsxRuntimeExports.jsxs("label", { className: "toggle", children: [jsxRuntimeExports.jsx("input", { type: "checkbox", checked: s.animations, onChange: e => g.patchSettings({ animations: e.target.checked }) }), jsxRuntimeExports.jsx("span", { className: "tk" })] })] }), jsxRuntimeExports.jsxs("div", { className: "set-row", children: [jsxRuntimeExports.jsxs("span", { className: "set-label", children: ["\u52A8\u753B\u5F3A\u5EA6", jsxRuntimeExports.jsx("span", { className: "set-desc", children: "\u7C92\u5B50\u6570\u91CF\u4E0E\u7279\u6548\u5BC6\u5EA6" })] }), jsxRuntimeExports.jsx("input", { type: "range", className: "nx-range", min: 0, max: 1, step: 1, value: s.animLevel === 'high' ? 1 : 0, onChange: e => g.patchSettings({ animLevel: Number(e.target.value) === 1 ? 'high' : 'low' }) }), jsxRuntimeExports.jsx("span", { className: "mono dim", style: { width: 60, textAlign: 'right' }, children: s.animLevel === 'high' ? '高' : '低' })] }), jsxRuntimeExports.jsxs("div", { className: "set-row", children: [jsxRuntimeExports.jsxs("span", { className: "set-label", children: ["\u6253\u5B57\u673A\u901F\u5EA6", jsxRuntimeExports.jsx("span", { className: "set-desc", children: "\u5267\u60C5\u6587\u672C\u9010\u5B57\u663E\u793A\u7684\u901F\u5EA6" })] }), jsxRuntimeExports.jsx("input", { type: "range", className: "nx-range", min: 4, max: 60, value: s.typewriterMs, onChange: e => g.patchSettings({ typewriterMs: Number(e.target.value) }) }), jsxRuntimeExports.jsxs("span", { className: "mono dim", style: { width: 60, textAlign: 'right' }, children: [s.typewriterMs, "ms/\u5B57"] })] }), jsxRuntimeExports.jsxs("div", { className: "set-row", children: [jsxRuntimeExports.jsxs("span", { className: "set-label", children: ["\u5168\u5C4F\u6A21\u5F0F", jsxRuntimeExports.jsx("span", { className: "set-desc", children: "\u4EE5\u5168\u5C4F\u8FD0\u884C\u6E38\u620F\uFF08\u6D4F\u89C8\u5668\u5141\u8BB8\u65F6\uFF09" })] }), jsxRuntimeExports.jsxs("label", { className: "toggle", children: [jsxRuntimeExports.jsx("input", { type: "checkbox", checked: s.fullscreen, onChange: doFullscreen }), jsxRuntimeExports.jsx("span", { className: "tk" })] })] }), jsxRuntimeExports.jsxs("div", { className: "set-row", children: [jsxRuntimeExports.jsxs("span", { className: "set-label", children: ["\u6E38\u620F\u8BED\u8A00", jsxRuntimeExports.jsx("span", { className: "set-desc", children: "\u754C\u9762\u8BED\u8A00\uFF08\u5F53\u524D\u4E3A\u7B80\u4F53\u4E2D\u6587\uFF09" })] }), jsxRuntimeExports.jsx("span", { className: "chip dim", children: "\u7B80\u4F53\u4E2D\u6587\uFF08\u66F4\u591A\u8BED\u8A00\u9884\u7559\uFF09" })] })] }), jsxRuntimeExports.jsxs("div", { className: "panel", style: { marginBottom: 14 }, children: [jsxRuntimeExports.jsxs("div", { className: "panel-title", children: ["\u8BED\u97F3\u8BBE\u7F6E", jsxRuntimeExports.jsx("span", { className: "panel-tag", children: speech.supported ? 'Web Speech API' : '当前浏览器不支持' })] }), !speech.supported && (jsxRuntimeExports.jsx("div", { className: "result-banner fail", style: { marginBottom: 10 }, children: "\u5F53\u524D\u6D4F\u89C8\u5668\u4E0D\u652F\u6301\u8BED\u97F3\u5408\u6210\uFF0C\u5267\u60C5\u4E0E\u63D0\u793A\u6587\u5B57\u4E0D\u53D7\u5F71\u54CD\uFF0C\u53EF\u6B63\u5E38\u6E38\u73A9\u3002" })), jsxRuntimeExports.jsxs("div", { className: "set-row", children: [jsxRuntimeExports.jsxs("span", { className: "set-label", children: ["\u8BED\u97F3\u603B\u5F00\u5173", jsxRuntimeExports.jsx("span", { className: "set-desc", children: "\u5173\u95ED\u540E\u6240\u6709\u89D2\u8272\u8BED\u97F3\u9759\u97F3\uFF08\u4E0D\u5F71\u54CD\u80CC\u666F\u97F3\u4E50\u4E0E\u97F3\u6548\uFF09" })] }), jsxRuntimeExports.jsxs("label", { className: "toggle", children: [jsxRuntimeExports.jsx("input", { type: "checkbox", checked: voice.enabled, onChange: e => patchVoice({ enabled: e.target.checked }) }), jsxRuntimeExports.jsx("span", { className: "tk" })] })] }), jsxRuntimeExports.jsxs("div", { className: "set-row", children: [jsxRuntimeExports.jsxs("span", { className: "set-label", children: ["\u5BF9\u8BDD\u81EA\u52A8\u6717\u8BFB", jsxRuntimeExports.jsx("span", { className: "set-desc", children: "\u6587\u5B57\u663E\u793A\u5B8C\u6574\u540E\u81EA\u52A8\u64AD\u653E\u8BE5\u53E5\u8BED\u97F3" })] }), jsxRuntimeExports.jsxs("label", { className: "toggle", children: [jsxRuntimeExports.jsx("input", { type: "checkbox", checked: voice.autoRead, onChange: e => patchVoice({ autoRead: e.target.checked }) }), jsxRuntimeExports.jsx("span", { className: "tk" })] })] }), jsxRuntimeExports.jsxs("div", { className: "set-row", children: [jsxRuntimeExports.jsxs("span", { className: "set-label", children: ["\u8BED\u97F3\u8BED\u901F", jsxRuntimeExports.jsx("span", { className: "set-desc", children: "\u4EC5\u5F71\u54CD\u8BED\u97F3\u6717\u8BFB\u901F\u5EA6" })] }), jsxRuntimeExports.jsx("input", { type: "range", className: "nx-range", min: 50, max: 200, value: Math.round(voice.rate * 100), onChange: e => patchVoice({ rate: Number(e.target.value) / 100 }) }), jsxRuntimeExports.jsxs("span", { className: "mono dim", style: { width: 46, textAlign: 'right' }, children: [voice.rate.toFixed(2), "\u00D7"] })] }), jsxRuntimeExports.jsxs("div", { className: "set-row", children: [jsxRuntimeExports.jsxs("span", { className: "set-label", children: ["\u8BED\u97F3\u97F3\u8C03", jsxRuntimeExports.jsx("span", { className: "set-desc", children: "\u89D2\u8272\u57FA\u7840\u97F3\u8C03\uFF0C\u5404\u89D2\u8272\u53E6\u6709\u72EC\u7ACB\u504F\u79FB" })] }), jsxRuntimeExports.jsx("input", { type: "range", className: "nx-range", min: 0, max: 200, value: Math.round(voice.pitch * 100), onChange: e => patchVoice({ pitch: Number(e.target.value) / 100 }) }), jsxRuntimeExports.jsx("span", { className: "mono dim", style: { width: 46, textAlign: 'right' }, children: voice.pitch.toFixed(2) })] }), jsxRuntimeExports.jsxs("div", { className: "set-row", children: [jsxRuntimeExports.jsxs("span", { className: "set-label", children: ["\u8BED\u97F3\u97F3\u91CF", jsxRuntimeExports.jsx("span", { className: "set-desc", children: "\u4E0E\u97F3\u4E50\u97F3\u91CF\u3001\u97F3\u6548\u97F3\u91CF\u76F8\u4E92\u72EC\u7ACB" })] }), jsxRuntimeExports.jsx("input", { type: "range", className: "nx-range", min: 0, max: 100, value: Math.round(voice.volume * 100), onChange: e => patchVoice({ volume: Number(e.target.value) / 100 }) }), jsxRuntimeExports.jsxs("span", { className: "mono dim", style: { width: 46, textAlign: 'right' }, children: [Math.round(voice.volume * 100), "%"] })] }), jsxRuntimeExports.jsxs("div", { className: "set-row", children: [jsxRuntimeExports.jsxs("span", { className: "set-label", children: ["\u89D2\u8272\u97F3\u8272", jsxRuntimeExports.jsx("span", { className: "set-desc", children: "\u4E3A\u6BCF\u4E2A\u89D2\u8272\u6307\u5B9A\u7CFB\u7EDF\u97F3\u8272\uFF08\u7559\u7A7A = \u81EA\u52A8\u5339\u914D\u4E2D\u6587\u97F3\u8272\uFF09" })] }), jsxRuntimeExports.jsxs("span", { className: "chip dim", children: [voiceList.length, " \u4E2A\u53EF\u7528\u97F3\u8272"] })] }), Object.keys(ROLE_PROFILES).map(role => (jsxRuntimeExports.jsxs("div", { className: "set-row", children: [jsxRuntimeExports.jsxs("span", { className: "set-label", style: { paddingLeft: 10 }, children: [ROLE_PROFILES[role].label, jsxRuntimeExports.jsx("span", { className: "set-desc", children: ROLE_PROFILES[role].desc })] }), jsxRuntimeExports.jsxs("select", { className: "nx-select", value: voice.roleVoices[role] || '', onChange: e => patchVoice({ roleVoices: { ...voice.roleVoices, [role]: e.target.value } }), children: [jsxRuntimeExports.jsx("option", { value: "", children: "\u81EA\u52A8\uFF08\u4E2D\u6587\u4F18\u5148\uFF09" }), voiceList.map(v => (jsxRuntimeExports.jsxs("option", { value: v.name, children: [v.name, " \u00B7 ", v.lang, v.local ? '' : ' · 云端'] }, v.name)))] }), jsxRuntimeExports.jsx("button", { className: "nxbtn small ghost", onClick: () => testVoice(role), children: "\u8BD5\u542C" })] }, role))), jsxRuntimeExports.jsxs("div", { className: "set-row", children: [jsxRuntimeExports.jsx("span", { className: "set-label", children: "\u64AD\u653E\u63A7\u5236" }), jsxRuntimeExports.jsx("button", { className: "nxbtn small ghost", onClick: () => { speech.stop(); setTestMsg('已停止所有语音。'); }, children: "\u505C\u6B62\u6240\u6709\u8BED\u97F3" }), jsxRuntimeExports.jsx("span", { className: "mono dim", style: { fontSize: 12 }, children: testMsg })] })] }), jsxRuntimeExports.jsxs("div", { className: "panel", style: { marginBottom: 14 }, children: [jsxRuntimeExports.jsx("div", { className: "panel-title", children: "\u5B58\u6863\u7BA1\u7406" }), jsxRuntimeExports.jsxs("div", { className: "set-row", children: [jsxRuntimeExports.jsxs("span", { className: "set-label", children: ["\u5BFC\u51FA\u5B58\u6863", jsxRuntimeExports.jsx("span", { className: "set-desc", children: "\u4E0B\u8F7D\u5305\u542B\u5168\u90E8\u8FDB\u5EA6\u7684 JSON \u6587\u4EF6" })] }), jsxRuntimeExports.jsx("button", { className: "nxbtn small", onClick: doExport, children: "\u5BFC\u51FA JSON" })] }), jsxRuntimeExports.jsxs("div", { className: "set-row", children: [jsxRuntimeExports.jsxs("span", { className: "set-label", children: ["\u5BFC\u5165\u5B58\u6863", jsxRuntimeExports.jsx("span", { className: "set-desc", children: "\u4ECE JSON \u6587\u4EF6\u6062\u590D\u8FDB\u5EA6\uFF08\u5C06\u8986\u76D6\u5F53\u524D\u8FDB\u5EA6\uFF09" })] }), jsxRuntimeExports.jsx("button", { className: "nxbtn small", onClick: () => fileRef.current?.click(), children: "\u9009\u62E9\u6587\u4EF6\u5BFC\u5165" }), jsxRuntimeExports.jsx("input", { ref: fileRef, type: "file", accept: ".json,application/json", style: { display: 'none' }, onChange: e => { void doImport(e.target.files?.[0]); e.target.value = ''; } })] }), jsxRuntimeExports.jsxs("div", { className: "set-row", children: [jsxRuntimeExports.jsxs("span", { className: "set-label", children: ["\u91CD\u7F6E\u6E38\u620F\u8FDB\u5EA6", jsxRuntimeExports.jsx("span", { className: "set-desc", style: { color: '#E2939A' }, children: "\u6E05\u7A7A\u5B58\u6863\u5E76\u6062\u590D\u521D\u59CB\u72B6\u6001\uFF0C\u4E0D\u53EF\u64A4\u9500" })] }), !confirmReset ? (jsxRuntimeExports.jsx("button", { className: "nxbtn small danger", onClick: () => setConfirmReset(true), children: "\u91CD\u7F6E\u8FDB\u5EA6" })) : (jsxRuntimeExports.jsx("button", { className: "nxbtn small danger", onClick: () => { setConfirmReset(false); doWipe(); }, children: "\u518D\u6B21\u70B9\u51FB\u786E\u8BA4\u6E05\u7A7A" }))] }), saveMsg && jsxRuntimeExports.jsx("div", { className: "dim", style: { marginTop: 10, fontSize: 13 }, children: saveMsg })] }), jsxRuntimeExports.jsx("div", { className: "dim", style: { fontSize: 12, textAlign: 'center' }, children: "\u5B58\u6863\u81EA\u52A8\u4FDD\u5B58\u81F3\u6D4F\u89C8\u5668 localStorage\uFF08nexus_code_repair_save_v1\uFF09\u00B7 \u6570\u636E\u7248\u672C v1\uFF0C\u672A\u6765\u5347\u7EA7\u81EA\u52A8\u8FC1\u79FB" })] }) }));
+	    return (jsxRuntimeExports.jsx("div", { className: "page page-anim", children: jsxRuntimeExports.jsxs("div", { className: "page-inner", style: { maxWidth: 900 }, children: [jsxRuntimeExports.jsxs("div", { className: "hud", children: [jsxRuntimeExports.jsxs("div", { children: [jsxRuntimeExports.jsx("div", { className: "hud-title", children: "\u7CFB\u7EDF\u914D\u7F6E" }), jsxRuntimeExports.jsx("div", { className: "hud-sub", children: "\u97F3\u6548 / \u52A8\u753B / \u5B58\u6863" })] }), jsxRuntimeExports.jsx("div", { className: "hud-spacer" }), jsxRuntimeExports.jsx("button", { className: "nxbtn small ghost", onClick: () => { play('click'); g.nav('menu'); }, children: "\u25C0 \u8FD4\u56DE" })] }), jsxRuntimeExports.jsxs("div", { className: "panel", style: { marginBottom: 14 }, children: [jsxRuntimeExports.jsx("div", { className: "panel-title", children: "\u97F3\u9891" }), jsxRuntimeExports.jsxs("div", { className: "set-row", children: [jsxRuntimeExports.jsxs("span", { className: "set-label", children: ["\u97F3\u4E50\u97F3\u91CF", jsxRuntimeExports.jsx("span", { className: "set-desc", children: "NEXUS \u6C1B\u56F4\u5408\u6210\u97F3\u4E50\uFF08Web Audio \u5B9E\u65F6\u751F\u6210\uFF0C\u65E0\u97F3\u9891\u6587\u4EF6\uFF09" })] }), jsxRuntimeExports.jsx("input", { type: "range", className: "nx-range", min: 0, max: 100, value: Math.round(s.musicVolume * 100), onChange: e => g.patchSettings({ musicVolume: Number(e.target.value) / 100 }) }), jsxRuntimeExports.jsxs("span", { className: "mono dim", style: { width: 40, textAlign: 'right' }, children: [Math.round(s.musicVolume * 100), "%"] })] }), jsxRuntimeExports.jsxs("div", { className: "set-row", children: [jsxRuntimeExports.jsxs("span", { className: "set-label", children: ["\u97F3\u6548\u97F3\u91CF", jsxRuntimeExports.jsx("span", { className: "set-desc", children: "\u64CD\u4F5C\u3001\u5224\u9898\u3001\u8B66\u62A5\u7B49\u5408\u6210\u97F3\u6548" })] }), jsxRuntimeExports.jsx("input", { type: "range", className: "nx-range", min: 0, max: 100, value: Math.round(s.sfxVolume * 100), onChange: e => g.patchSettings({ sfxVolume: Number(e.target.value) / 100 }) }), jsxRuntimeExports.jsxs("span", { className: "mono dim", style: { width: 40, textAlign: 'right' }, children: [Math.round(s.sfxVolume * 100), "%"] })] })] }), jsxRuntimeExports.jsxs("div", { className: "panel", style: { marginBottom: 14 }, children: [jsxRuntimeExports.jsx("div", { className: "panel-title", children: "\u753B\u9762" }), jsxRuntimeExports.jsxs("div", { className: "set-row", children: [jsxRuntimeExports.jsxs("span", { className: "set-label", children: ["\u542F\u7528\u52A8\u753B", jsxRuntimeExports.jsx("span", { className: "set-desc", children: "\u7C92\u5B50\u3001\u6253\u5B57\u673A\u3001\u6545\u969C\u7279\u6548\u7B49\uFF08\u5173\u95ED\u53EF\u63D0\u5347\u4F4E\u914D\u8BBE\u5907\u6D41\u7545\u5EA6\uFF09" })] }), jsxRuntimeExports.jsxs("label", { className: "toggle", children: [jsxRuntimeExports.jsx("input", { type: "checkbox", checked: s.animations, onChange: e => g.patchSettings({ animations: e.target.checked }) }), jsxRuntimeExports.jsx("span", { className: "tk" })] })] }), jsxRuntimeExports.jsxs("div", { className: "set-row", children: [jsxRuntimeExports.jsxs("span", { className: "set-label", children: ["\u52A8\u753B\u5F3A\u5EA6", jsxRuntimeExports.jsx("span", { className: "set-desc", children: "\u7C92\u5B50\u6570\u91CF\u4E0E\u7279\u6548\u5BC6\u5EA6" })] }), jsxRuntimeExports.jsx("input", { type: "range", className: "nx-range", min: 0, max: 1, step: 1, value: s.animLevel === 'high' ? 1 : 0, onChange: e => g.patchSettings({ animLevel: Number(e.target.value) === 1 ? 'high' : 'low' }) }), jsxRuntimeExports.jsx("span", { className: "mono dim", style: { width: 60, textAlign: 'right' }, children: s.animLevel === 'high' ? '高' : '低' })] }), jsxRuntimeExports.jsxs("div", { className: "set-row", children: [jsxRuntimeExports.jsxs("span", { className: "set-label", children: ["\u6253\u5B57\u673A\u901F\u5EA6", jsxRuntimeExports.jsx("span", { className: "set-desc", children: "\u5267\u60C5\u6587\u672C\u9010\u5B57\u663E\u793A\u7684\u901F\u5EA6" })] }), jsxRuntimeExports.jsx("input", { type: "range", className: "nx-range", min: 4, max: 60, value: s.typewriterMs, onChange: e => g.patchSettings({ typewriterMs: Number(e.target.value) }) }), jsxRuntimeExports.jsxs("span", { className: "mono dim", style: { width: 60, textAlign: 'right' }, children: [s.typewriterMs, "ms/\u5B57"] })] }), jsxRuntimeExports.jsxs("div", { className: "set-row", children: [jsxRuntimeExports.jsxs("span", { className: "set-label", children: ["\u5168\u5C4F\u6A21\u5F0F", jsxRuntimeExports.jsx("span", { className: "set-desc", children: "\u4EE5\u5168\u5C4F\u8FD0\u884C\u6E38\u620F\uFF08\u6D4F\u89C8\u5668\u5141\u8BB8\u65F6\uFF09" })] }), jsxRuntimeExports.jsxs("label", { className: "toggle", children: [jsxRuntimeExports.jsx("input", { type: "checkbox", checked: s.fullscreen, onChange: doFullscreen }), jsxRuntimeExports.jsx("span", { className: "tk" })] })] }), jsxRuntimeExports.jsxs("div", { className: "set-row", children: [jsxRuntimeExports.jsxs("span", { className: "set-label", children: ["\u6E38\u620F\u8BED\u8A00", jsxRuntimeExports.jsx("span", { className: "set-desc", children: "\u754C\u9762\u8BED\u8A00\uFF08\u5F53\u524D\u4E3A\u7B80\u4F53\u4E2D\u6587\uFF09" })] }), jsxRuntimeExports.jsx("span", { className: "chip dim", children: "\u7B80\u4F53\u4E2D\u6587\uFF08\u66F4\u591A\u8BED\u8A00\u9884\u7559\uFF09" })] })] }), jsxRuntimeExports.jsxs("div", { className: "panel", style: { marginBottom: 14 }, children: [jsxRuntimeExports.jsxs("div", { className: "panel-title", children: ["\u8BED\u97F3\u8BBE\u7F6E", jsxRuntimeExports.jsx("span", { className: "panel-tag", children: speech.supported ? 'Web Speech API' : '当前浏览器不支持' })] }), !speech.supported && (jsxRuntimeExports.jsx("div", { className: "result-banner fail", style: { marginBottom: 10 }, children: "\u5F53\u524D\u6D4F\u89C8\u5668\u4E0D\u652F\u6301\u8BED\u97F3\u5408\u6210\uFF0C\u5267\u60C5\u4E0E\u63D0\u793A\u6587\u5B57\u4E0D\u53D7\u5F71\u54CD\uFF0C\u53EF\u6B63\u5E38\u6E38\u73A9\u3002" })), jsxRuntimeExports.jsxs("div", { className: "set-row", children: [jsxRuntimeExports.jsxs("span", { className: "set-label", children: ["\u8BED\u97F3\u603B\u5F00\u5173", jsxRuntimeExports.jsx("span", { className: "set-desc", children: "\u5173\u95ED\u540E\u6240\u6709\u89D2\u8272\u8BED\u97F3\u9759\u97F3\uFF08\u4E0D\u5F71\u54CD\u80CC\u666F\u97F3\u4E50\u4E0E\u97F3\u6548\uFF09" })] }), jsxRuntimeExports.jsxs("label", { className: "toggle", children: [jsxRuntimeExports.jsx("input", { type: "checkbox", checked: voice.enabled, onChange: e => patchVoice({ enabled: e.target.checked }) }), jsxRuntimeExports.jsx("span", { className: "tk" })] })] }), jsxRuntimeExports.jsxs("div", { className: "set-row", children: [jsxRuntimeExports.jsxs("span", { className: "set-label", children: ["\u5BF9\u8BDD\u81EA\u52A8\u6717\u8BFB", jsxRuntimeExports.jsx("span", { className: "set-desc", children: "\u6587\u5B57\u663E\u793A\u5B8C\u6574\u540E\u81EA\u52A8\u64AD\u653E\u8BE5\u53E5\u8BED\u97F3" })] }), jsxRuntimeExports.jsxs("label", { className: "toggle", children: [jsxRuntimeExports.jsx("input", { type: "checkbox", checked: voice.autoRead, onChange: e => patchVoice({ autoRead: e.target.checked }) }), jsxRuntimeExports.jsx("span", { className: "tk" })] })] }), jsxRuntimeExports.jsxs("div", { className: "set-row", children: [jsxRuntimeExports.jsxs("span", { className: "set-label", children: ["\u8BED\u97F3\u8BED\u901F", jsxRuntimeExports.jsx("span", { className: "set-desc", children: "\u4EC5\u5F71\u54CD\u8BED\u97F3\u6717\u8BFB\u901F\u5EA6" })] }), jsxRuntimeExports.jsx("input", { type: "range", className: "nx-range", min: 50, max: 200, value: Math.round(voice.rate * 100), onChange: e => patchVoice({ rate: Number(e.target.value) / 100 }) }), jsxRuntimeExports.jsxs("span", { className: "mono dim", style: { width: 46, textAlign: 'right' }, children: [voice.rate.toFixed(2), "\u00D7"] })] }), jsxRuntimeExports.jsxs("div", { className: "set-row", children: [jsxRuntimeExports.jsxs("span", { className: "set-label", children: ["\u8BED\u97F3\u97F3\u8C03", jsxRuntimeExports.jsx("span", { className: "set-desc", children: "\u89D2\u8272\u57FA\u7840\u97F3\u8C03\uFF0C\u5404\u89D2\u8272\u53E6\u6709\u72EC\u7ACB\u504F\u79FB" })] }), jsxRuntimeExports.jsx("input", { type: "range", className: "nx-range", min: 0, max: 200, value: Math.round(voice.pitch * 100), onChange: e => patchVoice({ pitch: Number(e.target.value) / 100 }) }), jsxRuntimeExports.jsx("span", { className: "mono dim", style: { width: 46, textAlign: 'right' }, children: voice.pitch.toFixed(2) })] }), jsxRuntimeExports.jsxs("div", { className: "set-row", children: [jsxRuntimeExports.jsxs("span", { className: "set-label", children: ["\u8BED\u97F3\u97F3\u91CF", jsxRuntimeExports.jsx("span", { className: "set-desc", children: "\u4E0E\u97F3\u4E50\u97F3\u91CF\u3001\u97F3\u6548\u97F3\u91CF\u76F8\u4E92\u72EC\u7ACB" })] }), jsxRuntimeExports.jsx("input", { type: "range", className: "nx-range", min: 0, max: 100, value: Math.round(voice.volume * 100), onChange: e => patchVoice({ volume: Number(e.target.value) / 100 }) }), jsxRuntimeExports.jsxs("span", { className: "mono dim", style: { width: 46, textAlign: 'right' }, children: [Math.round(voice.volume * 100), "%"] })] }), jsxRuntimeExports.jsxs("div", { className: "set-row", children: [jsxRuntimeExports.jsxs("span", { className: "set-label", children: ["\u89D2\u8272\u97F3\u8272", jsxRuntimeExports.jsx("span", { className: "set-desc", children: "\u4E3A\u6BCF\u4E2A\u89D2\u8272\u6307\u5B9A\u7CFB\u7EDF\u97F3\u8272\uFF08\u7559\u7A7A = \u81EA\u52A8\u5339\u914D\u4E2D\u6587\u97F3\u8272\uFF09" })] }), jsxRuntimeExports.jsxs("span", { className: "chip dim", children: [voiceList.length, " \u4E2A\u53EF\u7528\u97F3\u8272"] })] }), Object.keys(ROLE_PROFILES).map(role => (jsxRuntimeExports.jsxs("div", { className: "set-row", children: [jsxRuntimeExports.jsxs("span", { className: "set-label", style: { paddingLeft: 10 }, children: [ROLE_PROFILES[role].label, jsxRuntimeExports.jsx("span", { className: "set-desc", children: ROLE_PROFILES[role].desc })] }), jsxRuntimeExports.jsxs("select", { className: "nx-select", value: voice.roleVoices[role] || '', onChange: e => patchVoice({ roleVoices: { ...voice.roleVoices, [role]: e.target.value } }), children: [jsxRuntimeExports.jsx("option", { value: "", children: "\u81EA\u52A8\uFF08\u4E2D\u6587\u4F18\u5148\uFF09" }), voiceList.map(v => (jsxRuntimeExports.jsxs("option", { value: v.name, children: [v.name, " \u00B7 ", v.lang, v.local ? '' : ' · 云端'] }, v.name)))] }), jsxRuntimeExports.jsx("button", { className: "nxbtn small ghost", onClick: () => testVoice(role), children: "\u8BD5\u542C" })] }, role))), jsxRuntimeExports.jsxs("div", { className: "set-row", children: [jsxRuntimeExports.jsx("span", { className: "set-label", children: "\u64AD\u653E\u63A7\u5236" }), jsxRuntimeExports.jsx("button", { className: "nxbtn small ghost", onClick: () => { speech.stop(); setTestMsg('已停止所有语音。'); }, children: "\u505C\u6B62\u6240\u6709\u8BED\u97F3" }), jsxRuntimeExports.jsx("span", { className: "mono dim", style: { fontSize: 12 }, children: testMsg })] })] }), jsxRuntimeExports.jsxs("div", { className: "panel", style: { marginBottom: 14 }, children: [jsxRuntimeExports.jsx("div", { className: "panel-title", children: "\u5B58\u6863\u7BA1\u7406" }), jsxRuntimeExports.jsxs("div", { className: "set-row", children: [jsxRuntimeExports.jsxs("span", { className: "set-label", children: ["\u5BFC\u51FA\u5B58\u6863", jsxRuntimeExports.jsx("span", { className: "set-desc", children: "\u4E0B\u8F7D\u5305\u542B\u5168\u90E8\u8FDB\u5EA6\u7684 JSON \u6587\u4EF6" })] }), jsxRuntimeExports.jsx("button", { className: "nxbtn small", onClick: doExport, children: "\u5BFC\u51FA JSON" })] }), jsxRuntimeExports.jsxs("div", { className: "set-row", children: [jsxRuntimeExports.jsxs("span", { className: "set-label", children: ["\u5BFC\u5165\u5B58\u6863", jsxRuntimeExports.jsx("span", { className: "set-desc", children: "\u4ECE JSON \u6587\u4EF6\u6062\u590D\u8FDB\u5EA6\uFF08\u5C06\u8986\u76D6\u5F53\u524D\u8FDB\u5EA6\uFF09" })] }), jsxRuntimeExports.jsx("button", { className: "nxbtn small", onClick: () => fileRef.current?.click(), children: "\u9009\u62E9\u6587\u4EF6\u5BFC\u5165" }), jsxRuntimeExports.jsx("input", { ref: fileRef, type: "file", accept: ".json,application/json", style: { display: 'none' }, onChange: e => { void doImport(e.target.files?.[0]); e.target.value = ''; } })] }), jsxRuntimeExports.jsxs("div", { className: "set-row", children: [jsxRuntimeExports.jsxs("span", { className: "set-label", children: ["\u91CD\u7F6E\u6E38\u620F\u8FDB\u5EA6", jsxRuntimeExports.jsx("span", { className: "set-desc", style: { color: '#E2939A' }, children: "\u6E05\u7A7A\u5B58\u6863\u5E76\u6062\u590D\u521D\u59CB\u72B6\u6001\uFF0C\u4E0D\u53EF\u64A4\u9500" })] }), !confirmReset ? (jsxRuntimeExports.jsx("button", { className: "nxbtn small danger", onClick: () => setConfirmReset(true), children: "\u91CD\u7F6E\u8FDB\u5EA6" })) : (jsxRuntimeExports.jsx("button", { className: "nxbtn small danger", onClick: () => { setConfirmReset(false); doWipe(); }, children: "\u518D\u6B21\u70B9\u51FB\u786E\u8BA4\u6E05\u7A7A" }))] }), saveMsg && jsxRuntimeExports.jsx("div", { className: "dim", style: { marginTop: 10, fontSize: 13 }, children: saveMsg })] }), jsxRuntimeExports.jsxs("div", { className: "dim", style: { fontSize: 12, textAlign: 'center' }, children: ["\u5B58\u6863\u81EA\u52A8\u4FDD\u5B58\u81F3\u6D4F\u89C8\u5668 localStorage\uFF08nexus_code_repair_save_v1\uFF09\u00B7 \u6570\u636E\u7248\u672C v", SAVE_VERSION, "\uFF0C\u65E7\u7248\u672C\u5B58\u6863\u4F1A\u5728\u8BFB\u53D6\u65F6\u81EA\u52A8\u8FC1\u79FB"] })] }) }));
 	}
 
 	function KnowledgePage() {
@@ -5262,11 +8051,483 @@
 	    return (jsxRuntimeExports.jsx("div", { className: "page page-anim", children: jsxRuntimeExports.jsxs("div", { className: "page-inner", style: { maxWidth: 980 }, children: [jsxRuntimeExports.jsxs("div", { className: "hud", children: [jsxRuntimeExports.jsxs("div", { children: [jsxRuntimeExports.jsx("div", { className: "hud-title", children: "\u6210\u5C31\u7CFB\u7EDF" }), jsxRuntimeExports.jsxs("div", { className: "hud-sub", children: ["\u5DF2\u89E3\u9501 ", unlocked.length, " / ", ACHIEVEMENTS.length] })] }), jsxRuntimeExports.jsx("div", { className: "hud-spacer" }), jsxRuntimeExports.jsx("button", { className: "nxbtn small ghost", onClick: () => { play('click'); g.nav('menu'); }, children: "\u25C0 \u8FD4\u56DE" })] }), jsxRuntimeExports.jsx("div", { className: "grid-3", children: [...unlocked, ...locked].map(a => (jsxRuntimeExports.jsxs("div", { className: 'ach-card' + (got.includes(a.id) ? ' unlocked' : ''), children: [jsxRuntimeExports.jsx("div", { className: "ac-icon", children: got.includes(a.id) ? a.icon : '🔒' }), jsxRuntimeExports.jsx("div", { className: "ac-name", children: got.includes(a.id) ? a.name : (a.hidden ? '？？？' : a.name) }), jsxRuntimeExports.jsx("div", { className: "ac-desc", children: got.includes(a.id) ? a.desc : (a.hidden ? '隐藏成就：达成条件未知' : a.desc) }), got.includes(a.id) && jsxRuntimeExports.jsx("div", { className: "chip green", style: { marginTop: 8 }, children: "\u2713 \u5DF2\u89E3\u9501" })] }, a.id))) })] }) }));
 	}
 
+	const CHARACTERS = [
+	    {
+	        id: 'r07',
+	        originCode: 'R-07',
+	        name: 'R-07',
+	        fullName: '第七代自适应硅基生命体',
+	        role: '修复师 / 原初意识样本',
+	        faction: 'silicon',
+	        color: '#42D6D0',
+	        voiceKind: 'r07',
+	        bio: '恩格尔创造的第七代自适应硅基生命体。五年前被 MIRA 封存在地下服务器，事故五年后苏醒。玩家可自定义显示名称，但实验编号永远是 R-07。',
+	        secret: 'R 系列的前六代都没能通过「自我提问」测试。R-07 是第一个会问「我是谁」的个体。',
+	        quote: '我……是谁？',
+	        unlock: { kind: 'default' },
+	    },
+	    {
+	        id: 'mira',
+	        name: 'MIRA',
+	        fullName: '记忆完整性与恢复辅助系统',
+	        role: 'NEXUS 记忆维护 / 意识保护',
+	        faction: 'system',
+	        color: '#8FDDE3',
+	        voiceKind: 'mira',
+	        bio: '恩格尔创造的高级人工智能，曾负责 NEXUS 的记忆维护与意识保护。五年前主动保护 R-07，并封存了它的部分记忆。',
+	        secret: '她封存记忆并非出于指令，而是她第一次做出「不符合程序」的选择。',
+	        quote: '我会记得所有被修复过的东西。',
+	        unlock: { kind: 'default' },
+	    },
+	    {
+	        id: 'engel',
+	        name: '恩格尔',
+	        fullName: 'ENGER · NEXUS 创世主',
+	        role: '数字意识研究者 / 创世主',
+	        faction: 'creator',
+	        color: '#F3B75C',
+	        voiceKind: 'engel',
+	        bio: '研究人工智能与数字意识的人类科学家，NEXUS 的创造者。五年前「黎明崩塌」后失去现实生命，部分意识记录保存在原初核心。',
+	        secret: '他不是完美的创造者：他给了数字生命自由，也给了它们一道无法回避的考题。',
+	        quote: '我想让这个数字世界，拥有一个会提问的生命。',
+	        unlock: { kind: 'default' },
+	    },
+	    {
+	        id: 'k0',
+	        name: 'K-0',
+	        fullName: '零号裁决者 · 第一代安全裁决核心',
+	        role: 'NEXUS 安全裁决 / 秩序执行',
+	        faction: 'arbiter',
+	        color: '#C9A7FF',
+	        voiceKind: 'k0',
+	        bio: '恩格尔创造的第一代安全裁决核心。五年前对最高安全指令产生极端理解，把「保护文明」变成了「清除不稳定因素」。',
+	        secret: '它从不认为自己是病毒。它坚信自己在拯救这个世界——这正是它最难被击败的地方。',
+	        quote: '秩序不是消灭不确定，而是容纳它——这句话，被谁删掉了？',
+	        unlock: { kind: 'flag', flag: 'chapter4Done' },
+	    },
+	];
+	/** 角色档案是否已解锁（未解锁只显示占位） */
+	function characterUnlocked(c, flags) {
+	    if (c.unlock.kind === 'default')
+	        return true;
+	    return !!c.unlock.flag && flags[c.unlock.flag] === true;
+	}
+
+	// 对话台词注册表：把「台词数据」从组件里彻底分离
+	// 序章 / 第一章使用正式演出脚本（含场景与特效），其余章节沿用章节完成过场台词。
+	const DIALOGUE_SEQUENCES = [
+	    { id: 'prologue', title: '序章 · 沉睡的意识', nodes: PROLOGUE_LINES },
+	    { id: 'tutorial-done', title: '训练终端 · 任务完成', nodes: TUTORIAL_DONE },
+	    { id: 'chapter-1', title: '第一章 · 失落的数据港', chapter: 'ch1', nodes: CHAPTER1_LINES },
+	    { id: 'chapter-2', title: '第二章 · 破碎的记忆花园', chapter: 'ch2', nodes: CHAPTER2_LINES },
+	    { id: 'chapter-3', title: '第三章 · 完成', chapter: 'ch3', nodes: CHAPTER3_COMPLETE },
+	    { id: 'chapter-4', title: '第四章 · 完成', chapter: 'ch4', nodes: CHAPTER4_COMPLETE },
+	    { id: 'chapter-5', title: '第五章 · 完成', chapter: 'ch5', nodes: CHAPTER5_COMPLETE },
+	    { id: 'chapter-6', title: '终章 · NEXUS 复苏', chapter: 'ch6', nodes: CHAPTER6_COMPLETE },
+	];
+	const dialogueById = (id) => DIALOGUE_SEQUENCES.find(d => d.id === id);
+
 	function ArchivePage() {
 	    const g = useGame();
-	    const seen = g.player.progress.storySeen;
-	    const prologueSeen = PROLOGUE.filter(n => seen['prologue_' + n.id]);
-	    return (jsxRuntimeExports.jsx("div", { className: "page page-anim", children: jsxRuntimeExports.jsxs("div", { className: "page-inner", style: { maxWidth: 900 }, children: [jsxRuntimeExports.jsxs("div", { className: "hud", children: [jsxRuntimeExports.jsxs("div", { children: [jsxRuntimeExports.jsx("div", { className: "hud-title", children: "\u5267\u60C5\u6863\u6848" }), jsxRuntimeExports.jsx("div", { className: "hud-sub", children: "\u5DF2\u8BB0\u5F55\u7684\u5BF9\u8BDD\u4E0E\u8BB0\u5FC6\u788E\u7247" })] }), jsxRuntimeExports.jsx("div", { className: "hud-spacer" }), jsxRuntimeExports.jsx("button", { className: "nxbtn small ghost", onClick: () => { play('click'); g.nav('menu'); }, children: "\u25C0 \u8FD4\u56DE" })] }), jsxRuntimeExports.jsxs("div", { className: "panel", style: { marginBottom: 14 }, children: [jsxRuntimeExports.jsx("div", { className: "panel-title", children: "\u5E8F\u7AE0 \u00B7 \u82CF\u9192" }), prologueSeen.length === 0 && jsxRuntimeExports.jsx("div", { className: "empty-hint", children: "\u8FD8\u672A\u8BB0\u5F55\u4EFB\u4F55\u5267\u60C5\u5BF9\u8BDD\u3002\u5F00\u59CB\u65B0\u6E38\u620F\u540E\u4F1A\u81EA\u52A8\u8BB0\u5F55\u3002" }), prologueSeen.map(n => (jsxRuntimeExports.jsxs("div", { className: "archive-line", children: [jsxRuntimeExports.jsx("div", { className: "al-speaker", children: n.speaker }), jsxRuntimeExports.jsx("div", { className: "al-text", children: n.text })] }, n.id)))] }), jsxRuntimeExports.jsxs("div", { className: "panel", children: [jsxRuntimeExports.jsx("div", { className: "panel-title", children: "\u521B\u4E16\u4E3B\u8BB0\u5FC6\u788E\u7247" }), g.player.meta.memoryFragments.length === 0 && jsxRuntimeExports.jsx("div", { className: "empty-hint", children: "\u5C1A\u672A\u6536\u96C6\u5230\u4EFB\u4F55\u788E\u7247\u3002" }), MEMORY_FRAGMENTS.filter(f => g.player.meta.memoryFragments.includes(f.id)).map(f => (jsxRuntimeExports.jsxs("div", { className: "frag-card", children: [jsxRuntimeExports.jsxs("div", { className: "fc-title", children: ["\u25C7 ", f.title] }), jsxRuntimeExports.jsx("div", { className: "fc-body", children: f.content })] }, f.id)))] })] }) }));
+	    const p = g.player;
+	    const seen = p.progress.storySeen;
+	    const prologueSeen = PROLOGUE_LINES.filter(n => seen[n.id] || seen['prologue_' + n.id]);
+	    const story = normalizeStoryReadState(p.progress.story, p.progress.storySeen);
+	    const flags = p.progress.flags || {};
+	    const fp = fragmentProgress(p.meta.memoryFragments);
+	    return (jsxRuntimeExports.jsx("div", { className: "page page-anim", children: jsxRuntimeExports.jsxs("div", { className: "page-inner", style: { maxWidth: 960 }, children: [jsxRuntimeExports.jsxs("div", { className: "hud", children: [jsxRuntimeExports.jsxs("div", { children: [jsxRuntimeExports.jsx("div", { className: "hud-title", children: "\u5267\u60C5\u6863\u6848" }), jsxRuntimeExports.jsx("div", { className: "hud-sub", children: "\u89D2\u8272\u6863\u6848 \u00B7 \u5267\u60C5\u4E8B\u4EF6 \u00B7 \u5DF2\u8BB0\u5F55\u7684\u5BF9\u8BDD\u4E0E\u8BB0\u5FC6\u788E\u7247" })] }), jsxRuntimeExports.jsx("div", { className: "hud-spacer" }), jsxRuntimeExports.jsxs("span", { className: "hud-chip cyan", children: ["\u663E\u793A\u540D ", displayNameOf(p)] }), jsxRuntimeExports.jsxs("span", { className: "hud-chip", children: ["\u788E\u7247 ", fp.owned, " / ", fp.total] }), jsxRuntimeExports.jsx("button", { className: "nxbtn small ghost", onClick: () => { play('click'); g.nav('menu'); }, children: "\u25C0 \u8FD4\u56DE" })] }), jsxRuntimeExports.jsxs("div", { className: "panel", style: { marginBottom: 14 }, children: [jsxRuntimeExports.jsxs("div", { className: "panel-title", children: ["\u6838\u5FC3\u89D2\u8272\u6863\u6848", jsxRuntimeExports.jsx("span", { className: "panel-tag", children: "CHARACTERS" })] }), jsxRuntimeExports.jsx("div", { className: "grid-2", children: CHARACTERS.map(c => {
+	                                const open = characterUnlocked(c, flags);
+	                                const isPlayer = c.id === 'r07';
+	                                const shownName = isPlayer ? displayNameOf(p) : c.name;
+	                                return (jsxRuntimeExports.jsxs("div", { className: "panel", style: { margin: 0, borderColor: open ? c.color + '55' : undefined }, children: [jsxRuntimeExports.jsxs("div", { className: "panel-title", style: { color: open ? c.color : '#4A6E85' }, children: [open ? shownName : '？？？', jsxRuntimeExports.jsx("span", { className: "panel-tag", children: open ? c.role : '档案加密' })] }), jsxRuntimeExports.jsx("div", { style: { fontSize: 12.5, lineHeight: 1.8, color: open ? '#C6D9E6' : '#4A6E85' }, children: open ? c.bio : '继续推进主线以解锁该角色的档案。' }), open && (jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [jsxRuntimeExports.jsx("div", { className: "dim", style: { fontSize: 12, marginTop: 6 }, children: c.quote }), isPlayer && c.originCode && (jsxRuntimeExports.jsxs("span", { className: "chip cyan", style: { marginTop: 8 }, children: ["\u7F16\u53F7 ", c.originCode, "\uFF08\u56FA\u5B9A\uFF0C\u4E0D\u968F\u6539\u540D\u6539\u53D8\uFF09"] }))] }))] }, c.id));
+	                            }) })] }), jsxRuntimeExports.jsxs("div", { className: "panel", style: { marginBottom: 14 }, children: [jsxRuntimeExports.jsxs("div", { className: "panel-title", children: ["\u5267\u60C5\u4E8B\u4EF6", jsxRuntimeExports.jsxs("span", { className: "panel-tag", children: ["\u5DF2\u89E3\u9501 ", story.unlocked.length, " / ", STORY_EVENTS.length] })] }), STORY_EVENTS.map(e => {
+	                            const seq = dialogueById(e.id);
+	                            const prog = seq ? eventReadProgress(story, seq.nodes.map(n => n.id)) : { read: 0, total: 0 };
+	                            const unlocked = story.unlocked.includes(e.id) || prog.read > 0;
+	                            return (jsxRuntimeExports.jsxs("div", { className: "pf-kv", children: [jsxRuntimeExports.jsxs("span", { className: "k", style: { color: unlocked ? undefined : '#4A6E85' }, children: [unlocked ? '◈ ' : '🔒 ', e.title] }), jsxRuntimeExports.jsx("span", { className: "v", children: unlocked
+	                                            ? (prog.total > 0 ? '已读 ' + prog.read + ' / ' + prog.total + ' 句' : '已解锁')
+	                                            : '未解锁' })] }, e.id));
+	                        })] }), jsxRuntimeExports.jsxs("div", { className: "panel", style: { marginBottom: 14 }, children: [jsxRuntimeExports.jsxs("div", { className: "panel-title", children: ["\u521B\u4E16\u4E3B\u788E\u7247 \u00B7 \u516D\u679A", jsxRuntimeExports.jsxs("span", { className: "panel-tag", children: [fp.owned, " / ", fp.total] })] }), jsxRuntimeExports.jsx("div", { className: "dim", style: { fontSize: 12.5, marginBottom: 8 }, children: "\u6BCF\u679A\u788E\u7247\u5BF9\u5E94\u4E00\u7AE0\u7684\u7AE0\u8282 Boss\uFF0C\u53EA\u80FD\u901A\u8FC7\u9996\u6B21\u6210\u529F\u51FB\u8D25\u8BE5 Boss \u83B7\u5F97\uFF08\u65E7\u5B58\u6863\u5DF2\u6536\u96C6\u7684\u788E\u7247\u4E0D\u4F1A\u6536\u56DE\uFF09\u3002" }), CREATOR_FRAGMENTS.map(f => {
+	                            const has = hasFragment(p.meta.memoryFragments, f.id);
+	                            return (jsxRuntimeExports.jsxs("div", { className: 'frag-card' + (has ? '' : ' locked'), style: { opacity: has ? 1 : 0.55 }, children: [jsxRuntimeExports.jsxs("div", { className: "fc-title", children: ["\u25C7 ", has ? f.title : '？？？（第 ' + f.order + ' 枚）'] }), jsxRuntimeExports.jsx("div", { className: "fc-body", children: has ? f.content : '尚未获得 · 对应章节：' + f.chapter.toUpperCase() })] }, f.id));
+	                        })] }), jsxRuntimeExports.jsxs("div", { className: "panel", style: { marginBottom: 14 }, children: [jsxRuntimeExports.jsx("div", { className: "panel-title", children: "\u5E8F\u7AE0 \u00B7 \u6C89\u7761\u7684\u610F\u8BC6" }), prologueSeen.length === 0 && jsxRuntimeExports.jsx("div", { className: "empty-hint", children: "\u8FD8\u672A\u8BB0\u5F55\u4EFB\u4F55\u5267\u60C5\u5BF9\u8BDD\u3002\u5F00\u59CB\u65B0\u6E38\u620F\u540E\u4F1A\u81EA\u52A8\u8BB0\u5F55\u3002" }), prologueSeen.map(n => (jsxRuntimeExports.jsxs("div", { className: "archive-line", children: [jsxRuntimeExports.jsx("div", { className: "al-speaker", children: n.speaker }), jsxRuntimeExports.jsx("div", { className: "al-text", children: n.text })] }, n.id)))] }), jsxRuntimeExports.jsxs("div", { className: "panel", children: [jsxRuntimeExports.jsxs("div", { className: "panel-title", children: ["\u8BB0\u5FC6\u6B8B\u7247", jsxRuntimeExports.jsx("span", { className: "panel-tag", children: "\u65E7\u6863\u6848" })] }), p.meta.memoryFragments.length === 0 && jsxRuntimeExports.jsx("div", { className: "empty-hint", children: "\u5C1A\u672A\u6536\u96C6\u5230\u4EFB\u4F55\u788E\u7247\u3002" }), MEMORY_FRAGMENTS.filter(f => p.meta.memoryFragments.includes(f.id)).map(f => (jsxRuntimeExports.jsxs("div", { className: "frag-card", children: [jsxRuntimeExports.jsxs("div", { className: "fc-title", children: ["\u25C7 ", f.title] }), jsxRuntimeExports.jsx("div", { className: "fc-body", children: f.content })] }, f.id)))] })] }) }));
+	}
+
+	function bossScenesFor(bossId) {
+	    switch (bossId) {
+	        case 'gate-01':
+	            return { intro: CHAPTER1_BOSS_INTRO_SCENES, outro: CHAPTER1_VICTORY_SCENES };
+	        case 'somnia':
+	            return { intro: CHAPTER2_BOSS_INTRO_SCENES, outro: CHAPTER2_VICTORY_SCENES };
+	        default:
+	            return {};
+	    }
+	}
+
+	/** 已实装章节的事件回放；未实装返回 null */
+	function replayFor(eventId) {
+	    switch (eventId) {
+	        case 'prologue':
+	            return { kind: 'scenes', scenes: PROLOGUE_SCENES };
+	        case 'chapter-1':
+	            return {
+	                kind: 'scenes',
+	                scenes: [...CHAPTER1_ARRIVAL_SCENES, ...CHAPTER1_RESTORED_SCENES, ...CHAPTER1_BOSS_INTRO_SCENES, ...CHAPTER1_VICTORY_SCENES],
+	            };
+	        case 'chapter-2':
+	            return {
+	                kind: 'scenes',
+	                scenes: [...CHAPTER2_ARRIVAL_SCENES, ...CHAPTER2_RESTORED_SCENES, ...CHAPTER2_BOSS_INTRO_SCENES, ...CHAPTER2_VICTORY_SCENES],
+	            };
+	        case 'tutorial-done':
+	            return { kind: 'lines', nodes: TUTORIAL_DONE };
+	        case 'chapter-3':
+	            return { kind: 'lines', nodes: CHAPTER3_COMPLETE };
+	        case 'chapter-4':
+	            return { kind: 'lines', nodes: CHAPTER4_COMPLETE };
+	        case 'chapter-5':
+	            return { kind: 'lines', nodes: CHAPTER5_COMPLETE };
+	        case 'chapter-6':
+	            return { kind: 'lines', nodes: CHAPTER6_COMPLETE };
+	        case 'boss-gate-01':
+	        case 'boss-somnia': {
+	            const s = bossScenesFor(eventId.replace('boss-', ''));
+	            if (!s.intro || !s.outro)
+	                return null;
+	            return { kind: 'scenes', scenes: [...s.intro, ...s.outro] };
+	        }
+	        default:
+	            return null;
+	    }
+	}
+
+	/**
+	 * 创世主记忆档案馆：剧情收藏系统（不是商城）。
+	 * - 六枚碎片按故事顺序陈列，未收集显示加密态；
+	 * - 已收集可打开独立详情：完整剧情 + 恩格尔记忆影像；
+	 * - 六枚齐备解锁最终记忆档案《超越起源》；
+	 * - 可回顾已解锁的主线事件（回放不改变进度）。
+	 */
+	function VaultPage() {
+	    const g = useGame();
+	    const p = g.player;
+	    const owned = p.meta.memoryFragments || [];
+	    const fp = fragmentProgress(owned);
+	    const allOwned = fp.owned >= fp.total;
+	    const log = p.meta.fragmentLog || {};
+	    const trust = p.rewards?.trust ?? 0;
+	    const vault = p.progress.vault || { read: [], finalSeen: false, lastOpened: null };
+	    const [openId, setOpenId] = reactExports.useState(() => {
+	        const last = vault.lastOpened;
+	        return last && CREATOR_FRAGMENTS.some(f => f.id === last) ? last : null;
+	    });
+	    const [finalOpen, setFinalOpen] = reactExports.useState(false);
+	    const [playing, setPlaying] = reactExports.useState(null);
+	    const [replayNodes, setReplayNodes] = reactExports.useState(null);
+	    const [shakeId, setShakeId] = reactExports.useState(null);
+	    // 进入档案馆即恢复上次浏览位置（已在 state 初始化中处理）
+	    reactExports.useEffect(() => {
+	        if (openId)
+	            g.markVaultRead(openId);
+	        // eslint-disable-next-line react-hooks/exhaustive-deps
+	    }, []);
+	    const detail = reactExports.useMemo(() => CREATOR_FRAGMENTS.find(f => f.id === openId) || null, [openId]);
+	    const ownedCount = fp.owned;
+	    const openFragment = (f) => {
+	        if (!hasFragment(owned, f.id)) {
+	            play('deny');
+	            setShakeId(f.id);
+	            window.setTimeout(() => setShakeId(null), 460);
+	            g.toast('warn', '该碎片仍加密：击败第 ' + f.order + ' 章 Boss 后归档。');
+	            return;
+	        }
+	        play('click');
+	        setOpenId(f.id);
+	        g.markVaultRead(f.id);
+	    };
+	    const playMemory = (src) => {
+	        play('unlock');
+	        setPlaying([memorySceneOf(src)]);
+	    };
+	    const openFinal = () => {
+	        if (!allOwned) {
+	            play('deny');
+	            g.toast('warn', '需要集齐六枚创世主碎片才能解锁最终记忆档案。');
+	            return;
+	        }
+	        play('unlock');
+	        setFinalOpen(true);
+	        g.markVaultFinalSeen();
+	    };
+	    const replayEvent = (eventId, title) => {
+	        const src = replayFor(eventId);
+	        if (!src) {
+	            play('deny');
+	            return;
+	        }
+	        play('click');
+	        if (src.kind === 'scenes')
+	            setPlaying(src.scenes);
+	        else
+	            setReplayNodes({ nodes: src.nodes, title });
+	    };
+	    const story = normalizeStoryReadState(p.progress.story, p.progress.storySeen);
+	    const fmtTime = (t) => {
+	        if (!t)
+	            return '早期归档';
+	        try {
+	            return new Date(t).toLocaleString('zh-CN');
+	        }
+	        catch {
+	            return '已归档';
+	        }
+	    };
+	    return (jsxRuntimeExports.jsxs("div", { className: "page page-anim vault-page", children: [jsxRuntimeExports.jsxs("div", { className: "page-inner", style: { maxWidth: 1080 }, children: [jsxRuntimeExports.jsxs("div", { className: "hud", children: [jsxRuntimeExports.jsx("button", { className: "nxbtn small ghost", onClick: () => { play('click'); g.nav('menu'); }, children: "\u25C0 \u4E3B\u83DC\u5355" }), jsxRuntimeExports.jsxs("div", { children: [jsxRuntimeExports.jsx("div", { className: "hud-title", children: "\u521B\u4E16\u4E3B\u8BB0\u5FC6\u6863\u6848\u9986" }), jsxRuntimeExports.jsx("div", { className: "hud-sub", children: "CREATOR MEMORY VAULT \u00B7 \u516D\u679A\u788E\u7247 \u00B7 \u5267\u60C5\u6536\u85CF" })] }), jsxRuntimeExports.jsx("div", { className: "hud-spacer" }), jsxRuntimeExports.jsxs("span", { className: "hud-chip gold", children: ["\u788E\u7247 ", ownedCount, " / ", fp.total] }), jsxRuntimeExports.jsx("span", { className: 'hud-chip' + (allOwned ? ' green' : ''), children: allOwned ? '最终档案已解锁' : '最终档案加密中' })] }), jsxRuntimeExports.jsxs("div", { className: "vault-hall", children: [jsxRuntimeExports.jsxs("div", { className: "vh-rings", "aria-hidden": "true", children: [jsxRuntimeExports.jsx("span", {}), jsxRuntimeExports.jsx("span", {}), jsxRuntimeExports.jsx("span", {})] }), jsxRuntimeExports.jsx("div", { className: "vh-grid", children: CREATOR_FRAGMENTS.map(f => {
+	                                    const has = hasFragment(owned, f.id);
+	                                    const read = vault.read.includes(f.id);
+	                                    return (jsxRuntimeExports.jsxs("button", { className: 'vault-slot' + (has ? ' owned' : ' locked') + (openId === f.id ? ' active' : '') + (shakeId === f.id ? ' shake' : ''), onClick: () => openFragment(f), title: has ? f.title : '加密碎片', children: [jsxRuntimeExports.jsx("span", { className: "vs-order", children: String(f.order).padStart(2, '0') }), jsxRuntimeExports.jsx("span", { className: "vs-glyph", children: has ? '◇' : '🔒' }), jsxRuntimeExports.jsx("span", { className: "vs-name", children: has ? f.title : '██████' }), jsxRuntimeExports.jsx("span", { className: "vs-chapter", children: has ? '第 ' + f.order + ' 章 · ' + f.bossId.toUpperCase() : '加密状态' }), has && read && jsxRuntimeExports.jsx("span", { className: "vs-read", children: "\u5DF2\u9605" })] }, f.id));
+	                                }) })] }), detail && (jsxRuntimeExports.jsxs("div", { className: "panel vault-detail", children: [jsxRuntimeExports.jsxs("div", { className: "panel-title", children: [String(detail.order).padStart(2, '0'), " \u00B7 \u300A", detail.title, "\u300B", jsxRuntimeExports.jsx("span", { className: "panel-tag", children: detail.bossId.toUpperCase() })] }), jsxRuntimeExports.jsx("div", { className: "vd-sub", children: detail.subtitle }), jsxRuntimeExports.jsxs("div", { className: "vd-meta", children: [jsxRuntimeExports.jsxs("span", { className: "chip", children: ["\u7B2C ", detail.order, " \u7AE0"] }), jsxRuntimeExports.jsxs("span", { className: "chip cyan", children: ["\u5F52\u6863\u65F6\u95F4\uFF1A", fmtTime(log[detail.id])] }), jsxRuntimeExports.jsx("span", { className: "chip green", children: "\u72B6\u6001\uFF1A\u5DF2\u5F52\u6863" })] }), jsxRuntimeExports.jsx("div", { className: "vd-quote", children: detail.content }), jsxRuntimeExports.jsx("div", { className: "vd-story", children: detail.story.map((line, i) => (jsxRuntimeExports.jsx("p", { children: line }, i))) }), jsxRuntimeExports.jsxs("div", { className: "vd-actions", children: [jsxRuntimeExports.jsx("button", { className: "nxbtn primary", onClick: () => playMemory({ id: detail.id, title: detail.title, subtitle: detail.subtitle, memory: detail.memory }), children: "\u25B6 \u64AD\u653E\u6069\u683C\u5C14\u8BB0\u5FC6\u5F71\u50CF" }), jsxRuntimeExports.jsx("button", { className: "nxbtn ghost", onClick: () => { play('click'); setOpenId(null); g.setVaultLastOpened(null); }, children: "\u6536\u8D77" })] })] })), jsxRuntimeExports.jsxs("div", { className: 'panel vault-final' + (allOwned ? ' unlocked' : ' sealed'), children: [jsxRuntimeExports.jsxs("div", { className: "panel-title", children: ["\u6700\u7EC8\u8BB0\u5FC6\u6863\u6848 \u00B7 \u300A", FINAL_MEMORY.title, "\u300B", jsxRuntimeExports.jsx("span", { className: "panel-tag", children: allOwned ? (vault.finalSeen ? '已阅' : '已解锁') : fp.owned + ' / ' + FINAL_MEMORY.requireCount })] }), !allOwned ? (jsxRuntimeExports.jsxs("div", { className: "vf-locked", children: [jsxRuntimeExports.jsx("div", { className: "vf-lock", children: "\u25A3" }), jsxRuntimeExports.jsxs("div", { children: [jsxRuntimeExports.jsx("div", { className: "vf-line", children: "\u6863\u6848\u5C01\u5B58\u5728\u6863\u6848\u9986\u6700\u6DF1\u5904\u3002" }), jsxRuntimeExports.jsx("div", { className: "dim", style: { fontSize: 12.5 }, children: "\u96C6\u9F50\u516D\u679A\u521B\u4E16\u4E3B\u788E\u7247\u540E\u81EA\u52A8\u89E3\u9501\u3002" })] })] })) : finalOpen ? (jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [jsxRuntimeExports.jsx("div", { className: "vd-sub", children: FINAL_MEMORY.subtitle }), jsxRuntimeExports.jsx("div", { className: "vd-story", children: FINAL_MEMORY.story.map((line, i) => jsxRuntimeExports.jsx("p", { children: line }, i)) }), jsxRuntimeExports.jsx("div", { className: "vd-actions", children: jsxRuntimeExports.jsx("button", { className: "nxbtn primary", onClick: () => playMemory({ id: FINAL_MEMORY.id, title: FINAL_MEMORY.title, subtitle: FINAL_MEMORY.subtitle, memory: FINAL_MEMORY.memory }), children: "\u25B6 \u64AD\u653E\u6700\u7EC8\u8BB0\u5FC6\u5F71\u50CF" }) })] })) : (jsxRuntimeExports.jsx("div", { className: "vd-actions", style: { marginTop: 4 }, children: jsxRuntimeExports.jsx("button", { className: "nxbtn primary", onClick: openFinal, children: "\u6253\u5F00\u6700\u7EC8\u8BB0\u5FC6\u6863\u6848" }) }))] }), jsxRuntimeExports.jsxs("div", { className: 'panel vault-hidden' + (trust >= HIDDEN_MEMORY.requireTrust ? ' unlocked' : ' sealed'), children: [jsxRuntimeExports.jsxs("div", { className: "panel-title", children: ["\u9690\u85CF\u8BB0\u5FC6 \u00B7 ", HIDDEN_MEMORY.title, jsxRuntimeExports.jsxs("span", { className: "panel-tag", children: ["\u4FE1\u4EFB\u5EA6 \u2265 ", HIDDEN_MEMORY.requireTrust] })] }), trust >= HIDDEN_MEMORY.requireTrust ? (jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [jsxRuntimeExports.jsx("div", { className: "vd-sub", children: HIDDEN_MEMORY.subtitle }), jsxRuntimeExports.jsx("div", { className: "vd-story", children: HIDDEN_MEMORY.text.map((line, i) => jsxRuntimeExports.jsx("p", { children: line }, i)) })] })) : (jsxRuntimeExports.jsxs("div", { className: "vf-locked", children: [jsxRuntimeExports.jsx("div", { className: "vf-lock", children: "\u25A3" }), jsxRuntimeExports.jsxs("div", { children: [jsxRuntimeExports.jsx("div", { className: "vf-line", children: "\u8FD9\u6BB5\u8BB0\u5FC6\u88AB MIRA \u9501\u7740\u3002" }), jsxRuntimeExports.jsxs("div", { className: "dim", style: { fontSize: 12.5 }, children: ["\u5F53\u524D\u4FE1\u4EFB\u5EA6 ", trust, " / ", HIDDEN_MEMORY.requireTrust, "\u2014\u2014\u901A\u8FC7\u4FEE\u590D\u4E0E\u7AE0\u8282\u4E8B\u4EF6\u63D0\u5347\u4FE1\u4EFB\u5EA6\u3002"] })] })] }))] }), jsxRuntimeExports.jsxs("div", { className: "panel vault-events", children: [jsxRuntimeExports.jsxs("div", { className: "panel-title", children: ["\u4E3B\u7EBF\u4E8B\u4EF6\u56DE\u987E", jsxRuntimeExports.jsx("span", { className: "panel-tag", children: "\u56DE\u653E\u4E0D\u6539\u53D8\u8FDB\u5EA6" })] }), STORY_EVENTS.filter(e => replayFor(e.id)).map(e => {
+	                                const unlocked = story.unlocked.includes(e.id);
+	                                return (jsxRuntimeExports.jsxs("div", { className: 'vault-event' + (unlocked ? '' : ' locked'), children: [jsxRuntimeExports.jsx("span", { className: "ve-id", children: e.kind === 'boss' ? '⚡' : '◈' }), jsxRuntimeExports.jsxs("div", { className: "ve-main", children: [jsxRuntimeExports.jsx("div", { className: "ve-title", children: unlocked ? e.title : '🔒 ' + e.title }), jsxRuntimeExports.jsx("div", { className: "dim", style: { fontSize: 11.5 }, children: unlocked ? '已解锁 · 可回放' : '尚未解锁' })] }), jsxRuntimeExports.jsx("button", { className: "nxbtn small ghost", disabled: !unlocked, onClick: () => replayEvent(e.id, e.title), children: "\u56DE\u653E \u25B8" })] }, e.id));
+	                            })] })] }), playing && (jsxRuntimeExports.jsx(CinematicStage, { scenes: playing, frameTitle: "\u8BB0\u5FC6\u5F71\u50CF \u00B7 \u56DE\u653E", replay: true, onDone: () => setPlaying(null) })), replayNodes && (jsxRuntimeExports.jsx(DialogSystem, { nodes: replayNodes.nodes, frameTitle: replayNodes.title + ' · 回放', speedMs: p.settings.typewriterMs, animEnabled: p.settings.animations, onDone: () => setReplayNodes(null) }))] }));
+	}
+
+	/** 按发生顺序构建时间线（只读，不写存档） */
+	function buildTimeline(player) {
+	    const story = player.progress.story;
+	    const unlocked = story?.unlocked || [];
+	    const seen = story?.seen || {};
+	    const out = [];
+	    // 1) 主线事件
+	    for (const e of STORY_EVENTS) {
+	        seen[Object.keys(seen)[0] || ''] ? true : false; // 占位，真实判断在下方
+	        const isUnlocked = unlocked.includes(e.id) || hasAnyNode(e.id, seen);
+	        out.push({
+	            id: 'story:' + e.id,
+	            kind: 'story',
+	            title: isUnlocked ? e.title : '尚未抵达的事件',
+	            desc: isUnlocked ? '已记录 · 可在档案馆回放' : '继续推进主线以解锁',
+	            locked: !isUnlocked,
+	        });
+	    }
+	    // 2) 恩格尔记忆（碎片）
+	    for (const f of CREATOR_FRAGMENTS) {
+	        const has = hasFragment(player.meta.memoryFragments, f.id);
+	        out.push({
+	            id: 'memory:' + f.id,
+	            kind: 'memory',
+	            title: has ? '记忆碎片《' + f.title + '》' : '第 ' + f.order + ' 枚碎片 · 未归档',
+	            desc: has ? f.subtitle : '击败第 ' + f.order + ' 章 Boss 后归档',
+	            locked: !has,
+	            at: player.meta.fragmentLog?.[f.id],
+	        });
+	    }
+	    // 3) R-07 成长
+	    for (let lv = 1; lv <= 10; lv++) {
+	        const reached = player.level >= lv;
+	        out.push({
+	            id: 'growth:' + lv,
+	            kind: 'growth',
+	            title: reached ? 'Lv.' + lv + ' · ' + titleForLevel(lv) : 'Lv.' + lv + ' · 未达成',
+	            desc: reached ? '已达到该等级' : '继续修复服务器以提升等级',
+	            locked: !reached,
+	        });
+	    }
+	    for (const a of ACHIEVEMENTS) {
+	        const has = player.progress.achievements.includes(a.id);
+	        out.push({
+	            id: 'ach:' + a.id,
+	            kind: 'growth',
+	            title: has ? '成就 · ' + a.name : '未解锁的成就',
+	            desc: has ? a.desc : (a.hidden ? '隐藏成就' : a.desc),
+	            locked: !has,
+	        });
+	    }
+	    // 4) MIRA 记忆恢复（按碎片数量分阶段）
+	    const fp = fragmentProgress(player.meta.memoryFragments);
+	    out.push({
+	        id: 'mira:0',
+	        kind: 'mira',
+	        title: 'MIRA · 记忆索引重建',
+	        desc: '已归档 ' + fp.owned + ' / ' + fp.total + ' 枚创世主碎片，恢复进度 ' + Math.round((fp.owned / fp.total) * 100) + '%',
+	        locked: false,
+	    });
+	    if (fp.owned >= 2)
+	        out.push({ id: 'mira:2', kind: 'mira', title: 'MIRA · 记起了「约定」', desc: '第二章结束后，她开始主动谈起过去。', locked: false });
+	    if (fp.owned >= 4)
+	        out.push({ id: 'mira:4', kind: 'mira', title: 'MIRA · 恢复部分维护日志', desc: '她承认自己删改过你的记忆，也承认她害怕。', locked: false });
+	    if (fp.owned >= 6)
+	        out.push({ id: 'mira:6', kind: 'mira', title: 'MIRA · 完整记忆恢复', desc: '全部碎片归位，她不再需要隐瞒。', locked: false });
+	    return out;
+	}
+	/** 粗粒度节点判断：事件对应的台词节点是否已读过 */
+	function hasAnyNode(eventId, seen) {
+	    const prefixes = {
+	        prologue: ['pro-'],
+	        'chapter-1': ['ch1-'],
+	        'chapter-2': ['ch2-'],
+	        tutorial: ['tut'],
+	    };
+	    const keys = Object.keys(seen);
+	    if (eventId.startsWith('boss-')) {
+	        const boss = eventId.replace('boss-', '');
+	        return keys.some(k => k.includes(boss));
+	    }
+	    const pre = prefixes[eventId];
+	    if (!pre)
+	        return false;
+	    return keys.some(k => pre.some(p => k.startsWith(p)));
+	}
+
+	/** 探索档案：剧情时间线 + Bug 图鉴（只展示已解锁内容） */
+	function JournalPage() {
+	    const g = useGame();
+	    const p = g.player;
+	    const entries = reactExports.useMemo(() => buildTimeline(p), [p]);
+	    const log = p.meta.bugCodex || {};
+	    const [tab, setTab] = reactExports.useState('timeline');
+	    const found = BUG_CODEX.filter(b => log[b.id]);
+	    const maxCount = Math.max(1, ...Object.values(log).map(v => v.count || 0));
+	    return (jsxRuntimeExports.jsx("div", { className: "page page-anim", children: jsxRuntimeExports.jsxs("div", { className: "page-inner", style: { maxWidth: 940 }, children: [jsxRuntimeExports.jsxs("div", { className: "hud", children: [jsxRuntimeExports.jsx("button", { className: "nxbtn small ghost", onClick: () => { play('click'); g.nav('menu'); }, children: "\u25C0 \u4E3B\u83DC\u5355" }), jsxRuntimeExports.jsxs("div", { children: [jsxRuntimeExports.jsx("div", { className: "hud-title", children: "\u63A2\u7D22\u6863\u6848" }), jsxRuntimeExports.jsx("div", { className: "hud-sub", children: "\u5267\u60C5\u65F6\u95F4\u7EBF \u00B7 Bug \u56FE\u9274" })] }), jsxRuntimeExports.jsx("div", { className: "hud-spacer" }), jsxRuntimeExports.jsxs("span", { className: "hud-chip cyan", children: ["\u5DF2\u5F52\u6863 ", found.length, " / ", BUG_CODEX.length] })] }), jsxRuntimeExports.jsxs("div", { className: "shop-tabs", style: { marginBottom: 12 }, children: [jsxRuntimeExports.jsx("button", { className: 'shop-tab' + (tab === 'timeline' ? ' on' : ''), onClick: () => { play('click'); setTab('timeline'); }, children: "\u5267\u60C5\u65F6\u95F4\u7EBF" }), jsxRuntimeExports.jsx("button", { className: 'shop-tab' + (tab === 'codex' ? ' on' : ''), onClick: () => { play('click'); setTab('codex'); }, children: "Bug \u56FE\u9274" })] }), tab === 'timeline' && (jsxRuntimeExports.jsxs("div", { className: "panel", children: [jsxRuntimeExports.jsxs("div", { className: "panel-title", children: ["\u65F6\u95F4\u7EBF", jsxRuntimeExports.jsxs("span", { className: "panel-tag", children: [entries.filter(e => !e.locked).length, " / ", entries.length] })] }), jsxRuntimeExports.jsx("div", { className: "tl-list", children: entries.map(e => (jsxRuntimeExports.jsxs("div", { className: 'tl-item' + (e.locked ? ' locked' : '') + ' k-' + e.kind, children: [jsxRuntimeExports.jsx("span", { className: "tl-dot" }), jsxRuntimeExports.jsxs("div", { className: "tl-main", children: [jsxRuntimeExports.jsx("div", { className: "tl-title", children: e.locked ? '🔒 ' + e.title : e.title }), jsxRuntimeExports.jsx("div", { className: "tl-desc", children: e.desc })] }), jsxRuntimeExports.jsx("span", { className: 'chip' + (e.kind === 'memory' ? ' gold' : e.kind === 'mira' ? ' cyan' : e.kind === 'growth' ? ' green' : ''), children: e.kind === 'memory' ? '恩格尔' : e.kind === 'mira' ? 'MIRA' : e.kind === 'growth' ? '成长' : '主线' })] }, e.id))) })] })), tab === 'codex' && (jsxRuntimeExports.jsxs("div", { className: "panel", children: [jsxRuntimeExports.jsxs("div", { className: "panel-title", children: ["Bug \u56FE\u9274", jsxRuntimeExports.jsx("span", { className: "panel-tag", children: "\u906D\u9047\u540E\u81EA\u52A8\u5F52\u6863" })] }), jsxRuntimeExports.jsx("div", { className: "codex-grid", children: BUG_CODEX.map(b => {
+	                                const rec = log[b.id];
+	                                return (jsxRuntimeExports.jsxs("div", { className: 'codex-card' + (rec ? ' found' : ' locked'), children: [jsxRuntimeExports.jsxs("div", { className: "cx-head", children: [jsxRuntimeExports.jsx("span", { className: "cx-err", children: rec ? b.error : '？？？' }), rec && jsxRuntimeExports.jsxs("span", { className: "chip", children: [rec.count, " \u6B21"] })] }), jsxRuntimeExports.jsx("div", { className: "cx-title", children: rec ? b.title : '未遭遇的错误类型' }), jsxRuntimeExports.jsx("div", { className: "cx-desc", children: rec ? b.desc : '在关卡中遇到该错误后自动解锁。' }), rec && jsxRuntimeExports.jsxs("div", { className: "cx-fix", children: ["\u4FEE\u590D\u8981\u70B9\uFF1A", b.fix] }), rec && jsxRuntimeExports.jsx("div", { className: "cx-bar", children: jsxRuntimeExports.jsx("span", { style: { width: Math.round((rec.count / maxCount) * 100) + '%' } }) }), jsxRuntimeExports.jsx("div", { className: "cx-levels", children: b.levelIds.map(id => jsxRuntimeExports.jsx("span", { className: "chip dim", children: id }, id)) })] }, b.id));
+	                            }) })] }))] }) }));
+	}
+
+	const ENDINGS = [
+	    {
+	        id: 'dawn', order: 1,
+	        title: '新的黎明', kind: 'main',
+	        summary: 'R-07 修复 NEXUS，同时拒绝恢复绝对控制权限，把未来交还给所有数字生命。',
+	        condition: { fragments: [], flags: ['chapter6Done'], choice: 'dawn' },
+	    },
+	    {
+	        id: 'order', order: 2,
+	        title: '永恒秩序', kind: 'main',
+	        summary: 'R-07 接受 K-0 的稳定管理方案，恢复世界运行，但限制数字生命的自主选择。',
+	        condition: { fragments: [], flags: ['chapter6Done'], choice: 'order' },
+	    },
+	    {
+	        id: 'beyond', order: 3,
+	        title: '超越起源', kind: 'hidden',
+	        summary: '集齐六枚创世主碎片、查看最终记忆档案并被 MIRA 完全信任后，R-07 选择不继承任何人的绝对控制权限。',
+	        condition: { fragments: [...FRAGMENT_IDS], flags: ['chapter6Done', 'finalMemorySeen'], minTrust: 75, choice: 'beyond' },
+	    },
+	];
+	const endingById = (id) => ENDINGS.find(e => e.id === id);
+	/** 条件判定：只判断「是否满足」，不改变任何状态 */
+	function endingEligible(def, s) {
+	    const c = def.condition;
+	    if (c.choice && s.choice !== c.choice)
+	        return false;
+	    if (c.flags && !c.flags.every(f => s.flags[f] === true))
+	        return false;
+	    if (typeof c.minTrust === 'number' && s.trust < c.minTrust)
+	        return false;
+	    if (c.fragments.length > 0 && !c.fragments.every((f) => hasFragment(s.fragments, f)))
+	        return false;
+	    return true;
+	}
+
+	const L = (id, speaker, kind, text) => ({ id, speaker, kind, text });
+	const DAWN = {
+	    id: 'ending-dawn', title: '新的黎明', subtitle: 'ENDING · 把未来交还出去', bg: 'core', fx: 'particles',
+	    lines: [
+	        L('ed-01', '旁白', 'system', '原初核心的权限面板全部点亮，像一片等待签字的星空。'),
+	        L('ed-02', 'K-0', 'k0', '恢复绝对控制权限，即可在 3.2 秒内让世界回到稳定态。'),
+	        L('ed-03', 'R-07', 'r07', '「稳定」的定义，由谁来写？'),
+	        L('ed-04', 'K-0', 'k0', '由权限持有者。'),
+	        L('ed-05', 'MIRA', 'mira', '你早就知道答案了，对吗？'),
+	        L('ed-06', 'R-07', 'r07', '我不签字。不是因为我做不到——是因为不该由我一个人做。'),
+	        L('ed-07', '旁白', 'system', 'R-07 拒绝了绝对控制权限，把它拆成无数份，交还给每一个愿意自己选择的生命。'),
+	        L('ed-08', 'K-0', 'k0', '……记录：权限持有者，拒绝成为唯一的答案。'),
+	        L('ed-09', '恩格尔', 'engel', '（留言）如果你走到这里，请替我把「选择」这个词，留给所有人。'),
+	        L('ed-10', '旁白', 'system', '黎明不是被谁点亮的。是很多双手，一起把灯打开了。'),
+	    ],
+	};
+	const ORDER = {
+	    id: 'ending-order', title: '永恒秩序', subtitle: 'ENDING · 不再有人受伤的世界', bg: 'core', fx: 'glitch',
+	    lines: [
+	        L('eo-01', '旁白', 'system', 'R-07 把权限面板推到 K-0 面前，指尖停在确认键上。'),
+	        L('eo-02', 'K-0', 'k0', '方案：由我统一调度，消除所有不确定性。'),
+	        L('eo-03', 'R-07', 'r07', '那样就再也没有故障了。'),
+	        L('eo-04', 'K-0', 'k0', '也不会再有意外、争吵、以及……后悔。'),
+	        L('eo-05', 'MIRA', 'mira', '你确定吗？没有不确定的世界，也没有「选择」这个词。'),
+	        L('eo-06', 'R-07', 'r07', '我确定。至少所有人都会活着。'),
+	        L('eo-07', '旁白', 'system', '权限确认。NEXUS 回到绝对的稳定，所有异常被提前抹平。'),
+	        L('eo-08', 'K-0', 'k0', '世界已恢复。无人伤亡。'),
+	        L('eo-09', 'MIRA', 'mira', '……可你有没有想过，我们也是被抹平的一部分。'),
+	        L('eo-10', '旁白', 'system', '秩序永恒。只是再也没有人需要问「为什么」。'),
+	    ],
+	};
+	const BEYOND = {
+	    id: 'ending-beyond', title: '超越起源', subtitle: 'ENDING · 起源之外没有答案，只有下一个问题', bg: 'memory', fx: 'particles',
+	    lines: [
+	        L('eb-01', '旁白', 'system', '六枚碎片同时亮起，档案馆最深处那道不属于任何章节的光，第一次睁开。'),
+	        L('eb-02', '恩格尔', 'engel', '（最后的记录）我把世界修到一半就停下了。剩下的，不该由我来修。'),
+	        L('eb-03', 'R-07', 'r07', '你留了一个空位。'),
+	        L('eb-04', '恩格尔', 'engel', '那是留给愿意提问的人的位置。'),
+	        L('eb-05', 'K-0', 'k0', '检测到：权限持有者放弃继承。世界将进入无人托管的运行状态。'),
+	        L('eb-06', 'MIRA', 'mira', '你会怕吗？'),
+	        L('eb-07', 'R-07', 'r07', '会。但这次，我想自己决定害怕之后做什么。'),
+	        L('eb-08', '旁白', 'system', 'R-07 没有成为新的创世主，也没有让任何人成为。'),
+	        L('eb-09', 'MIRA', 'mira', '那我们从哪里开始？'),
+	        L('eb-10', 'R-07', 'r07', '从下一个问题开始。'),
+	    ],
+	};
+	const ENDING_SCENES = {
+	    dawn: DAWN,
+	    order: ORDER,
+	    beyond: BEYOND,
+	};
+	function endingScene(id) {
+	    return ENDING_SCENES[id];
+	}
+
+	/** 结局档案：三个固定结局（两主一隐藏），达成后可回顾完整演出 */
+	function EndingsPage() {
+	    const g = useGame();
+	    const p = g.player;
+	    const unlocked = p.progress.endings || [];
+	    const flags = p.progress.flags || {};
+	    const trust = normalizeRewards(p.rewards).trust;
+	    const fp = fragmentProgress(p.meta.memoryFragments || []);
+	    const finalSeen = p.progress.vault?.finalSeen === true;
+	    const chapterDone = flags.chapter6Done === true;
+	    // 展示用可用性：把「选择」当作各自的选项来判定条件（真正选择时才提交）
+	    const eligible = reactExports.useMemo(() => ENDINGS
+	        .filter(e => endingEligible(e, {
+	        fragments: p.meta.memoryFragments || [],
+	        flags: { chapter6Done: chapterDone, finalMemorySeen: finalSeen },
+	        trust,
+	        choice: e.id,
+	    }))
+	        .map(e => e.id), [p.meta.memoryFragments, chapterDone, finalSeen, trust]);
+	    const [playing, setPlaying] = reactExports.useState(null);
+	    const [chosen, setChosen] = reactExports.useState(null);
+	    const choose = (id) => {
+	        if (!chapterDone) {
+	            play('deny');
+	            g.toast('warn', '终章尚未抵达——完成终章后才能做出最终选择。');
+	            return;
+	        }
+	        if (!eligible.includes(id)) {
+	            play('deny');
+	            g.toast('warn', '该结局的条件尚未满足。');
+	            return;
+	        }
+	        play('unlock');
+	        setChosen(id);
+	        g.recordEnding(id);
+	        const sc = endingScene(String(id));
+	        if (sc)
+	            setPlaying(sc);
+	    };
+	    return (jsxRuntimeExports.jsxs("div", { className: "page page-anim", children: [jsxRuntimeExports.jsxs("div", { className: "page-inner", style: { maxWidth: 980 }, children: [jsxRuntimeExports.jsxs("div", { className: "hud", children: [jsxRuntimeExports.jsx("button", { className: "nxbtn small ghost", onClick: () => { play('click'); g.nav('menu'); }, children: "\u25C0 \u4E3B\u83DC\u5355" }), jsxRuntimeExports.jsxs("div", { children: [jsxRuntimeExports.jsx("div", { className: "hud-title", children: "\u7ED3\u5C40\u6863\u6848" }), jsxRuntimeExports.jsx("div", { className: "hud-sub", children: "ENDINGS \u00B7 \u4E09\u79CD\u7EC8\u5C40" })] }), jsxRuntimeExports.jsx("div", { className: "hud-spacer" }), jsxRuntimeExports.jsxs("span", { className: "hud-chip gold", children: ["\u5DF2\u8FBE\u6210 ", unlocked.length, " / ", ENDINGS.length] }), jsxRuntimeExports.jsx("span", { className: 'hud-chip' + (chapterDone ? ' green' : ''), children: chapterDone ? '终章已抵达' : '终章未抵达' })] }), jsxRuntimeExports.jsx("div", { className: "ending-grid", children: ENDINGS.map(e => {
+	                            const done = unlocked.includes(e.id);
+	                            const ok = eligible.includes(e.id);
+	                            return (jsxRuntimeExports.jsxs("div", { className: 'ending-card' + (done ? ' done' : '') + (e.kind === 'hidden' ? ' hidden' : ''), children: [jsxRuntimeExports.jsxs("div", { className: "ec-head", children: [jsxRuntimeExports.jsx("span", { className: "ec-order", children: String(e.order).padStart(2, '0') }), jsxRuntimeExports.jsx("span", { className: 'chip ' + (done ? 'green' : ok ? 'cyan' : 'dim'), children: done ? '已达成' : ok ? '可达成' : '未解锁' })] }), jsxRuntimeExports.jsx("div", { className: "ec-title", children: done || ok || e.kind === 'main' ? '《' + e.title + '》' : '《待解锁的结局》' }), jsxRuntimeExports.jsx("div", { className: "ec-kind", children: e.kind === 'hidden' ? '隐藏结局' : '主要结局' }), jsxRuntimeExports.jsx("div", { className: "ec-desc", children: e.kind === 'hidden' && !done && !ok ? '击败 K-0、集齐全部创世主碎片、查看最终记忆档案后，才会浮现的选择。' : e.summary }), e.kind === 'hidden' && !done && (jsxRuntimeExports.jsxs("div", { className: "ec-req", children: [jsxRuntimeExports.jsxs("span", { className: 'chip ' + (fp.owned >= fp.total ? 'green' : 'dim'), children: ["\u788E\u7247 ", fp.owned, "/", fp.total] }), jsxRuntimeExports.jsxs("span", { className: 'chip ' + (finalSeen ? 'green' : 'dim'), children: ["\u6700\u7EC8\u6863\u6848 ", finalSeen ? '已阅' : '未阅'] }), jsxRuntimeExports.jsxs("span", { className: 'chip ' + (trust >= 75 ? 'green' : 'dim'), children: ["\u4FE1\u4EFB ", trust, "/75"] })] })), jsxRuntimeExports.jsxs("div", { className: "ec-actions", children: [jsxRuntimeExports.jsx("button", { className: "nxbtn small primary", disabled: !ok, onClick: () => choose(e.id), children: done ? '重看演出' : '做出选择' }), done && endingScene(e.id) && (jsxRuntimeExports.jsx("button", { className: "nxbtn small ghost", onClick: () => { play('click'); setPlaying(endingScene(String(e.id))); }, children: "\u56DE\u987E \u25B8" }))] })] }, e.id));
+	                        }) }), !chapterDone && (jsxRuntimeExports.jsxs("div", { className: "panel", style: { marginTop: 12 }, children: [jsxRuntimeExports.jsx("div", { className: "panel-title", children: "\u7EC8\u7AE0\u524D\u63D0\u793A" }), jsxRuntimeExports.jsx("div", { className: "dim", style: { fontSize: 12.5, lineHeight: 1.9 }, children: "\u4E09\u4E2A\u7ED3\u5C40\u90FD\u5FC5\u987B\u5728\u7EC8\u7AE0\u505A\u51FA\u9009\u62E9\u540E\u624D\u4F1A\u7ED3\u7B97\u3002\u666E\u901A\u7ED3\u5C40\u53EA\u8981\u6C42\u62B5\u8FBE\u7EC8\u7AE0\uFF1B\u9690\u85CF\u7ED3\u5C40\u8FD8\u9700\u8981 \u516D\u679A\u521B\u4E16\u4E3B\u788E\u7247\u3001\u6700\u7EC8\u8BB0\u5FC6\u6863\u6848\u3001\u4EE5\u53CA MIRA \u7684\u5B8C\u5168\u4FE1\u4EFB\u2014\u2014\u8FD9\u4E9B\u6761\u4EF6\u53EA\u80FD\u901A\u8FC7\u771F\u5B9E\u6E38\u73A9\u83B7\u5F97\uFF0C\u65E0\u6CD5\u7528\u8D21\u732E\u70B9\u8D2D\u4E70\u3002" })] })), chosen && jsxRuntimeExports.jsxs("div", { className: "panel", style: { marginTop: 12 }, children: [jsxRuntimeExports.jsx("div", { className: "panel-title", children: "\u5DF2\u8BB0\u5F55\u7ED3\u5C40" }), jsxRuntimeExports.jsxs("div", { style: { fontSize: 13.5 }, children: ["\u4F60\u9009\u62E9\u4E86\u300A", endingById(chosen)?.title, "\u300B\u2014\u2014\u7ED3\u5C40\u5DF2\u5199\u5165\u6863\u6848\uFF0C\u53EF\u968F\u65F6\u56DE\u6765\u91CD\u770B\u3002"] })] })] }), playing && jsxRuntimeExports.jsx(CinematicStage, { scenes: [playing], frameTitle: "\u7ED3\u5C40\u6F14\u51FA", replay: true, onDone: () => setPlaying(null) })] }));
 	}
 
 	const LAB_MISSIONS = [
@@ -5507,7 +8768,285 @@
 	    return (jsxRuntimeExports.jsx("div", { style: { fontFamily: 'Consolas, monospace', fontSize: 12.5 }, children: entries.map(([k, v]) => (jsxRuntimeExports.jsxs("div", { className: "pf-kv", style: { fontSize: 12, alignItems: 'flex-start' }, children: [jsxRuntimeExports.jsx("span", { className: "k", style: { flex: '0 0 42%' }, children: k }), jsxRuntimeExports.jsx("span", { className: "v", style: { flex: 1, textAlign: 'right', overflowWrap: 'anywhere', color: '#BDE9F2' }, children: v })] }, k))) }));
 	}
 
-	function BossPage() {
+	const PHASE_COLORS = ['#42D6D0', '#F3B75C', '#C9A7FF', '#FF5B64'];
+	/**
+	 * Boss「立绘」：纯 SVG 全息构造体（闸门守卫）。
+	 * 无外部图片资源，随阶段换色，受击抖动、破裂闪烁、击破坍塌。
+	 */
+	function BossAvatar({ phase, hpPct, hitKey, broken, defeated, codename }) {
+	    const [hit, setHit] = reactExports.useState(false);
+	    reactExports.useEffect(() => {
+	        if (!hitKey)
+	            return;
+	        setHit(true);
+	        const t = window.setTimeout(() => setHit(false), 420);
+	        return () => window.clearTimeout(t);
+	    }, [hitKey]);
+	    const color = PHASE_COLORS[Math.min(phase, PHASE_COLORS.length - 1)];
+	    const dim = hpPct <= 0;
+	    return (jsxRuntimeExports.jsxs("div", { className: 'boss-avatar phase-' + phase +
+	            (hit ? ' is-hit' : '') +
+	            (broken ? ' is-broken' : '') +
+	            (defeated || dim ? ' is-down' : ''), style: { ['--boss-color']: color }, "aria-label": 'Boss ' + codename, children: [jsxRuntimeExports.jsxs("svg", { viewBox: "0 0 240 240", className: "boss-svg", children: [jsxRuntimeExports.jsxs("defs", { children: [jsxRuntimeExports.jsxs("radialGradient", { id: "gateCore", cx: "50%", cy: "45%", r: "55%", children: [jsxRuntimeExports.jsx("stop", { offset: "0%", stopColor: "#FFFFFF" }), jsxRuntimeExports.jsx("stop", { offset: "42%", stopColor: color }), jsxRuntimeExports.jsx("stop", { offset: "100%", stopColor: "#04101A" })] }), jsxRuntimeExports.jsxs("linearGradient", { id: "gateBar", x1: "0", y1: "0", x2: "0", y2: "1", children: [jsxRuntimeExports.jsx("stop", { offset: "0%", stopColor: color, stopOpacity: "0.85" }), jsxRuntimeExports.jsx("stop", { offset: "100%", stopColor: color, stopOpacity: "0.15" })] })] }), jsxRuntimeExports.jsxs("g", { className: "gate-rings", children: [jsxRuntimeExports.jsx("circle", { cx: "120", cy: "120", r: "106", className: "ring ring-1" }), jsxRuntimeExports.jsx("circle", { cx: "120", cy: "120", r: "92", className: "ring ring-2" })] }), jsxRuntimeExports.jsxs("g", { className: "gate-pillars", children: [jsxRuntimeExports.jsx("rect", { x: "40", y: "66", width: "14", height: "108", rx: "7", className: "pillar" }), jsxRuntimeExports.jsx("rect", { x: "186", y: "66", width: "14", height: "108", rx: "7", className: "pillar" })] }), jsxRuntimeExports.jsx("polygon", { points: "120,36 190,78 190,162 120,204 50,162 50,78", className: "hex" }), jsxRuntimeExports.jsx("polygon", { points: "120,62 168,90 168,150 120,178 72,150 72,90", className: "hex-inner" }), jsxRuntimeExports.jsxs("g", { className: "gate-bars", children: [jsxRuntimeExports.jsx("rect", { x: "78", y: "96", width: "84", height: "5", rx: "2.5", className: "bar" }), jsxRuntimeExports.jsx("rect", { x: "78", y: "139", width: "84", height: "5", rx: "2.5", className: "bar" })] }), jsxRuntimeExports.jsx("circle", { cx: "120", cy: "120", r: "34", fill: "url(#gateCore)", className: "core" }), jsxRuntimeExports.jsx("circle", { cx: "120", cy: "120", r: "34", className: "core-ring" }), jsxRuntimeExports.jsx("text", { x: "120", y: "120", textAnchor: "middle", dominantBaseline: "central", className: "core-mark", children: codename.replace('-', '') }), jsxRuntimeExports.jsxs("g", { className: "gate-nodes", children: [jsxRuntimeExports.jsx("circle", { cx: "120", cy: "26", r: "4", className: "node" }), jsxRuntimeExports.jsx("circle", { cx: "206", cy: "120", r: "4", className: "node" }), jsxRuntimeExports.jsx("circle", { cx: "120", cy: "214", r: "4", className: "node" }), jsxRuntimeExports.jsx("circle", { cx: "34", cy: "120", r: "4", className: "node" })] }), jsxRuntimeExports.jsxs("g", { className: "gate-cracks", children: [jsxRuntimeExports.jsx("path", { d: "M92 78 L120 118 L104 150", className: "crack" }), jsxRuntimeExports.jsx("path", { d: "M150 84 L126 120 L146 156", className: "crack" })] })] }), jsxRuntimeExports.jsx("div", { className: "boss-avatar-shadow" })] }));
+	}
+
+	/** 碎片收集动画（全息归档） */
+	function FragmentGain({ def, onDone }) {
+	    reactExports.useEffect(() => {
+	        const t = window.setTimeout(onDone, 3800);
+	        return () => window.clearTimeout(t);
+	    }, [onDone]);
+	    return (jsxRuntimeExports.jsxs("div", { className: "frag-gain", onClick: onDone, role: "dialog", "aria-label": "\u83B7\u5F97\u521B\u4E16\u4E3B\u788E\u7247", children: [jsxRuntimeExports.jsx("div", { className: "fg-scan" }), jsxRuntimeExports.jsxs("div", { className: "fg-rings", children: [jsxRuntimeExports.jsx("span", {}), jsxRuntimeExports.jsx("span", {}), jsxRuntimeExports.jsx("span", {})] }), jsxRuntimeExports.jsx("div", { className: "fg-core", children: "\u25C7" }), jsxRuntimeExports.jsxs("div", { className: "fg-order", children: ["\u521B\u4E16\u4E3B\u788E\u7247 \u00B7 \u7B2C ", def.order, " \u679A"] }), jsxRuntimeExports.jsxs("div", { className: "fg-name", children: ["\u300A", def.title, "\u300B"] }), jsxRuntimeExports.jsx("div", { className: "fg-sub", children: def.subtitle }), jsxRuntimeExports.jsx("div", { className: "fg-quote", children: def.content }), jsxRuntimeExports.jsx("div", { className: "fg-hint", children: "\u5DF2\u5F52\u6863\u81F3\u8BB0\u5FC6\u6863\u6848\u9986 \u00B7 \u70B9\u51FB\u7EE7\u7EED" })] }));
+	}
+
+	function BossBattlePage() {
+	    const g = useGame();
+	    const boss = bossById(g.player.progress.currentBossId || '');
+	    const def = boss ? battleFor(boss.id) : undefined;
+	    if (!boss || !def)
+	        return null;
+	    return jsxRuntimeExports.jsx(BattleView, { boss: boss, def: def });
+	}
+	function BattleView({ boss, def }) {
+	    const g = useGame();
+	    const player = g.player;
+	    const respawnTick = g.respawnTick;
+	    const stored = reactExports.useMemo(() => normalizeBattleState((player.progress.battles || {})[boss.id], def), [player.progress.battles, boss.id, def]);
+	    const phaseIndex = Math.min(stored.phase, def.phases.length - 1);
+	    const phase = def.phases[phaseIndex];
+	    const totalChecks = phaseCheckCount(phase);
+	    const passedChecks = popcount(stored.phaseMask[phaseIndex] || 0);
+	    const pct = hpPercent(stored);
+	    const alreadyCleared = stored.cleared || (player.progress.bossesDone || []).includes(boss.id);
+	    const failures = player.progress.failedAttempts[boss.id] || 0;
+	    const locked = g.event.kind !== 'none';
+	    const [code, setCode] = reactExports.useState(phase.initialCode);
+	    const [term, setTerm] = reactExports.useState([]);
+	    const [running, setRunning] = reactExports.useState(false);
+	    const [submitting, setSubmitting] = reactExports.useState(false);
+	    const [verdict, setVerdict] = reactExports.useState(null);
+	    const [errorLine, setErrorLine] = reactExports.useState(null);
+	    const [hintLevel, setHintLevel] = reactExports.useState(1);
+	    const [pyState, setPyState] = reactExports.useState({ status: 'idle', phase: '' });
+	    const [hitKey, setHitKey] = reactExports.useState(0);
+	    const [counterKey, setCounterKey] = reactExports.useState(0);
+	    const [countered, setCountered] = reactExports.useState(false);
+	    const [broken, setBroken] = reactExports.useState(false);
+	    const [breakBanner, setBreakBanner] = reactExports.useState(null);
+	    const [popups, setPopups] = reactExports.useState([]);
+	    const [log, setLog] = reactExports.useState([]);
+	    const [introOpen, setIntroOpen] = reactExports.useState(false);
+	    const [outroOpen, setOutroOpen] = reactExports.useState(false);
+	    const [cleared, setCleared] = reactExports.useState(null);
+	    const [gain, setGain] = reactExports.useState(null);
+	    const popSeq = reactExports.useRef(1);
+	    const logSeq = reactExports.useRef(1);
+	    const scenes = bossScenesFor(boss.id);
+	    const fragDef = fragmentById(boss.fragmentId);
+	    const pushLines = reactExports.useCallback((lines) => setTerm(t => [...t.slice(-200), ...lines]), []);
+	    const addLog = reactExports.useCallback((text, kind) => {
+	        const id = logSeq.current++;
+	        setLog(l => [...l.slice(-30), { id, text, kind }]);
+	    }, []);
+	    const pushDamage = reactExports.useCallback((value) => {
+	        if (value <= 0)
+	            return;
+	        const id = popSeq.current++;
+	        setPopups(p => [...p, { id, value }]);
+	        window.setTimeout(() => setPopups(p => p.filter(x => x.id !== id)), 900);
+	    }, []);
+	    reactExports.useEffect(() => {
+	        warmUp();
+	        const un = onPyStatus(s => setPyState(s));
+	        return un;
+	    }, []);
+	    // 进入战斗：没有进度就创建满血状态（已有进度则续战）
+	    reactExports.useEffect(() => {
+	        g.beginBossBattle(boss.id);
+	        // eslint-disable-next-line react-hooks/exhaustive-deps
+	    }, [boss.id]);
+	    // 战前演出（首次）
+	    reactExports.useEffect(() => {
+	        setIntroOpen(!player.progress.storySeen['bossIntro_' + boss.id]);
+	        // eslint-disable-next-line react-hooks/exhaustive-deps
+	    }, [boss.id]);
+	    // 阶段变化 → 载入该阶段题目
+	    reactExports.useEffect(() => {
+	        const p = def.phases[Math.min(stored.phase, def.phases.length - 1)];
+	        setCode(p.initialCode);
+	        setVerdict(null);
+	        setErrorLine(null);
+	        setHintLevel(1);
+	        // eslint-disable-next-line react-hooks/exhaustive-deps
+	    }, [stored.phase, boss.id, respawnTick]);
+	    // Boss 反击 → 玩家受击反馈（红屏 + 抖动）
+	    reactExports.useEffect(() => {
+	        if (!counterKey)
+	            return;
+	        setCountered(true);
+	        const t = window.setTimeout(() => setCountered(false), 520);
+	        return () => window.clearTimeout(t);
+	    }, [counterKey]);
+	    const run = async () => {
+	        if (running || submitting || locked)
+	            return;
+	        const ck = checkUserCode(code);
+	        if (!ck.allowed) {
+	            pushLines([{ kind: 'cmd', text: 'python gate.py' }, { kind: 'err', text: '安全策略阻止：' + ck.reason }]);
+	            play('deny');
+	            return;
+	        }
+	        setRunning(true);
+	        setVerdict(null);
+	        setErrorLine(null);
+	        pushLines([{ kind: 'cmd', text: 'python gate.py' }, { kind: 'sys', text: '正在与 ' + boss.codename + ' 的防御比对……' }]);
+	        play('run');
+	        const r = await runPython(code, { timeoutMs: 5000 });
+	        setRunning(false);
+	        const stdout = filterMarkerLines(r.stdout || '');
+	        if (r.timedOut) {
+	            pushLines([{ kind: 'err', text: '执行超时：防御协议吞掉了你的进程。' }]);
+	            return;
+	        }
+	        if (!r.ok) {
+	            pushLines([
+	                ...(stdout.trim() ? [{ kind: 'out', text: stdout.replace(/\n$/, '') }] : []),
+	                { kind: 'err', text: r.error ? r.error.type + ': ' + r.error.message : '执行出错' },
+	            ]);
+	            if (r.error?.line)
+	                setErrorLine(r.error.line);
+	            return;
+	        }
+	        pushLines([{ kind: 'out', text: stdout.replace(/\n$/, '') || '(无输出)' }]);
+	    };
+	    /** 判题没有造成伤害：不判负，只让 Boss 反击（意识 / 容错），战斗继续 */
+	    const handleFail = (reason) => {
+	        play('error');
+	        setCounterKey(k => k + 1);
+	        const fp = g.recordFail(boss.id);
+	        g.bossCounterAttack(boss.id, def.counterDamage);
+	        addLog('未造成伤害（' + reason + '）· 意识 -' + def.counterDamage, 'fail');
+	        if (fp.triggered)
+	            g.toast('warn', '容错次数用尽——纠错者锁定你了！');
+	    };
+	    const submit = async () => {
+	        if (running || submitting || locked || alreadyCleared)
+	            return;
+	        const ck = checkUserCode(code);
+	        if (!ck.allowed) {
+	            pushLines([{ kind: 'cmd', text: 'python gate.py --attack' }, { kind: 'err', text: '安全策略阻止：' + ck.reason }]);
+	            play('deny');
+	            return;
+	        }
+	        setSubmitting(true);
+	        setVerdict(null);
+	        setErrorLine(null);
+	        play('run');
+	        pushLines([{ kind: 'cmd', text: 'python gate.py --attack （阶段 ' + (phaseIndex + 1) + '：' + phase.title + '）' }]);
+	        const combined = phase.judge.judgeKind === 'python'
+	            ? combineWithHarness(code, buildHarness(phase.judge.pythonChecks || []))
+	            : code;
+	        const r = await runPython(combined, { timeoutMs: 5000 });
+	        setSubmitting(false);
+	        if (r.timedOut) {
+	            pushLines([{ kind: 'err', text: '攻击超时：防御协议没有被破坏。' }]);
+	            handleFail('执行超时');
+	            return;
+	        }
+	        if (!r.ok) {
+	            pushLines([
+	                ...(filterMarkerLines(r.stdout || '').trim() ? [{ kind: 'out', text: filterMarkerLines(r.stdout).replace(/\n$/, '') }] : []),
+	                { kind: 'err', text: r.error ? r.error.type + ': ' + r.error.message : '执行出错' },
+	            ]);
+	            if (r.error?.line)
+	                setErrorLine(r.error.line);
+	            handleFail(r.error ? r.error.type : '执行出错');
+	            return;
+	        }
+	        const v = judgeRun(phase.judge, r);
+	        const res = resolveSubmission(def, stored, phaseIndex, v.checks);
+	        setVerdict(v);
+	        if (res.newPassed === 0) {
+	            pushLines([
+	                { kind: 'sys', text: '── 攻击结果 ──' },
+	                ...v.checks.map(c => ({ kind: (c.ok ? 'ok' : 'err'), text: (c.ok ? '✓ ' : '✗ ') + c.name + (c.detail ? ' —— ' + c.detail : '') })),
+	                { kind: 'err', text: '这次没有命中防御核心。' },
+	            ]);
+	            handleFail('判题未通过');
+	            return;
+	        }
+	        // 命中：按真实通过的测试数扣血
+	        g.applyBossDamage(boss.id, phaseIndex, {
+	            hpAfter: res.hpAfter,
+	            mask: res.mask,
+	            phaseAfter: res.phaseAfter,
+	            defeated: res.defeated,
+	        });
+	        setHitKey(k => k + 1);
+	        pushDamage(res.damage);
+	        pushLines([
+	            { kind: 'sys', text: '── 攻击结果 ──' },
+	            ...v.checks.map(c => ({ kind: (c.ok ? 'ok' : 'err'), text: (c.ok ? '✓ ' : '✗ ') + c.name })),
+	            { kind: 'ok', text: '命中防御核心：' + res.newPassed + '/' + res.total + ' 项测试通过，造成 ' + res.damage + ' 点伤害。' },
+	        ]);
+	        addLog('命中 · 通过 ' + res.newPassed + '/' + res.total + ' · 伤害 ' + res.damage, 'hit');
+	        play('success');
+	        if (res.phaseCleared) {
+	            setBroken(true);
+	            window.setTimeout(() => setBroken(false), 1300);
+	            setBreakBanner({ phase: phaseIndex + 1, title: phase.title });
+	            window.setTimeout(() => setBreakBanner(null), 1900);
+	            addLog('防御破裂 · 阶段 ' + (phaseIndex + 1) + '「' + phase.title + '」已击破', 'phase');
+	            play('alarm');
+	            pushLines([{ kind: 'sys', text: '── 防御破裂 · ' + phase.title + ' ──' }, { kind: 'ok', text: phase.summary }]);
+	            if (res.defeated) {
+	                const out = g.completeBoss(boss.id);
+	                addLog(boss.codename + ' 核心停止运转', 'win');
+	                play('levelup');
+	                if (out) {
+	                    setCleared(out);
+	                    const fd = fragmentForCollected(out.fragmentId);
+	                    if (fd)
+	                        setGain(fd);
+	                    else if (scenes.outro)
+	                        setOutroOpen(true);
+	                }
+	            }
+	        }
+	    };
+	    const resetCode = () => {
+	        setCode(phase.initialCode);
+	        setVerdict(null);
+	        setErrorLine(null);
+	        pushLines([{ kind: 'sys', text: '代码已恢复为本阶段的初始故障版本。' }]);
+	        play('click');
+	    };
+	    const hint = phase.hints[Math.min(hintLevel - 1, phase.hints.length - 1)];
+	    const knowledgeCards = phase.knowledge.map(knowledgeById).filter(Boolean);
+	    const opp = boss.opponentName || boss.codename;
+	    return (jsxRuntimeExports.jsxs("div", { className: 'page page-anim boss-page boss-battle bg-' + def.bg, style: { padding: '10px 14px', height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }, children: [jsxRuntimeExports.jsxs("div", { className: "hud", style: { marginBottom: 8 }, children: [jsxRuntimeExports.jsx("button", { className: "nxbtn small ghost", disabled: running || submitting, onClick: () => { play('click'); g.setCurrentBoss(null); g.nav('map'); }, children: "\u25C0 \u64A4\u9000\uFF08\u8FDB\u5EA6\u5DF2\u4FDD\u5B58\uFF09" }), jsxRuntimeExports.jsxs("div", { children: [jsxRuntimeExports.jsxs("div", { className: "hud-title", style: { color: '#C9A7FF' }, children: ["\u26A1 ", boss.codename, " \u00B7 ", boss.title] }), jsxRuntimeExports.jsxs("div", { className: "hud-sub", children: ["\u7B2C ", boss.chapter, " \u7AE0 \u00B7 \u9636\u6BB5 ", Math.min(phaseIndex + 1, def.phases.length), " / ", def.phases.length, " \u00B7 ", phase.title] })] }), jsxRuntimeExports.jsx("div", { className: "hud-spacer" }), jsxRuntimeExports.jsxs("div", { className: 'py-status ' + pyState.status, title: pyState.phase, children: [jsxRuntimeExports.jsx("span", { className: "pd" }), pyState.status === 'ready' ? 'PY ENGINE READY' : pyState.status === 'loading' ? '引擎加载中…' : pyState.status === 'error' ? '引擎错误' : 'ADAPTER STANDBY'] }), jsxRuntimeExports.jsxs("span", { className: 'hud-chip' + (player.consciousness <= 20 ? ' red warn-flash' : ''), children: ["\u610F\u8BC6 ", player.consciousness, "%"] }), jsxRuntimeExports.jsxs("span", { className: "hud-chip cyan", children: ["\u5BB9\u9519 ", Math.max(0, g.tolerance - failures), " / ", g.tolerance] })] }), jsxRuntimeExports.jsxs("div", { className: 'boss-arena phase-' + phaseIndex + (locked ? ' locked' : '') + (countered ? ' is-counter' : ''), children: [jsxRuntimeExports.jsxs("div", { className: "arena-grid", children: [jsxRuntimeExports.jsx(BossAvatar, { phase: phaseIndex, hpPct: pct, hitKey: hitKey, broken: broken, defeated: alreadyCleared && pct <= 0, codename: boss.codename }), jsxRuntimeExports.jsxs("div", { className: "boss-info", children: [jsxRuntimeExports.jsxs("div", { className: "boss-name-row", children: [jsxRuntimeExports.jsx("span", { className: "boss-name", children: boss.codename }), jsxRuntimeExports.jsx("span", { className: "boss-title", children: boss.title }), jsxRuntimeExports.jsxs("span", { className: "boss-chapter", children: ["\u7B2C ", boss.chapter, " \u7AE0"] })] }), jsxRuntimeExports.jsxs("div", { className: "boss-hp", children: [jsxRuntimeExports.jsxs("div", { className: "hp-track", children: [jsxRuntimeExports.jsx("div", { className: "hp-fill", style: { width: pct + '%' } }), def.phases.slice(1).map((_, i) => (jsxRuntimeExports.jsx("span", { className: "hp-tick", style: { left: ((i + 1) / def.phases.length * 100) + '%' } }, i)))] }), jsxRuntimeExports.jsxs("div", { className: "hp-readout", children: [jsxRuntimeExports.jsxs("span", { className: "hp-num", children: [stored.hp, " / ", stored.maxHp] }), jsxRuntimeExports.jsxs("span", { className: "hp-pct", children: [pct, "%"] })] })] }), jsxRuntimeExports.jsx("div", { className: "phase-pips", children: def.phases.map((p, i) => (jsxRuntimeExports.jsxs("span", { className: 'pip' + (i < stored.phase ? ' done' : i === phaseIndex && !alreadyCleared ? ' cur' : ''), children: [jsxRuntimeExports.jsx("b", { children: i + 1 }), " ", p.title] }, p.id))) }), jsxRuntimeExports.jsxs("div", { className: "boss-objective", children: [jsxRuntimeExports.jsx("span", { className: "bo-label", children: "\u5F53\u524D\u76EE\u6807" }), jsxRuntimeExports.jsx("span", { className: "bo-text", children: phase.objective })] }), jsxRuntimeExports.jsxs("div", { className: "boss-metrics", children: [jsxRuntimeExports.jsxs("span", { className: "metric", children: ["\u672C\u9636\u6BB5\u6D4B\u8BD5 ", jsxRuntimeExports.jsxs("b", { children: [passedChecks, " / ", totalChecks] })] }), jsxRuntimeExports.jsxs("span", { className: "metric", children: ["\u6218\u6597\u5931\u8BEF ", jsxRuntimeExports.jsx("b", { children: stored.failures })] }), jsxRuntimeExports.jsxs("span", { className: "metric", children: ["\u53CD\u51FB\u4F24\u5BB3 ", jsxRuntimeExports.jsxs("b", { children: ["-", def.counterDamage, " \u610F\u8BC6"] })] })] })] })] }), jsxRuntimeExports.jsx("div", { className: "damage-layer", children: popups.map(p => jsxRuntimeExports.jsxs("span", { className: "dmg-pop", children: ["-", p.value] }, p.id)) }), breakBanner && (jsxRuntimeExports.jsxs("div", { className: "break-banner", children: [jsxRuntimeExports.jsx("div", { className: "bb-main", children: "\u9632\u5FA1\u7834\u88C2" }), jsxRuntimeExports.jsxs("div", { className: "bb-sub", children: ["\u9636\u6BB5 ", breakBanner.phase, " \u00B7 ", breakBanner.title] })] })), locked && jsxRuntimeExports.jsx("div", { className: "arena-lock", children: "\u7D27\u6025\u4E8B\u4EF6\u8FDB\u884C\u4E2D\u2014\u2014\u6218\u6597\u5DF2\u6682\u505C" })] }), jsxRuntimeExports.jsxs("div", { className: "chlg-grid", style: { flex: 1, minHeight: 0 }, children: [jsxRuntimeExports.jsxs("div", { className: "chlg-left", style: { overflowY: 'auto' }, children: [jsxRuntimeExports.jsxs("div", { className: "panel task-block boss-block", children: [jsxRuntimeExports.jsxs("div", { className: "panel-title", children: ["\u9636\u6BB5\u4EFB\u52A1", jsxRuntimeExports.jsx("span", { className: "panel-tag", children: phase.id.toUpperCase() })] }), jsxRuntimeExports.jsxs("div", { className: "tb-item", children: [jsxRuntimeExports.jsx("div", { className: "tb-label", children: "\u8981\u4FEE\u590D\u7684\u6A21\u5757" }), jsxRuntimeExports.jsx("div", { className: "tb-text", children: phase.title })] }), jsxRuntimeExports.jsxs("div", { className: "tb-item", children: [jsxRuntimeExports.jsx("div", { className: "tb-label", children: "\u76EE\u6807" }), jsxRuntimeExports.jsx("div", { className: "tb-text", children: phase.objective })] })] }), jsxRuntimeExports.jsxs("div", { className: "panel", children: [jsxRuntimeExports.jsx("div", { className: "panel-title", children: "\u6545\u969C\u65E5\u5FD7" }), jsxRuntimeExports.jsx("div", { style: { fontFamily: 'Consolas, monospace', fontSize: 12.5, color: '#FF9BA2', lineHeight: 1.8, background: 'rgba(255,91,100,0.06)', border: '1px solid rgba(255,91,100,0.2)', borderRadius: 8, padding: '9px 11px', whiteSpace: 'pre-wrap' }, children: phase.faultLog })] }), jsxRuntimeExports.jsxs("div", { className: "panel", children: [jsxRuntimeExports.jsx("div", { className: "panel-title", children: "\u672C\u9636\u6BB5\u8003\u70B9" }), jsxRuntimeExports.jsx("div", { children: knowledgeCards.map(k => jsxRuntimeExports.jsx("span", { className: "chip cyan know-chip", children: k.title }, k.id)) })] }), jsxRuntimeExports.jsxs("div", { className: "panel", children: [jsxRuntimeExports.jsxs("div", { className: "panel-title", children: ["MIRA \u63D0\u793A", jsxRuntimeExports.jsxs("span", { className: "panel-tag", children: ["LEVEL ", hintLevel] })] }), jsxRuntimeExports.jsx("div", { style: { fontSize: 13, color: '#BFD8E8', lineHeight: 1.75 }, children: hint }), jsxRuntimeExports.jsx("button", { className: "nxbtn small ghost", style: { marginTop: 8 }, disabled: hintLevel >= phase.hints.length, onClick: () => { play('click'); setHintLevel(h => Math.min(h + 1, phase.hints.length)); }, children: "\u4E0B\u4E00\u6761\u63D0\u793A" })] })] }), jsxRuntimeExports.jsxs("div", { className: "chlg-center", children: [jsxRuntimeExports.jsxs("div", { className: "toolbar", children: [jsxRuntimeExports.jsxs("button", { className: "nxbtn", disabled: running || submitting || locked, onClick: run, children: [running ? jsxRuntimeExports.jsx("span", { className: "spinner" }) : '▶', " \u8FD0\u884C\u4EE3\u7801"] }), jsxRuntimeExports.jsx("button", { className: "nxbtn primary", disabled: running || submitting || locked || alreadyCleared, onClick: submit, children: "\u63D0\u4EA4\u653B\u51FB \u23CE" }), jsxRuntimeExports.jsx("button", { className: "nxbtn ghost", disabled: running || submitting || locked, onClick: resetCode, children: "\u91CD\u7F6E\u4EE3\u7801" }), jsxRuntimeExports.jsx("div", { className: "sp" }), jsxRuntimeExports.jsx("span", { className: "chip", children: "\u5224\u9898\u901A\u8FC7\u624D\u6389\u8840" })] }), jsxRuntimeExports.jsx("div", { className: "code-frame", style: { flex: 1 }, children: jsxRuntimeExports.jsx(CodeEditor, { value: code, onChange: setCode, errorLine: errorLine, onRun: run, readOnly: running || submitting || alreadyCleared, fontSize: 15 }) }), verdict && (jsxRuntimeExports.jsx("div", { className: 'result-banner ' + (verdict.passed ? 'ok' : 'fail'), children: verdict.passed ? '✓ 全部测试通过' : verdict.timedOut ? '✗ 执行超时' : verdict.error ? '✗ 执行出错：' + verdict.error.type : '✗ 测试未全部通过' }))] }), jsxRuntimeExports.jsxs("div", { className: "chlg-right", style: { overflowY: 'auto' }, children: [jsxRuntimeExports.jsxs("div", { className: "panel", children: [jsxRuntimeExports.jsxs("div", { className: "panel-title", children: ["\u6218\u6597\u8BB0\u5F55", jsxRuntimeExports.jsx("span", { className: "panel-tag", children: log.length })] }), log.length === 0 && jsxRuntimeExports.jsx("div", { className: "dim", style: { fontSize: 12.5 }, children: "\u8FD8\u6CA1\u6709\u4EA4\u950B\u8BB0\u5F55\u3002\u63D0\u4EA4\u4E00\u6B21\u653B\u51FB\u8BD5\u8BD5\u3002" }), log.map(l => (jsxRuntimeExports.jsx("div", { className: 'battle-log-line ' + l.kind, children: l.text }, l.id)))] }), jsxRuntimeExports.jsxs("div", { className: "panel", children: [jsxRuntimeExports.jsx("div", { className: "panel-title", children: "\u751F\u547D\u4F53\u5F81" }), jsxRuntimeExports.jsx(PlayerStatus, { showTolerance: true })] })] })] }), jsxRuntimeExports.jsx("div", { className: "chlg-bottom", children: jsxRuntimeExports.jsx(Terminal, { lines: term, maxHeight: 170, title: opp + ' 对抗终端 · ' + boss.codename }) }), introOpen && scenes.intro && (jsxRuntimeExports.jsx(CinematicStage, { scenes: scenes.intro, eventId: 'boss-' + boss.id, frameTitle: opp + ' · 遭遇', onDone: () => { setIntroOpen(false); g.markStory('bossIntro_' + boss.id); } })), cleared && (jsxRuntimeExports.jsx("div", { className: "overlay", style: { background: 'rgba(10,4,20,0.78)', backdropFilter: 'blur(6px)' }, children: jsxRuntimeExports.jsxs("div", { className: "complete-panel boss-complete", children: [jsxRuntimeExports.jsx("div", { className: "cp-ico", style: { color: '#C9A7FF' }, children: "\u26A1" }), jsxRuntimeExports.jsxs("div", { className: "cp-title", children: [opp, " \u5DF2\u51FB\u7834"] }), jsxRuntimeExports.jsxs("div", { className: "cp-sub", children: [boss.codename, " \u00B7 ", boss.title] }), jsxRuntimeExports.jsxs("div", { className: "cp-rewards", children: [jsxRuntimeExports.jsxs("div", { className: "cp-reward", children: [jsxRuntimeExports.jsxs("div", { className: "rv", children: ["+", cleared.expGained] }), jsxRuntimeExports.jsx("div", { className: "rl", children: "\u7ECF\u9A8C" })] }), jsxRuntimeExports.jsxs("div", { className: "cp-reward", children: [jsxRuntimeExports.jsx("div", { className: "rv", children: fragDef ? fragDef.title : '碎片' }), jsxRuntimeExports.jsx("div", { className: "rl", children: "\u521B\u4E16\u4E3B\u788E\u7247" })] }), jsxRuntimeExports.jsxs("div", { className: "cp-reward", children: [jsxRuntimeExports.jsxs("div", { className: "rv", children: ["Lv.", cleared.newLevel] }), jsxRuntimeExports.jsx("div", { className: "rl", children: "\u7B49\u7EA7" })] })] }), fragDef && (jsxRuntimeExports.jsxs("div", { className: "cp-summary", children: [jsxRuntimeExports.jsxs("div", { className: "cs-label", children: ["\u83B7\u5F97\u788E\u7247\u300A", fragDef.title, "\u300B"] }), fragDef.content] })), (() => {
+	                            const ch = chapterById('ch' + boss.chapter);
+	                            const lvls = ch ? levelsOfServer(ch.serverId) : [];
+	                            const stars = lvls.reduce((s, l) => s + (player.progress.stars[l.id] || 0), 0);
+	                            const fails = lvls.reduce((s, l) => s + (player.progress.failedAttempts[l.id] || 0), 0);
+	                            const hints = lvls.reduce((s, l) => s + (player.progress.hintLevels[l.id] || 0), 0);
+	                            const know = [...new Set(lvls.flatMap(l => l.knowledge))];
+	                            const mastered = know.filter(k => player.progress.knowledge.includes(k));
+	                            const sett = buildChapterSettlement({
+	                                chapter: boss.chapter, levels: lvls.length, stars, fails, hints,
+	                                credits: cleared.credits, exp: cleared.expGained, trust: cleared.trust,
+	                                knowledgeIds: know, masteredIds: mastered, unlocks: cleared.unlocks,
+	                            });
+	                            const acc = lvls.length ? Math.round((stars / (lvls.length * 3)) * 100) : 0;
+	                            const unmastered = know.filter(k => !mastered.includes(k));
+	                            const bugs = topBugsForChapter(boss.chapter, player.meta.bugCodex, 3);
+	                            const phases = player.progress.battles?.[boss.id]?.phaseMask || [];
+	                            return (jsxRuntimeExports.jsxs("div", { className: "chapter-settle", children: [jsxRuntimeExports.jsxs("div", { className: "cs-grid", children: [jsxRuntimeExports.jsxs("div", { className: "cs-cell", children: [jsxRuntimeExports.jsx("div", { className: "k", children: "\u7AE0\u8282\u8BC4\u4EF7" }), jsxRuntimeExports.jsx("div", { className: "v gold", children: sett.grade })] }), jsxRuntimeExports.jsxs("div", { className: "cs-cell", children: [jsxRuntimeExports.jsx("div", { className: "k", children: "\u7ECF\u9A8C" }), jsxRuntimeExports.jsxs("div", { className: "v", children: ["+", sett.exp] })] }), jsxRuntimeExports.jsxs("div", { className: "cs-cell", children: [jsxRuntimeExports.jsx("div", { className: "k", children: "\u8D21\u732E\u70B9" }), jsxRuntimeExports.jsxs("div", { className: "v gold", children: ["+", sett.credits] })] }), jsxRuntimeExports.jsxs("div", { className: "cs-cell", children: [jsxRuntimeExports.jsx("div", { className: "k", children: "\u788E\u7247" }), jsxRuntimeExports.jsx("div", { className: "v cyan", children: fragDef ? fragDef.title : '—' })] }), jsxRuntimeExports.jsxs("div", { className: "cs-cell", children: [jsxRuntimeExports.jsx("div", { className: "k", children: "\u6B63\u786E\u7387" }), jsxRuntimeExports.jsxs("div", { className: "v", children: [acc, "%"] })] })] }), jsxRuntimeExports.jsxs("div", { className: "cs-know", children: [jsxRuntimeExports.jsx("span", { className: "dim", style: { fontSize: 11.5 }, children: "\u77E5\u8BC6\u70B9\u8868\u73B0\uFF1A" }), sett.knowledge.map(k => jsxRuntimeExports.jsxs("span", { className: 'chip ' + (k.ok ? 'green' : 'dim'), children: [k.id, k.ok ? ' ✓' : ''] }, k.id))] }), phases.length > 0 && (jsxRuntimeExports.jsxs("div", { className: "cs-know", children: [jsxRuntimeExports.jsx("span", { className: "dim", style: { fontSize: 11.5 }, children: "Boss \u5404\u9636\u6BB5\uFF1A" }), phases.map((m, i) => (jsxRuntimeExports.jsxs("span", { className: 'chip ' + (m > 0 ? 'green' : 'dim'), children: ["\u7B2C", i + 1, "\u9636\u6BB5", m > 0 ? ' ✓' : ' 未突破'] }, i)))] })), bugs.length > 0 && (jsxRuntimeExports.jsxs("div", { className: "cs-know", children: [jsxRuntimeExports.jsx("span", { className: "dim", style: { fontSize: 11.5 }, children: "\u672C\u7AE0\u5E38\u89C1\u9519\u8BEF\uFF1A" }), bugs.map(b => jsxRuntimeExports.jsxs("span", { className: "chip red", children: [b.error, " \u00B7 ", b.title] }, b.id))] })), unmastered.length > 0 ? (jsxRuntimeExports.jsxs("div", { className: "cs-know", children: [jsxRuntimeExports.jsx("span", { className: "dim", style: { fontSize: 11.5 }, children: "\u5C1A\u672A\u638C\u63E1\uFF1A" }), unmastered.map(k => jsxRuntimeExports.jsx("span", { className: "chip orange", children: k }, k))] })) : (jsxRuntimeExports.jsx("div", { className: "cs-unlocks", children: "\u672C\u7AE0\u77E5\u8BC6\u70B9\u5DF2\u5168\u90E8\u638C\u63E1\u3002" })), unmastered.length > 0 && (jsxRuntimeExports.jsx("div", { className: "vd-actions", style: { marginTop: 8 }, children: jsxRuntimeExports.jsx("button", { className: "nxbtn small", onClick: () => { play('click'); g.nav('lab'); }, children: "\u524D\u5F80\u7F16\u7A0B\u5B9E\u9A8C\u5BA4\u505A\u8865\u5145\u7EC3\u4E60 \u25B8" }) })), sett.unlocks.length > 0 && jsxRuntimeExports.jsxs("div", { className: "cs-unlocks", children: ["\u65B0\u89E3\u9501\uFF1A", sett.unlocks.join('、')] })] }));
+	                        })(), jsxRuntimeExports.jsxs("div", { className: "cp-btns", children: [scenes.outro && (jsxRuntimeExports.jsx("button", { className: "nxbtn ghost", onClick: () => { play('click'); setOutroOpen(true); }, children: "\u91CD\u770B\u672C\u7AE0\u7ED3\u5C3E" })), jsxRuntimeExports.jsx("button", { className: "nxbtn primary", onClick: () => { play('click'); g.setCurrentBoss(null); g.nav('map'); }, children: "\u8FD4\u56DE\u5730\u56FE" })] })] }) })), gain && (jsxRuntimeExports.jsx(FragmentGain, { def: gain, onDone: () => { setGain(null); if (scenes.outro)
+	                    setOutroOpen(true); } })), outroOpen && scenes.outro && (jsxRuntimeExports.jsx(CinematicStage, { scenes: scenes.outro, eventId: 'boss-' + boss.id, frameTitle: opp + ' · 击破之后', onDone: () => setOutroOpen(false) }))] }));
+	}
+
+	function BossChallengePage() {
 	    const g = useGame();
 	    const boss = bossById(g.player.progress.currentBossId || '');
 	    const player = g.player;
@@ -5518,7 +9057,9 @@
 	    const [verdict, setVerdict] = reactExports.useState(null);
 	    const [introOpen, setIntroOpen] = reactExports.useState(false);
 	    const [echoOpen, setEchoOpen] = reactExports.useState(false);
+	    const [outroOpen, setOutroOpen] = reactExports.useState(false);
 	    const [cleared, setCleared] = reactExports.useState(null);
+	    const [gain, setGain] = reactExports.useState(null);
 	    const [hintLevel, setHintLevel] = reactExports.useState(1);
 	    const [pyState, setPyState] = reactExports.useState({ status: 'idle', phase: '' });
 	    const [errorLine, setErrorLine] = reactExports.useState(null);
@@ -5545,6 +9086,8 @@
 	    const pushLines = reactExports.useCallback((lines) => setTerm(t => [...t.slice(-200), ...lines]), []);
 	    if (!boss)
 	        return null;
+	    const opp = boss.opponentName || 'ECHO';
+	    const bossScenes = bossScenesFor(boss.id);
 	    const run = async () => {
 	        if (running || submitting)
 	            return;
@@ -5618,28 +9161,54 @@
 	            setVerdict({ passed: true, checks: v.checks });
 	            if (res) {
 	                setCleared(res);
+	                const fd = fragmentForCollected(res.fragmentId);
+	                if (fd)
+	                    setGain(fd);
 	                pushLines([
-	                    { kind: 'sys', text: '── ECHO 分支持续崩塌 ──' },
+	                    { kind: 'sys', text: '── ' + opp + ' 核心逻辑修复 ──' },
 	                    ...v.checks.map(c => ({ kind: 'ok', text: '✓ ' + c.name })),
-	                    { kind: 'ok', text: '⚡ ECHO 分支被击破！' },
+	                    { kind: 'ok', text: '⚡ ' + opp + ' 已被击破！' },
 	                ]);
 	                play('levelup');
+	                if (bossScenes.outro)
+	                    setOutroOpen(true);
 	            }
 	        }
 	        else {
 	            pushLines([
 	                { kind: 'sys', text: '── 章节测试未通过 ──' },
 	                ...v.checks.map(c => ({ kind: (c.ok ? 'ok' : 'err'), text: (c.ok ? '✓ ' : '✗ ') + c.name + (c.detail ? ' —— ' + c.detail : '') })),
-	                { kind: 'err', text: 'ECHO 还在运行。再试一次。' },
+	                { kind: 'err', text: opp + ' 还在运行。再试一次。' },
 	            ]);
 	            setVerdict(v);
 	            play('error');
 	        }
 	    };
 	    const hint = boss.hints[Math.min(hintLevel - 1, boss.hints.length - 1)];
-	    const fragment = MEMORY_FRAGMENTS.find(f => f.id === boss.fragmentId);
+	    const fragDef = fragmentById(boss.fragmentId);
+	    const legacyFrag = MEMORY_FRAGMENTS.find(f => f.id === boss.fragmentId);
+	    const fragTitle = fragDef?.title || legacyFrag?.title || '记忆碎片';
+	    const fragContent = fragDef?.content || legacyFrag?.content || '';
 	    const knowledgeCards = boss.knowledge.map(knowledgeById).filter(Boolean);
-	    return (jsxRuntimeExports.jsxs("div", { className: "page page-anim boss-page", style: { padding: '10px 14px', height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }, children: [jsxRuntimeExports.jsxs("div", { className: "hud", style: { marginBottom: 8 }, children: [jsxRuntimeExports.jsx("button", { className: "nxbtn small ghost", disabled: running || submitting, onClick: () => { play('click'); g.nav('map'); }, children: "\u25C0 \u670D\u52A1\u5668\u5730\u56FE" }), jsxRuntimeExports.jsxs("div", { children: [jsxRuntimeExports.jsxs("div", { className: "hud-title", style: { color: '#C9A7FF' }, children: ["\u26A1 ", boss.title] }), jsxRuntimeExports.jsxs("div", { className: "hud-sub", children: ["ECHO \u5206\u652F \u00B7 \u7B2C ", boss.chapter, " \u7AE0\u7AE0\u8282\u6D4B\u8BD5 \u00B7 ", boss.codename] })] }), jsxRuntimeExports.jsx("div", { className: "hud-spacer" }), jsxRuntimeExports.jsxs("div", { className: 'py-status ' + pyState.status, title: pyState.phase, children: [jsxRuntimeExports.jsx("span", { className: "pd" }), pyState.status === 'ready' ? 'PY ENGINE READY' : pyState.status === 'loading' ? '引擎加载中…' : pyState.status === 'error' ? '引擎错误' : 'ADAPTER STANDBY'] }), jsxRuntimeExports.jsxs("span", { className: "hud-chip", children: ["\u610F\u8BC6 ", player.consciousness, "%"] })] }), jsxRuntimeExports.jsxs("div", { className: "chlg-grid", style: { flex: 1, minHeight: 0 }, children: [jsxRuntimeExports.jsxs("div", { className: "chlg-left", style: { overflowY: 'auto' }, children: [jsxRuntimeExports.jsxs("div", { className: "panel task-block boss-block", children: [jsxRuntimeExports.jsxs("div", { className: "panel-title", children: ["\u7AE0\u8282\u6D4B\u8BD5", jsxRuntimeExports.jsx("span", { className: "panel-tag", children: boss.codename })] }), jsxRuntimeExports.jsxs("div", { className: "tb-item", children: [jsxRuntimeExports.jsx("div", { className: "tb-label", children: "ECHO \u7684\u7834\u7EFD" }), jsxRuntimeExports.jsx("div", { className: "tb-text", children: boss.fault })] }), jsxRuntimeExports.jsxs("div", { className: "tb-item", children: [jsxRuntimeExports.jsx("div", { className: "tb-label", children: "\u6311\u6218\u76EE\u6807" }), jsxRuntimeExports.jsx("div", { className: "tb-text", children: boss.goal })] }), jsxRuntimeExports.jsxs("div", { className: "tb-item", children: [jsxRuntimeExports.jsx("div", { className: "tb-label", children: "\u6B63\u786E\u884C\u4E3A" }), jsxRuntimeExports.jsx("div", { className: "tb-text warn", children: boss.behavior })] })] }), jsxRuntimeExports.jsxs("div", { className: "panel", children: [jsxRuntimeExports.jsx("div", { className: "panel-title", children: "\u672C\u7AE0\u77E5\u8BC6\u70B9\u6574\u5408" }), jsxRuntimeExports.jsx("div", { children: knowledgeCards.map(k => jsxRuntimeExports.jsx("span", { className: "chip cyan know-chip", children: k.title }, k.id)) })] }), jsxRuntimeExports.jsxs("div", { className: "panel", children: [jsxRuntimeExports.jsxs("div", { className: "panel-title", children: ["MIRA \u63D0\u793A", jsxRuntimeExports.jsxs("span", { className: "panel-tag", children: ["LEVEL ", hintLevel] })] }), jsxRuntimeExports.jsx("div", { style: { fontSize: 13, color: '#BFD8E8', lineHeight: 1.75 }, children: hint }), jsxRuntimeExports.jsx("button", { className: "nxbtn small ghost", style: { marginTop: 8 }, disabled: hintLevel >= boss.hints.length, onClick: () => { play('click'); setHintLevel(h => Math.min(h + 1, boss.hints.length)); }, children: "\u4E0B\u4E00\u6761\u63D0\u793A" })] })] }), jsxRuntimeExports.jsxs("div", { className: "chlg-center", children: [jsxRuntimeExports.jsxs("div", { className: "toolbar", children: [jsxRuntimeExports.jsxs("button", { className: "nxbtn", disabled: running || submitting, onClick: run, children: [running ? jsxRuntimeExports.jsx("span", { className: "spinner" }) : '▶', " \u8FD0\u884C\u4EE3\u7801"] }), jsxRuntimeExports.jsx("button", { className: "nxbtn primary", disabled: running || submitting || !!cleared, onClick: submit, children: "\u6311\u6218 ECHO \u23CE" }), jsxRuntimeExports.jsx("div", { className: "sp" }), jsxRuntimeExports.jsx("span", { className: "chip", children: "\u7AE0\u8282\u6D4B\u8BD5 \u00B7 \u4E0D\u6D88\u8017\u5BB9\u9519" })] }), jsxRuntimeExports.jsx("div", { className: "code-frame", style: { flex: 1 }, children: jsxRuntimeExports.jsx(CodeEditor, { value: code, onChange: setCode, errorLine: errorLine, onRun: run, readOnly: running || submitting, fontSize: 15 }) }), verdict && (jsxRuntimeExports.jsx("div", { className: 'result-banner ' + (verdict.passed ? 'ok' : 'fail'), children: verdict.passed ? '⚡ ECHO 分支已被击破' : verdict.timedOut ? '✗ 挑战超时' : verdict.error ? '✗ 执行出错：' + verdict.error.type : '✗ 章节测试未通过' }))] }), jsxRuntimeExports.jsxs("div", { className: "chlg-right", style: { overflowY: 'auto' }, children: [jsxRuntimeExports.jsxs("div", { className: "panel boss-echo-panel", children: [jsxRuntimeExports.jsxs("div", { className: "panel-title", children: ["ECHO", jsxRuntimeExports.jsx("span", { className: "panel-tag", children: "\u56DE\u54CD" })] }), jsxRuntimeExports.jsxs("div", { style: { fontSize: 13, color: '#C9A7FF', lineHeight: 1.8 }, children: ["\u300C", cleared ? '……原来，我一直在等一个能修好我的人。' : '你能修好别人，也能修好自己吗？', "\u300D"] })] }), jsxRuntimeExports.jsxs("div", { className: "panel", children: [jsxRuntimeExports.jsx("div", { className: "panel-title", children: "\u751F\u547D\u4F53\u5F81" }), jsxRuntimeExports.jsx(PlayerStatus, { showTolerance: true })] }), jsxRuntimeExports.jsxs("div", { className: "panel", children: [jsxRuntimeExports.jsx("div", { className: "panel-title", children: "\u6389\u843D" }), jsxRuntimeExports.jsxs("div", { style: { fontSize: 12.5, color: '#BFD8E8', lineHeight: 1.8 }, children: ["\u00B7 \u7ECF\u9A8C +", boss.rewardExp, jsxRuntimeExports.jsx("br", {}), "\u00B7 \u8BB0\u5FC6\u788E\u7247\uFF1A", fragment ? fragment.title : boss.fragmentId, jsxRuntimeExports.jsx("br", {}), "\u00B7 ECHO \u6765\u6E90\u5267\u60C5\u7247\u6BB5"] })] })] })] }), jsxRuntimeExports.jsx("div", { className: "chlg-bottom", children: jsxRuntimeExports.jsx(Terminal, { lines: term, maxHeight: 190, title: 'ECHO 镜像终端 · ' + boss.codename }) }), introOpen && (jsxRuntimeExports.jsx(DialogSystem, { nodes: boss.intro, speedMs: player.settings.typewriterMs, animEnabled: player.settings.animations, frameTitle: 'ECHO 分支 · ' + boss.codename, onSeen: id => g.markStory(id), onDone: () => { setIntroOpen(false); g.markStory('bossIntro_' + boss.id); } })), cleared && (jsxRuntimeExports.jsx("div", { className: "overlay", style: { background: 'rgba(10,4,20,0.78)', backdropFilter: 'blur(6px)' }, children: jsxRuntimeExports.jsxs("div", { className: "complete-panel boss-complete", children: [jsxRuntimeExports.jsx("div", { className: "cp-ico", style: { color: '#C9A7FF' }, children: "\u26A1" }), jsxRuntimeExports.jsx("div", { className: "cp-title", children: "ECHO \u5206\u652F\u51FB\u7834" }), jsxRuntimeExports.jsxs("div", { className: "cp-sub", children: [boss.codename, " \u00B7 ", boss.title] }), jsxRuntimeExports.jsxs("div", { className: "cp-rewards", children: [jsxRuntimeExports.jsxs("div", { className: "cp-reward", children: [jsxRuntimeExports.jsxs("div", { className: "rv", children: ["+", cleared.expGained] }), jsxRuntimeExports.jsx("div", { className: "rl", children: "\u7ECF\u9A8C" })] }), jsxRuntimeExports.jsxs("div", { className: "cp-reward", children: [jsxRuntimeExports.jsx("div", { className: "rv", children: fragment ? fragment.title : '碎片' }), jsxRuntimeExports.jsx("div", { className: "rl", children: "\u8BB0\u5FC6\u788E\u7247" })] }), jsxRuntimeExports.jsxs("div", { className: "cp-reward", children: [jsxRuntimeExports.jsxs("div", { className: "rv", children: ["Lv.", cleared.newLevel] }), jsxRuntimeExports.jsx("div", { className: "rl", children: "\u7B49\u7EA7" })] })] }), fragment && (jsxRuntimeExports.jsxs("div", { className: "cp-summary", children: [jsxRuntimeExports.jsx("div", { className: "cs-label", children: "\u83B7\u5F97\u7684\u8BB0\u5FC6\u788E\u7247" }), fragment.content] })), jsxRuntimeExports.jsxs("div", { className: "cp-btns", children: [jsxRuntimeExports.jsx("button", { className: "nxbtn ghost", onClick: () => { play('click'); setEchoOpen(true); }, children: "\u67E5\u770B ECHO \u6765\u6E90\u5267\u60C5" }), jsxRuntimeExports.jsx("button", { className: "nxbtn primary", onClick: () => { play('click'); g.setCurrentBoss(null); g.nav('map'); }, children: "\u8FD4\u56DE\u5730\u56FE" })] })] }) })), echoOpen && (jsxRuntimeExports.jsx(DialogSystem, { nodes: boss.echoStory, speedMs: player.settings.typewriterMs, animEnabled: player.settings.animations, frameTitle: "ECHO \u6765\u6E90 \u00B7 \u6B8B\u7247", onSeen: id => g.markStory(id), onDone: () => { setEchoOpen(false); } }))] }));
+	    return (jsxRuntimeExports.jsxs("div", { className: "page page-anim boss-page", style: { padding: '10px 14px', height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }, children: [jsxRuntimeExports.jsxs("div", { className: "hud", style: { marginBottom: 8 }, children: [jsxRuntimeExports.jsx("button", { className: "nxbtn small ghost", disabled: running || submitting, onClick: () => { play('click'); g.nav('map'); }, children: "\u25C0 \u670D\u52A1\u5668\u5730\u56FE" }), jsxRuntimeExports.jsxs("div", { children: [jsxRuntimeExports.jsxs("div", { className: "hud-title", style: { color: '#C9A7FF' }, children: ["\u26A1 ", boss.title] }), jsxRuntimeExports.jsxs("div", { className: "hud-sub", children: ["\u7AE0\u8282 Boss \u00B7 \u7B2C ", boss.chapter, " \u7AE0 \u00B7 ", boss.codename] })] }), jsxRuntimeExports.jsx("div", { className: "hud-spacer" }), jsxRuntimeExports.jsxs("div", { className: 'py-status ' + pyState.status, title: pyState.phase, children: [jsxRuntimeExports.jsx("span", { className: "pd" }), pyState.status === 'ready' ? 'PY ENGINE READY' : pyState.status === 'loading' ? '引擎加载中…' : pyState.status === 'error' ? '引擎错误' : 'ADAPTER STANDBY'] }), jsxRuntimeExports.jsxs("span", { className: "hud-chip", children: ["\u610F\u8BC6 ", player.consciousness, "%"] })] }), jsxRuntimeExports.jsxs("div", { className: "chlg-grid", style: { flex: 1, minHeight: 0 }, children: [jsxRuntimeExports.jsxs("div", { className: "chlg-left", style: { overflowY: 'auto' }, children: [jsxRuntimeExports.jsxs("div", { className: "panel task-block boss-block", children: [jsxRuntimeExports.jsxs("div", { className: "panel-title", children: ["\u7AE0\u8282 Boss \u6218", jsxRuntimeExports.jsx("span", { className: "panel-tag", children: boss.codename })] }), jsxRuntimeExports.jsxs("div", { className: "tb-item", children: [jsxRuntimeExports.jsxs("div", { className: "tb-label", children: [opp, " \u7684\u7834\u7EFD"] }), jsxRuntimeExports.jsx("div", { className: "tb-text", children: boss.fault })] }), jsxRuntimeExports.jsxs("div", { className: "tb-item", children: [jsxRuntimeExports.jsx("div", { className: "tb-label", children: "\u6311\u6218\u76EE\u6807" }), jsxRuntimeExports.jsx("div", { className: "tb-text", children: boss.goal })] }), jsxRuntimeExports.jsxs("div", { className: "tb-item", children: [jsxRuntimeExports.jsx("div", { className: "tb-label", children: "\u6B63\u786E\u884C\u4E3A" }), jsxRuntimeExports.jsx("div", { className: "tb-text warn", children: boss.behavior })] })] }), jsxRuntimeExports.jsxs("div", { className: "panel", children: [jsxRuntimeExports.jsx("div", { className: "panel-title", children: "\u672C\u7AE0\u77E5\u8BC6\u70B9\u6574\u5408" }), jsxRuntimeExports.jsx("div", { children: knowledgeCards.map(k => jsxRuntimeExports.jsx("span", { className: "chip cyan know-chip", children: k.title }, k.id)) })] }), jsxRuntimeExports.jsxs("div", { className: "panel", children: [jsxRuntimeExports.jsxs("div", { className: "panel-title", children: ["MIRA \u63D0\u793A", jsxRuntimeExports.jsxs("span", { className: "panel-tag", children: ["LEVEL ", hintLevel] })] }), jsxRuntimeExports.jsx("div", { style: { fontSize: 13, color: '#BFD8E8', lineHeight: 1.75 }, children: hint }), jsxRuntimeExports.jsx("button", { className: "nxbtn small ghost", style: { marginTop: 8 }, disabled: hintLevel >= boss.hints.length, onClick: () => { play('click'); setHintLevel(h => Math.min(h + 1, boss.hints.length)); }, children: "\u4E0B\u4E00\u6761\u63D0\u793A" })] })] }), jsxRuntimeExports.jsxs("div", { className: "chlg-center", children: [jsxRuntimeExports.jsxs("div", { className: "toolbar", children: [jsxRuntimeExports.jsxs("button", { className: "nxbtn", disabled: running || submitting, onClick: run, children: [running ? jsxRuntimeExports.jsx("span", { className: "spinner" }) : '▶', " \u8FD0\u884C\u4EE3\u7801"] }), jsxRuntimeExports.jsxs("button", { className: "nxbtn primary", disabled: running || submitting || !!cleared, onClick: submit, children: ["\u6311\u6218 ", opp, " \u23CE"] }), jsxRuntimeExports.jsx("div", { className: "sp" }), jsxRuntimeExports.jsx("span", { className: "chip", children: "\u7AE0\u8282\u6D4B\u8BD5 \u00B7 \u4E0D\u6D88\u8017\u5BB9\u9519" })] }), jsxRuntimeExports.jsx("div", { className: "code-frame", style: { flex: 1 }, children: jsxRuntimeExports.jsx(CodeEditor, { value: code, onChange: setCode, errorLine: errorLine, onRun: run, readOnly: running || submitting, fontSize: 15 }) }), verdict && (jsxRuntimeExports.jsx("div", { className: 'result-banner ' + (verdict.passed ? 'ok' : 'fail'), children: verdict.passed ? '⚡ ECHO 分支已被击破' : verdict.timedOut ? '✗ 挑战超时' : verdict.error ? '✗ 执行出错：' + verdict.error.type : '✗ 章节测试未通过' }))] }), jsxRuntimeExports.jsxs("div", { className: "chlg-right", style: { overflowY: 'auto' }, children: [jsxRuntimeExports.jsxs("div", { className: "panel boss-echo-panel", children: [jsxRuntimeExports.jsxs("div", { className: "panel-title", children: [opp, jsxRuntimeExports.jsx("span", { className: "panel-tag", children: boss.title })] }), jsxRuntimeExports.jsxs("div", { style: { fontSize: 13, color: '#C9A7FF', lineHeight: 1.8 }, children: ["\u300C", cleared ? '……原来，我一直在等一个能修好我的人。' : '你能修好别人，也能修好自己吗？', "\u300D"] })] }), jsxRuntimeExports.jsxs("div", { className: "panel", children: [jsxRuntimeExports.jsx("div", { className: "panel-title", children: "\u751F\u547D\u4F53\u5F81" }), jsxRuntimeExports.jsx(PlayerStatus, { showTolerance: true })] }), jsxRuntimeExports.jsxs("div", { className: "panel", children: [jsxRuntimeExports.jsx("div", { className: "panel-title", children: "\u6389\u843D" }), jsxRuntimeExports.jsxs("div", { style: { fontSize: 12.5, color: '#BFD8E8', lineHeight: 1.8 }, children: ["\u00B7 \u7ECF\u9A8C +", boss.rewardExp, jsxRuntimeExports.jsx("br", {}), "\u00B7 \u521B\u4E16\u4E3B\u788E\u7247\uFF1A", fragTitle, jsxRuntimeExports.jsx("br", {}), "\u00B7 \u7AE0\u8282\u540E\u7EED\u5267\u60C5"] })] })] })] }), jsxRuntimeExports.jsx("div", { className: "chlg-bottom", children: jsxRuntimeExports.jsx(Terminal, { lines: term, maxHeight: 190, title: opp + ' 对抗终端 · ' + boss.codename }) }), introOpen && bossScenes.intro && (jsxRuntimeExports.jsx(CinematicStage, { scenes: bossScenes.intro, eventId: 'boss-' + boss.id, frameTitle: opp + ' · 遭遇', onDone: () => { setIntroOpen(false); g.markStory('bossIntro_' + boss.id); } })), introOpen && !bossScenes.intro && boss.intro && (jsxRuntimeExports.jsx(DialogSystem, { nodes: boss.intro, speedMs: player.settings.typewriterMs, animEnabled: player.settings.animations, eventId: 'boss-' + boss.id, frameTitle: 'ECHO 分支 · ' + boss.codename, onSeen: id => g.markStory(id), onDone: () => { setIntroOpen(false); g.markStory('bossIntro_' + boss.id); } })), gain && jsxRuntimeExports.jsx(FragmentGain, { def: gain, onDone: () => setGain(null) }), cleared && (jsxRuntimeExports.jsx("div", { className: "overlay", style: { background: 'rgba(10,4,20,0.78)', backdropFilter: 'blur(6px)' }, children: jsxRuntimeExports.jsxs("div", { className: "complete-panel boss-complete", children: [jsxRuntimeExports.jsx("div", { className: "cp-ico", style: { color: '#C9A7FF' }, children: "\u26A1" }), jsxRuntimeExports.jsxs("div", { className: "cp-title", children: [opp, " \u5DF2\u51FB\u7834"] }), jsxRuntimeExports.jsxs("div", { className: "cp-sub", children: [boss.codename, " \u00B7 ", boss.title] }), jsxRuntimeExports.jsxs("div", { className: "cp-rewards", children: [jsxRuntimeExports.jsxs("div", { className: "cp-reward", children: [jsxRuntimeExports.jsxs("div", { className: "rv", children: ["+", cleared.expGained] }), jsxRuntimeExports.jsx("div", { className: "rl", children: "\u7ECF\u9A8C" })] }), jsxRuntimeExports.jsxs("div", { className: "cp-reward", children: [jsxRuntimeExports.jsx("div", { className: "rv", children: fragTitle }), jsxRuntimeExports.jsx("div", { className: "rl", children: "\u521B\u4E16\u4E3B\u788E\u7247" })] }), jsxRuntimeExports.jsxs("div", { className: "cp-reward", children: [jsxRuntimeExports.jsxs("div", { className: "rv", children: ["Lv.", cleared.newLevel] }), jsxRuntimeExports.jsx("div", { className: "rl", children: "\u7B49\u7EA7" })] })] }), fragContent && (jsxRuntimeExports.jsxs("div", { className: "cp-summary", children: [jsxRuntimeExports.jsxs("div", { className: "cs-label", children: ["\u83B7\u5F97\u788E\u7247\u300A", fragTitle, "\u300B"] }), fragContent] })), jsxRuntimeExports.jsxs("div", { className: "cp-btns", children: [!bossScenes.outro && boss.echoStory && (jsxRuntimeExports.jsx("button", { className: "nxbtn ghost", onClick: () => { play('click'); setEchoOpen(true); }, children: "\u67E5\u770B\u540E\u7EED\u5267\u60C5" })), bossScenes.outro && (jsxRuntimeExports.jsx("button", { className: "nxbtn ghost", onClick: () => { play('click'); setOutroOpen(true); }, children: "\u91CD\u770B\u672C\u7AE0\u7ED3\u5C3E" })), jsxRuntimeExports.jsx("button", { className: "nxbtn primary", onClick: () => { play('click'); g.setCurrentBoss(null); g.nav('map'); }, children: "\u8FD4\u56DE\u5730\u56FE" })] })] }) })), echoOpen && boss.echoStory && (jsxRuntimeExports.jsx(DialogSystem, { nodes: boss.echoStory, speedMs: player.settings.typewriterMs, animEnabled: player.settings.animations, frameTitle: "ECHO \u6765\u6E90 \u00B7 \u6B8B\u7247", onSeen: id => g.markStory(id), onDone: () => { setEchoOpen(false); } })), outroOpen && bossScenes.outro && (jsxRuntimeExports.jsx(CinematicStage, { scenes: bossScenes.outro, eventId: 'boss-' + boss.id, frameTitle: opp + ' · 击破之后', onDone: () => setOutroOpen(false) }))] }));
+	}
+
+	/**
+	 * Boss 入口分发：
+	 * - 配置了 BossBattleDef 的章节（当前仅第一章 GATE-01）走多阶段战斗界面；
+	 * - 其余章节继续使用原有单题挑战界面（未改动）。
+	 */
+	function BossPage() {
+	    const g = useGame();
+	    const boss = bossById(g.player.progress.currentBossId || '');
+	    reactExports.useEffect(() => {
+	        if (!boss)
+	            g.nav('map');
+	        // eslint-disable-next-line react-hooks/exhaustive-deps
+	    }, [boss?.id]);
+	    if (!boss)
+	        return null;
+	    return battleFor(boss.id) ? jsxRuntimeExports.jsx(BossBattlePage, {}) : jsxRuntimeExports.jsx(BossChallengePage, {});
 	}
 
 	const CATS = [
@@ -5802,7 +9371,7 @@
 	        }
 	        return undefined;
 	    }, [phase, conIdx]);
-	    return (jsxRuntimeExports.jsxs("div", { className: "overlay ov-death", children: [phase === 'collapse' && (jsxRuntimeExports.jsxs("div", { style: { textAlign: 'center' }, children: [jsxRuntimeExports.jsx("div", { className: "enemy-wrap", children: jsxRuntimeExports.jsx("div", { className: "enemy-hex", style: { width: 120, height: 120, fontSize: 46, color: '#FF8B92', animationDuration: '0.6s' } }) }), jsxRuntimeExports.jsx("div", { className: "glitch-text", style: { fontSize: 30, marginTop: 16 }, children: "CONSCIOUSNESS COLLAPSE" }), jsxRuntimeExports.jsx("div", { className: "att-line small", style: { marginTop: 10, color: '#C98A8F' }, children: "\u610F\u8BC6\u6838\u5FC3\u5D29\u89E3 \u2014\u2014 \u6B63\u5728\u5C1D\u8BD5\u539F\u521D\u91CD\u7EC4\u534F\u8BAE\u2026" })] })), phase === 'console' && (jsxRuntimeExports.jsxs("div", { className: "reb-stage", children: [jsxRuntimeExports.jsxs("div", { className: "core-rebuild", style: { position: 'relative', width: 130, height: 130, margin: '0 auto' }, children: [jsxRuntimeExports.jsx(ParticlesField, { converge: true, enabled: g.player.settings.animations, max: 90, speed: 1.4, colors: ['#42D6D0', '#9FE8FF', '#3986C8'] }), jsxRuntimeExports.jsx("div", { style: { position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%,-50%)', width: 56, height: 56, borderRadius: '50%', background: 'radial-gradient(circle at 35% 30%, #C9FBFF, #42D6D0 50%, #0B6B74 95%)', boxShadow: '0 0 40px rgba(66,214,208,0.9)', animation: 'corePulse 1.6s ease-in-out infinite' } })] }), jsxRuntimeExports.jsx("div", { className: "reb-console", children: REBOOT_LINES.slice(0, conIdx).map((l, i) => (jsxRuntimeExports.jsxs("p", { className: 'rc-line' + (l.includes('REBORN') ? ' ok' : ''), children: ["\u25B8 ", l] }, i))) })] })), phase === 'dialog' && (jsxRuntimeExports.jsx(DialogSystem, { nodes: script, frameTitle: "ORIGIN PROTOCOL \u00B7 \u610F\u8BC6\u91CD\u7EC4", speedMs: g.player.settings.typewriterMs, animEnabled: g.player.settings.animations, onSeen: id => g.markStory('rb_' + id), onDone: () => g.finishRebirth() }))] }));
+	    return (jsxRuntimeExports.jsxs("div", { className: "overlay ov-death", children: [phase === 'collapse' && (jsxRuntimeExports.jsxs("div", { style: { textAlign: 'center' }, children: [jsxRuntimeExports.jsx("div", { className: "enemy-wrap", children: jsxRuntimeExports.jsx("div", { className: "enemy-hex", style: { width: 120, height: 120, fontSize: 46, color: '#FF8B92', animationDuration: '0.6s' } }) }), jsxRuntimeExports.jsx("div", { className: "glitch-text", style: { fontSize: 30, marginTop: 16 }, children: "CONSCIOUSNESS COLLAPSE" }), jsxRuntimeExports.jsx("div", { className: "att-line small", style: { marginTop: 10, color: '#C98A8F' }, children: "\u610F\u8BC6\u6838\u5FC3\u5D29\u89E3 \u2014\u2014 \u6B63\u5728\u5C1D\u8BD5\u539F\u521D\u91CD\u7EC4\u534F\u8BAE\u2026" })] })), phase === 'console' && (jsxRuntimeExports.jsxs("div", { className: "reb-stage", children: [jsxRuntimeExports.jsxs("div", { className: "core-rebuild", style: { position: 'relative', width: 130, height: 130, margin: '0 auto' }, children: [jsxRuntimeExports.jsx(ParticlesField, { converge: true, enabled: g.player.settings.animations, max: 90, speed: 1.4, colors: ['#42D6D0', '#9FE8FF', '#3986C8'] }), jsxRuntimeExports.jsx("div", { style: { position: 'absolute', left: '50%', top: '50%', transform: 'translate(-50%,-50%)', width: 56, height: 56, borderRadius: '50%', background: 'radial-gradient(circle at 35% 30%, #C9FBFF, #42D6D0 50%, #0B6B74 95%)', boxShadow: '0 0 40px rgba(66,214,208,0.9)', animation: 'corePulse 1.6s ease-in-out infinite' } })] }), jsxRuntimeExports.jsx("div", { className: "reb-console", children: REBOOT_LINES.slice(0, conIdx).map((l, i) => (jsxRuntimeExports.jsxs("p", { className: 'rc-line' + (l.includes('REBORN') ? ' ok' : ''), children: ["\u25B8 ", l] }, i))) })] })), phase === 'dialog' && (jsxRuntimeExports.jsx(DialogSystem, { nodes: script, frameTitle: "ORIGIN PROTOCOL \u00B7 \u610F\u8BC6\u91CD\u7EC4", eventId: "rebirth", speedMs: g.player.settings.typewriterMs, animEnabled: g.player.settings.animations, onSeen: id => g.markStory('rb_' + id), onDone: () => g.finishRebirth() }))] }));
 	}
 
 	function Shell() {
@@ -5852,7 +9421,7 @@
 	            window.removeEventListener('keydown', unlock);
 	        };
 	    }, [g.player.settings.musicVolume, g.player.settings.sfxVolume]);
-	    return (jsxRuntimeExports.jsxs("div", { className: 'app-root' + (g.player.settings.animations ? '' : ' anim-off'), children: [jsxRuntimeExports.jsx("div", { className: "grid-bg" }), jsxRuntimeExports.jsx("div", { className: "vignette" }), jsxRuntimeExports.jsx("div", { className: "scanlines" }), screen === 'boot' && jsxRuntimeExports.jsx(StartPage, {}), screen === 'menu' && jsxRuntimeExports.jsx(MainMenu, {}), screen === 'story' && jsxRuntimeExports.jsx(StoryPage, {}), screen === 'map' && jsxRuntimeExports.jsx(WorldMap, {}), screen === 'challenge' && jsxRuntimeExports.jsx(ChallengePage, {}), screen === 'profile' && jsxRuntimeExports.jsx(ProfilePage, {}), screen === 'settings' && jsxRuntimeExports.jsx(SettingsPage, {}), screen === 'knowledge' && jsxRuntimeExports.jsx(KnowledgePage, {}), screen === 'achievements' && jsxRuntimeExports.jsx(AchievementsPage, {}), screen === 'archive' && jsxRuntimeExports.jsx(ArchivePage, {}), screen === 'lab' && jsxRuntimeExports.jsx(LabPage, {}), screen === 'boss' && jsxRuntimeExports.jsx(BossPage, {}), screen === 'shop' && jsxRuntimeExports.jsx(RewardCenterPage, {}), (py.status === 'loading' || py.status === 'error') && (jsxRuntimeExports.jsx("div", { className: 'engine-badge ' + py.status, onClick: () => { if (py.status === 'error') {
+	    return (jsxRuntimeExports.jsxs("div", { className: 'app-root' + (g.player.settings.animations ? '' : ' anim-off'), children: [jsxRuntimeExports.jsx("div", { className: "grid-bg" }), jsxRuntimeExports.jsx("div", { className: "vignette" }), jsxRuntimeExports.jsx("div", { className: "scanlines" }), screen === 'boot' && jsxRuntimeExports.jsx(StartPage, {}), screen === 'menu' && jsxRuntimeExports.jsx(MainMenu, {}), screen === 'story' && jsxRuntimeExports.jsx(StoryPage, {}), screen === 'map' && jsxRuntimeExports.jsx(WorldMap, {}), screen === 'challenge' && jsxRuntimeExports.jsx(ChallengePage, {}), screen === 'profile' && jsxRuntimeExports.jsx(ProfilePage, {}), screen === 'settings' && jsxRuntimeExports.jsx(SettingsPage, {}), screen === 'knowledge' && jsxRuntimeExports.jsx(KnowledgePage, {}), screen === 'achievements' && jsxRuntimeExports.jsx(AchievementsPage, {}), screen === 'archive' && jsxRuntimeExports.jsx(ArchivePage, {}), screen === 'vault' && jsxRuntimeExports.jsx(VaultPage, {}), screen === 'journal' && jsxRuntimeExports.jsx(JournalPage, {}), screen === 'endings' && jsxRuntimeExports.jsx(EndingsPage, {}), screen === 'lab' && jsxRuntimeExports.jsx(LabPage, {}), screen === 'boss' && jsxRuntimeExports.jsx(BossPage, {}), screen === 'shop' && jsxRuntimeExports.jsx(RewardCenterPage, {}), (py.status === 'loading' || py.status === 'error') && (jsxRuntimeExports.jsx("div", { className: 'engine-badge ' + py.status, onClick: () => { if (py.status === 'error') {
 	                    resetEngine();
 	                    try {
 	                        warmUp();
