@@ -35,6 +35,12 @@ export default function WorldMap() {
   const [shakeId, setShakeId] = useState<string | null>(null);
   const [cinema, setCinema] = useState<'tut' | 'ch1arrive' | 'ch1restore' | 'ch2arrive' | 'ch2restore' | 'ch3arrive' | 'ch3' | 'ch4arrive' | 'ch4' | 'ch5arrive' | 'ch5truth' | 'ch5' | 'ch6arrive' | 'ch6engel' | 'ch6' | null>(null);
   const [briefServer, setBriefServer] = useState<string | null>(null);
+  const [hoverId, setHoverId] = useState<string | null>(null);
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [drag, setDrag] = useState<{ x: number; y: number; px: number; py: number } | null>(null);
+  const [showLinks, setShowLinks] = useState(true);
+  const [statusFilter, setStatusFilter] = useState<Record<string, boolean>>({ online: true, restored: true, damaged: true, locked: true, sealed: true });
 
   const tutDone = p.completedLevels.includes('tut-1');
   const ch1Done = p.flags.chapter1Done === true;
@@ -165,43 +171,95 @@ export default function WorldMap() {
           <button className="nxbtn small ghost" onClick={() => { play('click'); g.nav('menu'); }}>◀ 主菜单</button>
         </div>
 
-        <div className="map-wrap" style={{ position: 'relative' }}>
-          <svg className="map-svg" viewBox="0 0 1240 660">
-            {/* 网络连线 */}
-            {SERVERS.map(s => {
-              const st = statusOf(s.id);
-              return (
-                <line key={'ln' + s.id} x1={HUB.x} y1={HUB.y} x2={s.x} y2={s.y}
-                  className={'map-link ' + (st === 'online' ? 'on' : st === 'damaged' ? 'damaged' : '')} />
-              );
-            })}
-            {/* 中枢 */}
-            <g>
-              <circle cx={HUB.x} cy={HUB.y} r={58} fill="rgba(66,214,208,0.06)" stroke="rgba(66,214,208,0.5)" strokeWidth={1.5} />
-              <circle cx={HUB.x} cy={HUB.y} r={44} fill="rgba(13,27,40,0.9)" stroke="rgba(66,214,208,0.7)" strokeWidth={2} />
-              <text x={HUB.x} y={HUB.y} textAnchor="middle" dominantBaseline="central" fontSize={26} fill="#42D6D0">◉</text>
-              <text x={HUB.x} y={HUB.y + 74} textAnchor="middle" fontSize={15} fontWeight={700} fill="#8FDDE3">修复局中枢</text>
-              <text x={HUB.x} y={HUB.y + 92} textAnchor="middle" fontSize={10} fill="#4A6E85" fontFamily="Consolas, monospace">NEXUS CORE RELAY</text>
-            </g>
-            {/* 服务器节点 */}
-            {SERVERS.map(s => {
-              const st = statusOf(s.id);
-              const shaking = shakeId === s.id;
-              return (
-                <g key={s.id} className={'node-group st-' + st + (shaking ? ' shake' : '')}
-                  onClick={() => clickNode(s.id)} style={{ cursor: 'pointer' }}>
-                  <circle className="node-ring" cx={s.x} cy={s.y} r={58} fill="none" strokeWidth={1.5}
-                    style={{ transformBox: 'fill-box', transformOrigin: 'center' }} />
-                  <circle className="node-circle" cx={s.x} cy={s.y} r={46} strokeWidth={1.8}
-                    style={{ backdropFilter: 'blur(2px)' }} />
-                  <text x={s.x} y={s.y} textAnchor="middle" dominantBaseline="central" fontSize={24} fill={ICON_COLOR[st]}>{s.icon}</text>
-                  <text x={s.x} y={s.y + 66} textAnchor="middle" fontSize={15} fontWeight={700} fill="#EAF3FA">{s.name}</text>
-                  <text x={s.x} y={s.y + 82} textAnchor="middle" fontSize={10.5} fill="#4A6E85" fontFamily="Consolas, monospace">{s.codename}</text>
-                  <text x={s.x} y={s.y - 62} textAnchor="middle" fontSize={11} fill={CHIP_COLOR[st]} fontFamily="Consolas, monospace" letterSpacing={1.5}>{CHIP_TEXT[st]}</text>
-                </g>
-              );
-            })}
+        <div className="map-wrap">
+          <div className="map-toolbar">
+            <button className="mt-btn" onClick={() => { play('click'); setZoom(z => Math.min(1.8, +(z + 0.15).toFixed(2))); }} title="放大">＋</button>
+            <button className="mt-btn" onClick={() => { play('click'); setZoom(z => Math.max(0.65, +(z - 0.15).toFixed(2))); }} title="缩小">－</button>
+            <button className="mt-btn" onClick={() => { play('click'); setZoom(1); setPan({ x: 0, y: 0 }); }} title="重置视角">⟲</button>
+            <button className={'mt-btn' + (showLinks ? ' on' : '')} onClick={() => { play('click'); setShowLinks(v => !v); }} title="显示连接线路">⇄</button>
+          </div>
+
+          <div className="map-legend">
+            {(['online', 'restored', 'damaged', 'locked', 'sealed'] as NodeStatus[]).map(st => (
+              <button key={st} className={'lg' + (statusFilter[st] ? '' : ' off')}
+                onClick={() => { play('click'); setStatusFilter(f => ({ ...f, [st]: !f[st] })); }}>
+                <span className="sw" style={{ background: CHIP_COLOR[st] }} />
+                {CHIP_TEXT[st]}
+              </button>
+            ))}
+          </div>
+
+          <div className={'map-viewport' + (drag ? ' dragging' : '')}
+            onWheel={e => { e.preventDefault(); setZoom(z => Math.max(0.65, Math.min(1.8, z + (e.deltaY > 0 ? -0.08 : 0.08)))); }}
+            onPointerDown={e => { setDrag({ x: e.clientX, y: e.clientY, px: pan.x, py: pan.y }); (e.target as Element).setPointerCapture?.(e.pointerId); }}
+            onPointerMove={e => { if (drag) setPan({ x: drag.px + (e.clientX - drag.x), y: drag.py + (e.clientY - drag.y) }); }}
+            onPointerUp={() => setDrag(null)}
+            onPointerLeave={() => setDrag(null)}>
+            <svg className="map-svg" viewBox="0 0 1240 660"
+              style={{ transform: 'translate(' + pan.x + 'px, ' + pan.y + 'px) scale(' + zoom + ')' }}>
+              <defs>
+                <radialGradient id="hubGlow" cx="50%" cy="50%" r="50%">
+                  <stop offset="0%" stopColor="#9FF7EF" stopOpacity="0.55" />
+                  <stop offset="60%" stopColor="#42D6D0" stopOpacity="0.14" />
+                  <stop offset="100%" stopColor="#42D6D0" stopOpacity="0" />
+                </radialGradient>
+                <filter id="nodeGlow" x="-60%" y="-60%" width="220%" height="220%">
+                  <feGaussianBlur stdDeviation="4" result="b" />
+                  <feMerge><feMergeNode in="b" /><feMergeNode in="SourceGraphic" /></feMerge>
+                </filter>
+              </defs>
+
+              {showLinks && SERVERS.map(s => {
+                const st = statusOf(s.id);
+                const cls = st === 'damaged' ? 'ln-bad' : st === 'locked' || st === 'sealed' ? 'ln-off' : 'ln-ok';
+                return (
+                  <g key={'ln' + s.id} className={'map-link-g ' + cls}>
+                    <line className="map-link-base" x1={HUB.x} y1={HUB.y} x2={s.x} y2={s.y} />
+                    <line className="map-link-flow" x1={HUB.x} y1={HUB.y} x2={s.x} y2={s.y} />
+                    {(st === 'online' || st === 'restored') && (
+                      <circle r={2.6} className="map-packet">
+                        <animateMotion dur={(2.6 + (s.x % 5) * 0.3).toFixed(2) + 's'} repeatCount="indefinite"
+                          path={'M' + HUB.x + ',' + HUB.y + ' L' + s.x + ',' + s.y} />
+                      </circle>
+                    )}
+                  </g>
+                );
+              })}
+
+              <g className="map-hub" onClick={() => { play('click'); setHoverId(null); g.toast('info', 'NEXUS CORE RELAY · 全服务器同步核心'); }}>
+                <circle cx={HUB.x} cy={HUB.y} r={92} fill="url(#hubGlow)" className="hub-aura" />
+                <circle className="hub-ring r1" cx={HUB.x} cy={HUB.y} r={74} />
+                <circle className="hub-ring r2" cx={HUB.x} cy={HUB.y} r={60} />
+                <circle className="hub-ring r3" cx={HUB.x} cy={HUB.y} r={46} />
+                <circle className="hub-core" cx={HUB.x} cy={HUB.y} r={30} />
+                <text x={HUB.x} y={HUB.y} textAnchor="middle" dominantBaseline="central" fontSize={22} fill="#04121A" fontWeight={800}>◉</text>
+                <text x={HUB.x} y={HUB.y + 78} textAnchor="middle" fontSize={15} fontWeight={700} fill="#8FDDE3">修复局中枢</text>
+                <text x={HUB.x} y={HUB.y + 95} textAnchor="middle" fontSize={10} fill="#4A6E85" fontFamily="Consolas, monospace">NEXUS CORE RELAY</text>
+              </g>
+
+              {SERVERS.map(s => {
+                const st = statusOf(s.id);
+                const shaking = shakeId === s.id;
+                const dim = !statusFilter[st];
+                const damaged = st === 'damaged';
+                return (
+                  <g key={s.id}
+                    className={'node-group st-' + st + (shaking ? ' shake' : '') + (dim ? ' filtered' : '')}
+                    onMouseEnter={() => setHoverId(s.id)}
+                    onMouseLeave={() => setHoverId(h => (h === s.id ? null : h))}
+                    onClick={() => clickNode(s.id)} style={{ cursor: 'pointer' }}>
+                    <circle className="node-ring" cx={s.x} cy={s.y} r={58} fill="none" strokeWidth={1.5} />
+                    {damaged && <circle className="node-alarm" cx={s.x} cy={s.y} r={58} fill="none" strokeWidth={1.2} />}
+                    <circle className="node-circle" cx={s.x} cy={s.y} r={46} strokeWidth={1.8} />
+                    <text x={s.x} y={s.y} textAnchor="middle" dominantBaseline="central" fontSize={24} fill={ICON_COLOR[st]}>{s.icon}</text>
+                    <text x={s.x} y={s.y + 66} textAnchor="middle" fontSize={15} fontWeight={700} fill="#EAF3FA">{s.name}</text>
+                    <text x={s.x} y={s.y + 82} textAnchor="middle" fontSize={10.5} fill="#4A6E85" fontFamily="Consolas, monospace">{s.codename}</text>
+                    <text x={s.x} y={s.y - 62} textAnchor="middle" fontSize={11} fill={CHIP_COLOR[st]} fontFamily="Consolas, monospace" letterSpacing={1.5}>{CHIP_TEXT[st]}</text>
+                  </g>
+                );
+              })}
           </svg>
+          </div>
 
           {/* 选中服务器的关卡面板 */}
           {selServer && (
@@ -210,6 +268,22 @@ export default function WorldMap() {
                 <span className="panel-tag">{selServer.codename}</span>
               </div>
               <div style={{ fontSize: 13, color: '#C6D9E6', marginBottom: 8 }}>{selServer.desc}</div>
+              {(() => {
+                const st = statusOf(selServer.id);
+                const doneN = selLevels.filter(l => p.completedLevels.includes(l.id)).length;
+                const pct = selLevels.length ? Math.round((doneN / selLevels.length) * 100) : 0;
+                const remain = selLevels.length - doneN;
+                return (
+                  <div className="node-metrics">
+                    <div className="nm"><span>状态</span><b style={{ color: CHIP_COLOR[st] }}>{CHIP_TEXT[st]}</b></div>
+                    <div className="nm"><span>稳定度</span><b>{st === 'damaged' ? Math.max(12, 100 - remain * 18) : 100}%</b></div>
+                    <div className="nm"><span>任务</span><b>{doneN}/{selLevels.length}</b></div>
+                    <div className="nm"><span>探索</span><b>{pct}%</b></div>
+                    <div className="nm"><span>待修复</span><b>{remain}</b></div>
+                    <div className="bar"><span style={{ width: pct + '%' }} /></div>
+                  </div>
+                );
+              })()}
               {(() => {
                 const ch = chapterByServer(selServer.id);
                 if (!ch) return null;
