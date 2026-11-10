@@ -1,0 +1,74 @@
+/* NEXUS V1.2 服务器网络地图 */
+.map-wrap { position: relative; height: calc(100vh - 132px); min-height: 520px; border: 1px solid rgba(66,214,208,.16); border-radius: 18px; overflow: hidden; background: radial-gradient(ellipse at 50% 45%, rgba(12,40,54,.55), rgba(4,8,14,.92) 70%); }
+.map-viewport { position: absolute; inset: 0; overflow: hidden; touch-action: none; cursor: grab; }
+.map-viewport.dragging { cursor: grabbing; }
+.map-svg { width: 100%; height: 100%; transform-origin: 50% 50%; transition: transform .12s ease-out; }
+
+/* 连线 */
+.map-link-base { stroke: rgba(74,110,133,.28); stroke-width: 1.2; stroke-dasharray: 4 6; }
+.map-link-flow { stroke-width: 1.8; fill: none; stroke-linecap: round; }
+.ln-ok .map-link-flow { stroke: rgba(66,214,208,.55); stroke-dasharray: 12 10; animation: flowDash 2.4s linear infinite; }
+.ln-bad .map-link-flow { stroke: rgba(255,91,100,.75); stroke-dasharray: 10 8; animation: flowDash 1.1s linear infinite, flicker 1.4s steps(2,end) infinite; }
+.ln-off .map-link-flow { stroke: rgba(74,110,133,.35); stroke-dasharray: 2 8; }
+@keyframes flowDash { to { stroke-dashoffset: -44; } }
+@keyframes flicker { 0%,100% { opacity: 1; } 45% { opacity: .25; } 55% { opacity: .9; } }
+.map-packet { fill: #9FF7EF; filter: drop-shadow(0 0 6px rgba(159,247,239,.95)); }
+
+/* 中枢 */
+.map-hub { cursor: pointer; }
+.hub-aura { animation: hubBreathe 4.6s ease-in-out infinite; }
+.hub-ring { fill: none; stroke: rgba(66,214,208,.35); transform-box: fill-box; transform-origin: center; }
+.hub-ring.r1 { stroke-dasharray: 6 10; animation: spinCW 22s linear infinite; }
+.hub-ring.r2 { stroke: rgba(201,167,255,.35); stroke-dasharray: 3 8; animation: spinCCW 15s linear infinite; }
+.hub-ring.r3 { stroke: rgba(243,183,92,.28); animation: spinCW 9s linear infinite; }
+.hub-core { fill: radial-gradient(circle, #EAFDFF, #42D6D0 60%, #0B3B4A); fill: #7FF3EA; filter: drop-shadow(0 0 22px rgba(66,214,208,.85)); animation: hubPulse 3.4s ease-in-out infinite; }
+@keyframes hubBreathe { 0%,100% { opacity: .75; } 50% { opacity: 1; } }
+@keyframes hubPulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.08); } }
+@keyframes spinCW { to { transform: rotate(360deg); } }
+@keyframes spinCCW { to { transform: rotate(-360deg); } }
+
+/* 节点 */
+.node-group { transition: opacity .2s; }
+.node-group .node-circle { fill: rgba(8,20,30,.86); stroke: rgba(66,214,208,.55); }
+.node-group.st-online .node-circle, .node-group.st-restored .node-circle { stroke: #35D39A; filter: drop-shadow(0 0 12px rgba(53,211,154,.45)); }
+.node-group.st-online .node-ring, .node-group.st-restored .node-ring { stroke: rgba(53,211,154,.35); animation: nodeBreathe 4s ease-in-out infinite; }
+.node-group.st-damaged .node-circle { stroke: #FF5B64; filter: drop-shadow(0 0 14px rgba(255,91,100,.55)); }
+.node-group.st-damaged .node-ring { stroke: rgba(255,91,100,.45); animation: nodeBreathe 1.6s ease-in-out infinite; }
+.node-alarm { stroke: rgba(255,91,100,.35); transform-box: fill-box; transform-origin: center; animation: alarmRipple 2.4s ease-out infinite; }
+.node-group.st-locked .node-circle { stroke: rgba(74,110,133,.55); fill: rgba(10,16,24,.9); }
+.node-group.st-locked .node-ring { stroke: rgba(74,110,133,.18); }
+.node-group.st-sealed .node-circle { stroke: rgba(243,183,92,.5); }
+.node-group:hover .node-circle { stroke-width: 2.6; }
+.node-group.filtered { opacity: .12; pointer-events: none; }
+.node-group.shake { animation: shakeX .45s ease; }
+@keyframes nodeBreathe { 0%,100% { opacity: .45; transform: scale(1); } 50% { opacity: .95; transform: scale(1.05); } }
+@keyframes alarmRipple { 0% { opacity: .8; transform: scale(1); } 100% { opacity: 0; transform: scale(1.45); } }
+@keyframes shakeX { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-4px); } 75% { transform: translateX(4px); } }
+
+/* 控制器 */
+.map-toolbar { position: absolute; right: 14px; top: 12px; z-index: 4; display: flex; flex-direction: column; gap: 6px; }
+.mt-btn { width: 34px; height: 34px; border-radius: 9px; cursor: pointer; font-size: 15px; color: #BFE3EA; background: rgba(8,20,30,.82); border: 1px solid rgba(66,214,208,.28); }
+.mt-btn:hover { border-color: rgba(66,214,208,.7); background: rgba(66,214,208,.14); }
+.mt-btn.on { border-color: #42D6D0; color: #9FF7EF; box-shadow: 0 0 14px rgba(66,214,208,.35); }
+.map-legend { position: absolute; left: 14px; bottom: 12px; z-index: 4; display: flex; gap: 6px; flex-wrap: wrap; }
+.map-legend .lg { display: inline-flex; align-items: center; gap: 5px; font-size: 10.5px; letter-spacing: 1px; color: #9FB9C8; background: rgba(6,14,22,.8); border: 1px solid rgba(66,214,208,.18); border-radius: 999px; padding: 3px 9px; cursor: pointer; }
+.map-legend .lg.off { opacity: .38; }
+.map-legend .sw { width: 8px; height: 8px; border-radius: 50%; }
+
+/* 面板指标 */
+.node-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-bottom: 10px; }
+.node-metrics .nm { border: 1px solid rgba(66,214,208,.14); border-radius: 8px; padding: 5px 7px; background: rgba(8,18,26,.6); display: flex; flex-direction: column; gap: 2px; }
+.node-metrics .nm span { font-size: 10px; color: #5E7F94; }
+.node-metrics .nm b { font-family: Rajdhani, Consolas, monospace; font-size: 14px; color: #DCEEF6; }
+.node-metrics .bar { grid-column: 1 / -1; height: 4px; border-radius: 2px; background: rgba(255,255,255,.08); overflow: hidden; }
+.node-metrics .bar span { display: block; height: 100%; background: linear-gradient(90deg, #35D39A, #42D6D0); }
+
+@media (max-width: 760px) {
+  .map-wrap { height: calc(100vh - 210px); min-height: 420px; }
+  .map-toolbar { top: 8px; right: 8px; }
+  .map-legend { left: 8px; bottom: 8px; gap: 4px; }
+  .map-legend .lg { font-size: 9.5px; padding: 2px 7px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .hub-ring, .hub-core, .hub-aura, .map-link-flow, .node-ring, .node-alarm { animation: none !important; }
+}
