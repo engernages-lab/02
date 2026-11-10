@@ -76,7 +76,7 @@ export default function StartPage() {
       )}
       {ready && (
         <>
-          <div className="boot-title">代码修复局：NEXUS</div>
+          <div className="boot-title">NEXUS</div>
           <div className="boot-sub">CODE REPAIR: NEXUS // 在代码崩坏的世界中，寻找数字生命的真相</div>
           <button className="nxbtn primary pulse boot-enter" onClick={enter}>ENTER NEXUS</button>
         </>

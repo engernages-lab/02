@@ -180,7 +180,7 @@ const skipCinema = async (h) => {
   dom = await launch(arrivalSave);
   h = helpers(dom);
   await enterMenu(h);
-  h.click(h.qa('button').find(b => b.textContent.includes('继续游戏')));
+  h.click(h.qa('button').find(b => b.textContent.includes('继续探索')));
   await h.wait(() => h.q('.cine-root'), 12000, '前往数据港演出');
   ok(h.text().includes('第一章 · 失落的数据港'), '章节标题为「第一章 · 失落的数据港」');
   const arrivalText = await advanceUntil(h, s => s.includes('五个节点') || s.includes('5 个能源节点'), 12);
@@ -208,7 +208,7 @@ const skipCinema = async (h) => {
   dom = await launch(restoredSave);
   h = helpers(dom);
   await enterMenu(h);
-  h.click(h.qa('button').find(b => b.textContent.includes('继续游戏')));
+  h.click(h.qa('button').find(b => b.textContent.includes('继续探索')));
   await h.wait(() => h.q('.cine-root'), 12000, '数据港恢复演出');
   const recordText = await advanceUntil(h, s => s.includes('R-SERIES') && s.includes('前六代'), 24);
   ok(recordText.includes('R-SERIES') || recordText.includes('前六代'), '首次出现 R-07 实验记录');
@@ -271,7 +271,7 @@ const skipCinema = async (h) => {
   dom = await launch(ch2Arrive);
   h = helpers(dom);
   await enterMenu(h);
-  h.click(h.qa('button').find(b => b.textContent.includes('继续游戏')));
+  h.click(h.qa('button').find(b => b.textContent.includes('继续探索')));
   await h.wait(() => h.q('.cine-root'), 12000, '第二章开场演出');
   ok(h.text().includes('第二章 · 破碎的记忆花园'), '章节标题为「第二章 · 破碎的记忆花园」');
   const ch2Text = await advanceUntil(h, s => s.includes('记忆花园') && s.includes('SOMNIA'), 14);
@@ -297,7 +297,7 @@ const skipCinema = async (h) => {
   dom = await launch(ch2Restore);
   h = helpers(dom);
   await enterMenu(h);
-  h.click(h.qa('button').find(b => b.textContent.includes('继续游戏')));
+  h.click(h.qa('button').find(b => b.textContent.includes('继续探索')));
   await h.wait(() => h.q('.cine-root'), 12000, '第二章恢复演出');
   const restoreText = await advanceUntil(h, s => s.includes('我删掉过你的一部分记忆'), 26);
   ok(restoreText.includes('我删掉过你的一部分记忆'), 'MIRA 承认删改过 R-07 的记忆');
@@ -325,7 +325,7 @@ const skipCinema = async (h) => {
   dom = await launch(somniaSave);
   h = helpers(dom);
   await enterMenu(h);
-  h.click(h.qa('button').find(b => b.textContent.includes('继续游戏')));
+  h.click(h.qa('button').find(b => b.textContent.includes('继续探索')));
   await h.wait(() => h.text().includes('NEXUS 数字世界 · 服务器网络'), 12000, '地图');
   h.click(h.qa('.node-group')[2]);
   const somBtn = await h.wait(() => h.qa('button').find(b => b.textContent.includes('挑战 ▸')), 8000, 'SOMNIA 入口');

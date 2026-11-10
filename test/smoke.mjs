@@ -1,6 +1,6 @@
 // 浏览器级冒烟测试：用 jsdom 加载生产构建产物，跑通核心流程：
 // 启动页 → 跳过初始化 → ENTER → 主菜单 → 新的开始 → 序章跳过 → 地图 → 进入训练关卡
-// → 验证 localStorage 存档 → 模拟刷新（新实例预置存档）→ 主菜单显示「继续游戏」
+// → 验证 localStorage 存档 → 模拟刷新（新实例预置存档）→ 主菜单显示「继续探索」
 import { JSDOM, VirtualConsole } from 'jsdom';
 import { createServer } from 'node:http';
 import { readFileSync, statSync, existsSync } from 'node:fs';
@@ -105,7 +105,7 @@ function qa(dom, sel) { return Array.from(dom.window.document.querySelectorAll(s
 
   // 主菜单
   await waitFor(() => text(dom).includes('代码修复局') && text(dom).includes('Python 知识库'), 10000, '主菜单渲染');
-  ok(text(dom).includes('开始游戏'), '菜单无存档显示「开始游戏」');
+  ok(text(dom).includes('开始探索'), '菜单无存档显示「开始探索」');
   const newGame = qa(dom, 'button').find(b => b.textContent.includes('新的开始'));
   clickEl(dom, newGame);
   const confirmNew = await waitFor(() => qa(dom, 'button').find(b => b.textContent.includes('确认，开启新轮回')), 5000, '新游戏确认弹窗');
@@ -164,10 +164,10 @@ function qa(dom, sel) { return Array.from(dom.window.document.querySelectorAll(s
   await waitFor(() => text(dom).includes('ENTER NEXUS'), 8000, '重启后 ENTER 按钮');
   clickEl(dom, qa(dom, 'button').find(b => b.textContent.includes('ENTER NEXUS')));
   await waitFor(() => text(dom).includes('Python 知识库'), 10000, '重启后主菜单');
-  ok(qa(dom, 'button').some(b => b.textContent.includes('继续游戏')), '刷新后主菜单显示「继续游戏」');
-  const cont = qa(dom, 'button').find(b => b.textContent.includes('继续游戏'));
+  ok(qa(dom, 'button').some(b => b.textContent.includes('继续探索')), '刷新后主菜单显示「继续探索」');
+  const cont = qa(dom, 'button').find(b => b.textContent.includes('继续探索'));
   clickEl(dom, cont);
-  await waitFor(() => text(dom).includes('NEXUS 数字世界 · 服务器网络'), 15000, '继续游戏进入世界地图（可自选关卡）');
+  await waitFor(() => text(dom).includes('NEXUS 数字世界 · 服务器网络'), 15000, '继续探索进入世界地图（可自选关卡）');
   ok(text(dom).includes('已修复'), '地图显示已修复计数（存档恢复）');
   const contBtn = qa(dom, 'button').find(b => b.textContent.includes('继续：'));
   ok(!!contBtn, '地图提供「继续上次修复」入口');
@@ -188,7 +188,7 @@ function qa(dom, sel) { return Array.from(dom.window.document.querySelectorAll(s
   await waitFor(() => text(dom).includes('ENTER NEXUS'), 8000, 'c3 ENTER 按钮');
   clickEl(dom, qa(dom, 'button').find(b => b.textContent.includes('ENTER NEXUS')));
   await waitFor(() => text(dom).includes('Python 知识库'), 10000, 'c3 主菜单');
-  clickEl(dom, qa(dom, 'button').find(b => b.textContent.includes('继续游戏')));
+  clickEl(dom, qa(dom, 'button').find(b => b.textContent.includes('继续探索')));
   await waitFor(() => text(dom).includes('NEXUS 数字世界 · 服务器网络'), 15000, 'c3 地图');
   const c3Cont = qa(dom, 'button').find(b => b.textContent.includes('继续：'));
   clickEl(dom, c3Cont || qa(dom, '.node-group')[0]);
@@ -211,7 +211,7 @@ function qa(dom, sel) { return Array.from(dom.window.document.querySelectorAll(s
   clickEl(dom, await waitFor(() => qa(dom, 'button').find(b => b.textContent.includes('跳过初始化')), 8000, 'd4 跳过'));
   clickEl(dom, await waitFor(() => qa(dom, 'button').find(b => b.textContent.includes('ENTER NEXUS')), 8000, 'd4 ENTER'));
   await waitFor(() => text(dom).includes('Python 知识库'), 10000, 'd4 主菜单');
-  clickEl(dom, qa(dom, 'button').find(b => b.textContent.includes('继续游戏')));
+  clickEl(dom, qa(dom, 'button').find(b => b.textContent.includes('继续探索')));
   await waitFor(() => text(dom).includes('NEXUS 数字世界 · 服务器网络'), 10000, 'd4 世界地图');
   ok(text(dom).includes('DAMAGED'), '第一章完成后日志中心显示 DAMAGED');
   // 点击日志中心节点（第 3 个：training / syntax / logs）
@@ -242,7 +242,7 @@ function qa(dom, sel) { return Array.from(dom.window.document.querySelectorAll(s
   clickEl(dom, await waitFor(() => qa(dom, 'button').find(b => b.textContent.includes('跳过初始化')), 8000, 'd5 跳过'));
   clickEl(dom, await waitFor(() => qa(dom, 'button').find(b => b.textContent.includes('ENTER NEXUS')), 8000, 'd5 ENTER'));
   await waitFor(() => text(dom).includes('Python 知识库'), 10000, 'd5 主菜单');
-  clickEl(dom, qa(dom, 'button').find(b => b.textContent.includes('继续游戏')));
+  clickEl(dom, qa(dom, 'button').find(b => b.textContent.includes('继续探索')));
   await waitFor(() => text(dom).includes('NEXUS 数字世界 · 服务器网络'), 10000, 'd5 世界地图');
   ok(text(dom).includes('DAMAGED'), '第二章完成后存储数据仓显示 DAMAGED');
   const stNode = qa(dom, '.node-group')[3]; // training / syntax / logs / storage
@@ -277,7 +277,7 @@ function qa(dom, sel) { return Array.from(dom.window.document.querySelectorAll(s
   clickEl(dom, await waitFor(() => qa(dom, 'button').find(b => b.textContent.includes('跳过初始化')), 8000, 'd6 跳过'));
   clickEl(dom, await waitFor(() => qa(dom, 'button').find(b => b.textContent.includes('ENTER NEXUS')), 8000, 'd6 ENTER'));
   await waitFor(() => text(dom).includes('Python 知识库'), 10000, 'd6 主菜单');
-  clickEl(dom, qa(dom, 'button').find(b => b.textContent.includes('继续游戏')));
+  clickEl(dom, qa(dom, 'button').find(b => b.textContent.includes('继续探索')));
   await waitFor(() => text(dom).includes('NEXUS 数字世界 · 服务器网络'), 10000, 'd6 世界地图');
   ok(text(dom).includes('DAMAGED'), '第三章完成后自动化工厂显示 DAMAGED');
   const faNode = qa(dom, '.node-group')[4]; // training/syntax/logs/storage/factory
@@ -314,7 +314,7 @@ function qa(dom, sel) { return Array.from(dom.window.document.querySelectorAll(s
   clickEl(dom, await waitFor(() => qa(dom, 'button').find(b => b.textContent.includes('跳过初始化')), 8000, 'd7 跳过'));
   clickEl(dom, await waitFor(() => qa(dom, 'button').find(b => b.textContent.includes('ENTER NEXUS')), 8000, 'd7 ENTER'));
   await waitFor(() => text(dom).includes('Python 知识库'), 10000, 'd7 主菜单');
-  clickEl(dom, qa(dom, 'button').find(b => b.textContent.includes('继续游戏')));
+  clickEl(dom, qa(dom, 'button').find(b => b.textContent.includes('继续探索')));
   await waitFor(() => text(dom).includes('NEXUS 数字世界 · 服务器网络'), 10000, 'd7 世界地图');
   ok(text(dom).includes('系统诊断中心'), '地图包含系统诊断中心节点');
   ok(text(dom).includes('DAMAGED'), '第四章完成后系统诊断中心显示 DAMAGED');
@@ -354,7 +354,7 @@ function qa(dom, sel) { return Array.from(dom.window.document.querySelectorAll(s
   clickEl(dom, await waitFor(() => qa(dom, 'button').find(b => b.textContent.includes('跳过初始化')), 8000, 'd8 跳过'));
   clickEl(dom, await waitFor(() => qa(dom, 'button').find(b => b.textContent.includes('ENTER NEXUS')), 8000, 'd8 ENTER'));
   await waitFor(() => text(dom).includes('Python 知识库'), 10000, 'd8 主菜单');
-  clickEl(dom, qa(dom, 'button').find(b => b.textContent.includes('继续游戏')));
+  clickEl(dom, qa(dom, 'button').find(b => b.textContent.includes('继续探索')));
   await waitFor(() => text(dom).includes('NEXUS 数字世界 · 服务器网络'), 10000, 'd8 世界地图');
   ok(text(dom).includes('DAMAGED'), '第五章完成后方舟核心机房显示 DAMAGED');
   const coreNode = qa(dom, '.node-group')[6]; // training/syntax/logs/storage/factory/diag/core
@@ -406,7 +406,7 @@ function qa(dom, sel) { return Array.from(dom.window.document.querySelectorAll(s
   clickEl(dom, await waitFor(() => qa(dom, 'button').find(b => b.textContent.includes('跳过初始化')), 8000, 'b10 跳过'));
   clickEl(dom, await waitFor(() => qa(dom, 'button').find(b => b.textContent.includes('ENTER NEXUS')), 8000, 'b10 ENTER'));
   await waitFor(() => text(dom).includes('Python 知识库'), 10000, 'b10 主菜单');
-  clickEl(dom, qa(dom, 'button').find(b => b.textContent.includes('继续游戏')));
+  clickEl(dom, qa(dom, 'button').find(b => b.textContent.includes('继续探索')));
   await waitFor(() => text(dom).includes('NEXUS 数字世界 · 服务器网络'), 12000, 'b10 地图');
   clickEl(dom, qa(dom, '.node-group')[1]); // 语法维修站
   await waitFor(() => text(dom).includes('GATE-01'), 8000, 'b10 服务器面板出现章节 Boss 入口');

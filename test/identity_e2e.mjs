@@ -114,7 +114,7 @@ async function enterMenu(h) {
   let dom = await launch(v1Save());
   let h = helpers(dom);
   await enterMenu(h);
-  ok(h.qa('button').some(b => b.textContent.includes('继续游戏')), '旧存档被识别（主菜单显示「继续游戏」，未被重置）');
+  ok(h.qa('button').some(b => b.textContent.includes('继续探索')), '旧存档被识别（主菜单显示「继续探索」，未被重置）');
 
   const raw1 = dom.window.localStorage.getItem('nexus_code_repair_save_v1');
   const save1 = JSON.parse(raw1);

@@ -130,7 +130,7 @@ async function enterMenu(h) {
   dom = await launch(makeSave({ items: { scan: 2, rollback: 1 }, completed: [] }));
   h = helpers(dom);
   await enterMenu(h);
-  h.click(h.qa('button').find(b => b.textContent.includes('继续游戏')));
+  h.click(h.qa('button').find(b => b.textContent.includes('继续探索')));
   await h.wait(() => h.q('.node-group'), 10000, '地图');
   h.click(h.qa('.node-group')[0]);
   h.click(await h.wait(() => h.qa('button').find(b => b.textContent.includes('接入')), 8000, '接入'));

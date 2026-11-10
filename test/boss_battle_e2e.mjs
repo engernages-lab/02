@@ -90,7 +90,7 @@ async function enterMenu(h) {
   if (skipBtn) h.click(skipBtn);
   h.click(await h.wait(() => h.qa('button').find(b => b.textContent.includes('ENTER NEXUS')), 10000, 'ENTER'));
   await h.wait(() => h.text().includes('Python 知识库'), 10000, '主菜单');
-  h.click(h.qa('button').find(b => b.textContent.includes('继续游戏')));
+  h.click(h.qa('button').find(b => b.textContent.includes('继续探索')));
   await h.wait(() => h.text().includes('NEXUS 数字世界 · 服务器网络'), 12000, '地图');
 }
 

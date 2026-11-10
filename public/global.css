@@ -1017,3 +1017,14 @@ input[type="range"].nx-range::-webkit-slider-thumb {
   .hud-chip { font-size: 10px; }
   .dlg-text { font-size: 14px; }
 }
+
+/* 移动端可用性（第十阶段补充） */
+@supports (padding: env(safe-area-inset-bottom)) {
+  .page-inner { padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
+}
+@media (max-width: 640px) {
+  input, textarea, select { font-size: 16px !important; }
+  .nxbtn, .menu-navitem, .dlg-choice, .shop-tab { min-height: 40px; }
+  .dlg-box, .panel { max-height: 76vh; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  .code-editor-host { min-height: 46vh; }
+}
