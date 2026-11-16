@@ -6,6 +6,8 @@ import PlayerStatus from '../components/PlayerStatus';
 import DialogSystem from '../components/DialogSystem';
 import { useGame, type CompletePayload } from '../store/gameStore';
 import { levelById, levelsOfServer, serverById, type LevelDef } from '../game/levels';
+import { canEnterServer } from '../game/chapterFlow';
+import { toleranceFor } from '../game/progression';
 import { buildHarness, checkUserCode, combineWithHarness, filterMarkerLines, judgeRun, parseMarker, type JudgeCheck, type JudgeVerdict, type ParsedError } from '../services/judge';
 import { miraLevelHint, miraOnError, miraOnFail, miraOnRespawn } from '../services/ai';
 import { runPython, onPyStatus, warmUp, type PyState } from '../services/pythonRunner';
@@ -45,6 +47,14 @@ export default function ChallengePage() {
 
   useEffect(() => {
     if (!level) { g.nav('map'); return; }
+    // 统一章节门禁：未开放章节的关卡不允许通过任何入口直接进入
+    const access = canEnterServer(player, level.serverId);
+    if (!access.ok) {
+      g.toast('warn', access.reason || '该区域尚未解锁。');
+      g.setCurrentLevel(null);
+      g.nav('map');
+      return;
+    }
     setCode(level.initialCode);
     setTerm([]);
     setErrorLine(null);
@@ -621,7 +631,7 @@ export default function ChallengePage() {
       {/* 通关结算 */}
       {done && (
         <div className="overlay" style={{ background: 'rgba(3,10,16,0.72)', backdropFilter: 'blur(5px)' }}>
-          <div className="complete-panel">
+          <div className={'complete-panel' + (g.player.progress.flags.fxRepair === true ? ' fx-repair' : '')}>
             <div className="cp-ico">✓</div>
             <div className="cp-title">修复成功</div>
             <div className="cp-sub">{level.codename} · {level.title} 已恢复运行</div>
@@ -678,7 +688,7 @@ export default function ChallengePage() {
             </div>
             {done.payload.levelUp && (
               <div className="result-banner ok" style={{ marginBottom: 10 }}>
-                ⬆ 等级提升！Lv.{done.payload.oldLevel} → Lv.{done.payload.newLevel} 容错次数 +{g.tolerance - Math.min(g.tolerance, 3) < 0 ? 0 : 0}（当前 {g.tolerance}）
+                ⬆ 等级提升！Lv.{done.payload.oldLevel} → Lv.{done.payload.newLevel}　容错次数 +{Math.max(0, g.tolerance - toleranceFor(done.payload.oldLevel))}（当前 {g.tolerance}）
               </div>
             )}
             {!done.payload.firstTime && <div className="dim" style={{ fontSize: 12.5, marginBottom: 8 }}>已通关关卡：不再发放经验与基础贡献点（仅星级提升给少量补偿）。</div>}

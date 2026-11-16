@@ -17,10 +17,10 @@ export default function SettingsPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'nexus-save-v1.json';
+    a.download = 'nexus-save-v' + SAVE_VERSION + '.json';
     a.click();
     URL.revokeObjectURL(url);
-    setSaveMsg('存档已导出（nexus-save-v1.json）。');
+    setSaveMsg('存档已导出（nexus-save-v' + SAVE_VERSION + '.json）。');
     play('click');
   };
 

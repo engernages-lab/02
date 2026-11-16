@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useGame } from '../store/gameStore';
 import { ENDINGS, endingById, endingEligible } from '../game/lore/endings';
 import { endingScene } from '../game/lore/endingScenes';
-import { fragmentProgress, hasFragment } from '../game/lore/fragments';
+import { fragmentProgress, hasFragment, finalMemoryUnlocked } from '../game/lore/fragments';
 import {
   CREATOR_FRAGMENTS, FINAL_MEMORY,
 } from '../game/lore/fragments';
@@ -19,24 +19,29 @@ export default function EndingsPage() {
   const flags = p.progress.flags || {};
   const trust = normalizeRewards(p.rewards).trust;
   const fp = fragmentProgress(p.meta.memoryFragments || []);
+  const allShards = finalMemoryUnlocked(p.meta.memoryFragments || []);
   const finalSeen = p.progress.vault?.finalSeen === true;
   const chapterDone = flags.chapter6Done === true;
+  // 最终命运选择：只有击败 K-0（chapter6Done）、六枚碎片齐备、并查看最终记忆后才开放
+  const endingReady = chapterDone && allShards && finalSeen;
 
   // 展示用可用性：把「选择」当作各自的选项来判定条件（真正选择时才提交）
-  const eligible = useMemo(() => ENDINGS
+  const eligible = useMemo(() => (endingReady ? ENDINGS
     .filter(e => endingEligible(e, {
       fragments: p.meta.memoryFragments || [],
       flags: { chapter6Done: chapterDone, finalMemorySeen: finalSeen },
       trust,
       choice: e.id,
     }))
-    .map(e => e.id as string), [p.meta.memoryFragments, chapterDone, finalSeen, trust]);
+    .map(e => e.id as string) : []), [p.meta.memoryFragments, chapterDone, finalSeen, trust, endingReady]);
 
   const [playing, setPlaying] = useState<StoryScene | null>(null);
   const [chosen, setChosen] = useState<string | null>(null);
 
   const choose = (id: 'dawn' | 'order' | 'beyond') => {
-    if (!chapterDone) { play('deny'); g.toast('warn', '终章尚未抵达——完成终章后才能做出最终选择。'); return; }
+    if (!chapterDone) { play('deny'); g.toast('warn', '终章尚未抵达——完成终章并击败 K-0 后才能做出最终选择。'); return; }
+    if (!allShards) { play('deny'); g.toast('warn', '需要集齐六枚创世主碎片（当前 ' + fp.owned + '/' + fp.total + '）。'); return; }
+    if (!finalSeen) { play('deny'); g.toast('warn', '需要先在创世主记忆档案馆查看最终记忆档案。'); return; }
     if (!eligible.includes(id)) { play('deny'); g.toast('warn', '该结局的条件尚未满足。'); return; }
     play('unlock');
     setChosen(id);
@@ -94,6 +99,16 @@ export default function EndingsPage() {
           })}
         </div>
 
+        {chapterDone && !endingReady && (
+          <div className="panel" style={{ marginTop: 12 }}>
+            <div className="panel-title">最终命运选择尚未开放</div>
+            <div className="dim" style={{ fontSize: 12.5, lineHeight: 1.9 }}>
+              终章已经完成，但最终命运选择还需要：六枚创世主碎片全部集齐（当前 {fp.owned}/{fp.total}）、
+              并在创世主记忆档案馆查看最终记忆档案（当前 {finalSeen ? '已阅' : '未阅'}）。
+              这些条件只能通过真实击败六个章节 Boss 获得。
+            </div>
+          </div>
+        )}
         {!chapterDone && (
           <div className="panel" style={{ marginTop: 12 }}>
             <div className="panel-title">终章前提示</div>

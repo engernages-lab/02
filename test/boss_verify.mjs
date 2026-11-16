@@ -46,6 +46,10 @@ const FIXED = {
   'echo-03': 'def highest(nums):\n    best = nums[0]\n    for n in nums:\n        if n > best:\n            best = n\n    return best',
   'echo-04': 'def total_after_discount(prices, rate):\n    total = 0\n    for p in prices:\n        total = total + p\n    return total * (1 - rate)',
   'echo-05': 'def safe_sum(records):\n    total = 0\n    for k in records:\n        try:\n            total = total + int(records[k])\n        except ValueError:\n            pass\n    return total',
+  'index-0': 'def find_id(name, names):\n    for i in range(len(names)):\n        if names[i] == name:\n            return i\n    return -1',
+  'judgment-4': 'def unlock(a, b, c):\n    if a == "root" and b == "root" and c == "root":\n        return True\n    return False',
+  'entropy': 'def lookup(table, key):\n    return table.get(key, 0)',
+  'k0': 'def pass_gate(a, b, c):\n    if a and b and c:\n        return True\n    return False',
 };
 
 let pass = 0, total = 0;

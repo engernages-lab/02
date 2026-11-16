@@ -6,6 +6,7 @@ import { normalizeStoryVars } from '../game/lore/vars';
 import { defaultRewards, normalizeRewards } from '../game/rewards';
 import { DEFAULT_VOICE, normalizeVoice } from './voice';
 import { CURRENT_SAVE_VERSION, migrateSave } from './migrations';
+import { normalizeChapterProgress } from '../game/chapterFlow';
 
 /** 存储键保持不变，确保旧存档仍能被读取（改名会导致所有玩家进度丢失） */
 export const SAVE_KEY = 'nexus_code_repair_save_v1';
@@ -24,6 +25,7 @@ export function defaultState(): PlayerState {
       lastDeathLevel: null,
       lastDeathReason: null,
       memoryFragments: [],
+      memoryLogs: [],
       fragmentLog: {},
       backupLevel: 1,
     },
@@ -79,18 +81,20 @@ function isValidSave(x: unknown): x is PlayerState {
 /**
  * 字段级自愈：所有新增字段都必须是「缺失即可补」的。
  * 名称/身份以 identity 为准，并把 name 同步为显示名（兼容旧组件）。
+ * fromVersion 用于旧存档的「历史进度继承」审计（V1.1.1 章节主线）。
  */
-export function normalizePlayerState(raw: PlayerState): PlayerState {
+export function normalizePlayerState(raw: PlayerState, fromVersion?: number): PlayerState {
   const identity = normalizeIdentity((raw as Partial<PlayerState>).identity, raw.name);
   const progress = raw.progress;
   const storySeen = progress.storySeen && typeof progress.storySeen === 'object' ? progress.storySeen : {};
-  return {
+  const normalized: PlayerState = {
     ...raw,
     name: identity.displayName,
     identity,
     meta: {
       ...raw.meta,
       memoryFragments: Array.isArray(raw.meta?.memoryFragments) ? raw.meta.memoryFragments : [],
+      memoryLogs: Array.isArray(raw.meta?.memoryLogs) ? raw.meta.memoryLogs : [],
       fragmentLog: raw.meta?.fragmentLog && typeof raw.meta.fragmentLog === 'object' ? raw.meta.fragmentLog : {},
       bugCodex: raw.meta?.bugCodex && typeof raw.meta.bugCodex === 'object' ? raw.meta.bugCodex : {},
     },
@@ -113,6 +117,7 @@ export function normalizePlayerState(raw: PlayerState): PlayerState {
       voice: normalizeVoice((raw.settings as { voice?: unknown })?.voice),
     },
   };
+  return normalizeChapterProgress(normalized, typeof fromVersion === 'number' ? fromVersion : 1);
 }
 
 export type LoadResult = {
@@ -154,7 +159,7 @@ export function loadGame(): LoadResult {
       backupCorrupted(raw);
       return { state: defaultState(), fresh: true, corrupted: '存档数据已损坏，已重置（原始数据已备份）。' };
     }
-    const player = normalizePlayerState(m.player);
+    const player = normalizePlayerState(m.player, m.from);
     const notes = m.future ? [...m.notes, '存档来自更高版本（v' + m.from + '），已按兼容模式读取'] : m.notes;
     return {
       state: player,
@@ -181,7 +186,7 @@ export function importSave(text: string): { ok: boolean; state?: PlayerState; re
     const m = migrateSave(data);
     if (!isValidSave(m.player)) return { ok: false, reason: '存档内容不完整或已损坏。' };
     const notes = m.future ? [...m.notes, '该存档来自更高版本（v' + m.from + '），已按兼容模式导入'] : m.notes;
-    return { ok: true, state: normalizePlayerState(m.player), notes };
+    return { ok: true, state: normalizePlayerState(m.player, m.from), notes };
   } catch {
     return { ok: false, reason: '无法解析该文件，不是有效的 NEXUS 存档。' };
   }

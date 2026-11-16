@@ -116,8 +116,8 @@ export default function RewardCenterPage() {
             收集记忆碎片可解锁档案；未解锁的档案会显示所需碎片数量。
           </div>
           {MEMORY_ARCHIVES.map(a => {
-            const open = archives.some(x => x.id === a.id);
             const read = rw.archiveRead.includes(a.id);
+            const open = archives.some(x => x.id === a.id) || read;
             return (
               <div key={a.id} className={'archive-row' + (open ? '' : ' locked')}>
                 <div style={{ flex: 1, minWidth: 0 }}>
@@ -137,6 +137,16 @@ export default function RewardCenterPage() {
                     if (openArchive === a.id) { setOpenArchive(null); } else { setOpenArchive(a.id); g.markArchiveRead(a.id); }
                   }}>
                     {openArchive === a.id ? '收起' : '阅读'}
+                  </button>
+                )}
+                {!open && (rw.items.decoder || 0) > 0 && (
+                  <button className="nxbtn small primary" onClick={() => {
+                    if (!g.consumeItem('decoder')) return;
+                    g.markArchiveRead(a.id);
+                    setMsg('记忆解码器已使用：' + a.title);
+                    play('success');
+                  }}>
+                    使用解码器
                   </button>
                 )}
               </div>

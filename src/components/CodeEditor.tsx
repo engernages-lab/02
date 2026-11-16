@@ -2,8 +2,7 @@ import { useEffect, useRef } from 'react';
 import Editor, { loader } from '@monaco-editor/react';
 import type * as MonacoNS from 'monaco-editor';
 
-// Monaco 通过 CDN 按需加载（jsdelivr），避免把 monaco-editor 打进游戏包
-// 本地内置 Monaco（public/monaco/vs，随构建分发，完全离线）；仅在本地缺失时才回退 CDN
+// Monaco 优先使用本地内置副本（public/monaco/vs，随构建分发，完全离线）；仅在本地缺失时才回退 CDN
 const LOCAL_MONACO = (() => {
   try {
     const u = new URL('monaco/vs', document.baseURI).href;
@@ -102,7 +101,7 @@ export default function CodeEditor({
         value={value}
         onChange={(v) => onChange(v ?? '')}
         loading={<div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#4A6E85' }}>
-          <span className="spinner" />&nbsp;正在从 CDN 加载代码编辑器…
+          <span className="spinner" />&nbsp;正在加载代码编辑器…
         </div>}
         onMount={(ed, mon) => {
           edRef.current = ed;

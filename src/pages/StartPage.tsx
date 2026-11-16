@@ -81,7 +81,7 @@ export default function StartPage() {
           <button className="nxbtn primary pulse boot-enter" onClick={enter}>ENTER NEXUS</button>
         </>
       )}
-      <div className="boot-foot">v0.1.0 DEMO — 序章 + 第一章 · 本地 Pyodide 运行，无需后端</div>
+      <div className="boot-foot">v1.1.1 正式版 — 六章主线必经由 Boss 首胜驱动 · Boss 三档难度（EASY / HARD / EXPERT）· 本地 MicroPython 运行，无需后端</div>
     </div>
   );
 }

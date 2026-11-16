@@ -5,6 +5,7 @@
 //   3. 每个阶段的考点必须来自该章已教知识点（见 knowledgeViolations）。
 import type { LevelJudgeSpec } from './types';
 import { levelsOfServer } from './levels';
+import { difficultyOf, type BossDifficulty } from './difficulty';
 
 export interface BossPhaseDef {
   id: string;
@@ -31,6 +32,8 @@ export interface BossPhaseDef {
 export interface BossBattleDef {
   bossId: string;
   chapter: number;
+  /** 难度：同一 Boss 的三套独立题目 */
+  difficulty: BossDifficulty;
   /** 总血量（平均分配到每个阶段） */
   maxHp: number;
   /** 判题没有造成伤害时，Boss 反击对玩家意识的伤害 */
@@ -44,6 +47,10 @@ export interface BossBattleDef {
 export interface BossBattleState {
   hp: number;
   maxHp: number;
+  /** 本场战斗锁定的难度（进入战斗后不可切换） */
+  difficulty: BossDifficulty;
+  /** 是否已经实际开始挑战（开始后难度锁定；重生重置后为 false） */
+  started: boolean;
   /** 已击破的阶段数（0 = 第一阶段进行中） */
   phase: number;
   /** 每个阶段已经通过过的测试位掩码 */
@@ -110,6 +117,8 @@ export function createBattleState(def: BossBattleDef): BossBattleState {
   return {
     hp: def.maxHp,
     maxHp: def.maxHp,
+    difficulty: def.difficulty || 'easy',
+    started: false,
     phase: 0,
     phaseMask: def.phases.map(() => 0),
     failures: 0,
@@ -123,6 +132,8 @@ export function normalizeBattleState(raw: unknown, def: BossBattleDef): BossBatt
   const base = createBattleState(def);
   if (!raw || typeof raw !== 'object') return base;
   const r = raw as Partial<BossBattleState>;
+  // 难度不匹配 → 视为另一套题目的残留，不能复用进度（防止绕过难度/测试集）
+  if (r.difficulty !== undefined && difficultyOf(r.difficulty) !== (def.difficulty || 'easy')) return base;
   const maxHp = typeof r.maxHp === 'number' && isFinite(r.maxHp) && r.maxHp > 0 ? Math.floor(r.maxHp) : def.maxHp;
   const hp = typeof r.hp === 'number' && isFinite(r.hp) ? Math.max(0, Math.min(maxHp, Math.floor(r.hp))) : maxHp;
   const phase = typeof r.phase === 'number' && isFinite(r.phase)
@@ -137,6 +148,9 @@ export function normalizeBattleState(raw: unknown, def: BossBattleDef): BossBatt
   return {
     hp,
     maxHp,
+    difficulty: def.difficulty || 'easy',
+    started: r.started === true || r.cleared === true || (typeof r.phase === 'number' && r.phase > 0) ||
+      (typeof r.hp === 'number' && typeof r.maxHp === 'number' && r.hp < r.maxHp) || (typeof r.failures === 'number' && r.failures > 0),
     phase,
     phaseMask,
     failures: typeof r.failures === 'number' && isFinite(r.failures) ? Math.max(0, Math.floor(r.failures)) : 0,
@@ -223,6 +237,7 @@ export function hpPercent(state: BossBattleState): number {
 export const GATE01_BATTLE: BossBattleDef = {
   bossId: 'gate-01',
   chapter: 1,
+  difficulty: 'easy',
   maxHp: 100,
   counterDamage: 3,
   bg: 'dataport',
@@ -332,6 +347,7 @@ export const GATE01_BATTLE: BossBattleDef = {
 export const SOMNIA_BATTLE: BossBattleDef = {
   bossId: 'somnia',
   chapter: 2,
+  difficulty: 'easy',
   maxHp: 100,
   counterDamage: 4,
   bg: 'memory',
@@ -436,6 +452,7 @@ export const SOMNIA_BATTLE: BossBattleDef = {
 export const INDEX0_BATTLE: BossBattleDef = {
   bossId: 'index-0',
   chapter: 3,
+  difficulty: 'easy',
   maxHp: 100,
   counterDamage: 3,
   bg: 'memory',
@@ -483,7 +500,7 @@ export const INDEX0_BATTLE: BossBattleDef = {
         ],
       },
       knowledge: ['list', 'for', 'if', 'compare', 'logic', 'return'],
-      baselineMask: 1,
+      baselineMask: 6,
       summary: 'or 会把「其中一个成立」当成成立；这里必须两个条件同时满足才算有效。',
     },
     {
@@ -506,7 +523,7 @@ export const INDEX0_BATTLE: BossBattleDef = {
         ],
       },
       knowledge: ['list', 'while', 'len', 'if', 'compare', 'indent', 'return'],
-      baselineMask: 2,
+      baselineMask: 4,
       summary: '去重要同时处理两种脏数据：重复项与缺失项；顺序必须保持不变。',
     },
     {
@@ -529,7 +546,7 @@ export const INDEX0_BATTLE: BossBattleDef = {
         ],
       },
       knowledge: ['list', 'for', 'if', 'compare', 'len', 'return'],
-      baselineMask: 2,
+      baselineMask: 4,
       summary: '综合题要把前面三个修复点串起来：读得对、判得准、不重复。',
     },
   ],
@@ -540,6 +557,7 @@ export const INDEX0_BATTLE: BossBattleDef = {
 export const JUDGMENT4_BATTLE: BossBattleDef = {
   bossId: 'judgment-4',
   chapter: 4,
+  difficulty: 'easy',
   maxHp: 100,
   counterDamage: 4,
   bg: 'memory',
@@ -564,7 +582,7 @@ export const JUDGMENT4_BATTLE: BossBattleDef = {
         ],
       },
       knowledge: ['for', 'list', 'if', 'compare', 'return'],
-      baselineMask: 2,
+      baselineMask: 1,
       summary: '「全部满足」要在遇到反例时立刻否定，而不是遇到正例就肯定。',
     },
     {
@@ -611,7 +629,7 @@ export const JUDGMENT4_BATTLE: BossBattleDef = {
         ],
       },
       knowledge: ['parameter', 'compare', 'logic', 'return'],
-      baselineMask: 2,
+      baselineMask: 1,
       summary: '多层校验里 or 是权限漏洞，and 才是「同时满足」。',
     },
     {
@@ -634,7 +652,7 @@ export const JUDGMENT4_BATTLE: BossBattleDef = {
         ],
       },
       knowledge: ['list', 'for', 'if', 'compare', 'logic', 'return'],
-      baselineMask: 2,
+      baselineMask: 4,
       summary: '核心恢复要同时保证：来源有效、结果去重、顺序不变。',
     },
   ],
@@ -645,6 +663,7 @@ export const JUDGMENT4_BATTLE: BossBattleDef = {
 export const ENTROPY_BATTLE: BossBattleDef = {
   bossId: 'entropy',
   chapter: 5,
+  difficulty: 'easy',
   maxHp: 100,
   counterDamage: 4,
   bg: 'memory',
@@ -665,7 +684,7 @@ export const ENTROPY_BATTLE: BossBattleDef = {
         ],
       },
       knowledge: ['list', 'for', 'if', 'compare', 'return'],
-      baselineMask: 2,
+      baselineMask: 4,
       summary: '筛选条件写反，会把污染物当成有效数据写进核心。',
     },
     {
@@ -684,7 +703,7 @@ export const ENTROPY_BATTLE: BossBattleDef = {
         ],
       },
       knowledge: ['dict', 'parameter', 'return'],
-      baselineMask: 2,
+      baselineMask: 1,
       summary: '字典取值的默认值能避免 KeyError 让整个索引崩溃。',
     },
     {
@@ -703,7 +722,7 @@ export const ENTROPY_BATTLE: BossBattleDef = {
         ],
       },
       knowledge: ['try', 'return', 'parameter'],
-      baselineMask: 2,
+      baselineMask: 1,
       summary: '异常不能被吞掉，但也不能让整条修复链因此中断。',
     },
     {
@@ -722,7 +741,7 @@ export const ENTROPY_BATTLE: BossBattleDef = {
         ],
       },
       knowledge: ['list', 'for', 'try', 'return'],
-      baselineMask: 1,
+      baselineMask: 0,
       summary: '综合修复要同时处理转换失败与累加顺序。',
     },
   ],
@@ -733,6 +752,7 @@ export const ENTROPY_BATTLE: BossBattleDef = {
 export const K0_BATTLE: BossBattleDef = {
   bossId: 'k0',
   chapter: 6,
+  difficulty: 'easy',
   maxHp: 100,
   counterDamage: 5,
   bg: 'core',
@@ -786,13 +806,14 @@ export const K0_BATTLE: BossBattleDef = {
       judge: {
         judgeKind: 'python',
         pythonChecks: [
-          { name: '同键取较大值', expr: 'merge({"a": 1}, {"a": 5})["a"] == 5' },
+          { name: '同键取较大值（后者更大）', expr: 'merge({"a": 1}, {"a": 5})["a"] == 5' },
+          { name: '同键取较大值（前者更大）', expr: 'merge({"a": 5}, {"a": 1})["a"] == 5' },
           { name: '新键被合入', expr: 'merge({"a": 1}, {"b": 2})["b"] == 2' },
           { name: '不同键都保留', expr: 'len(merge({"a": 1}, {"b": 2})) == 2' },
         ],
       },
       knowledge: ['dict', 'for', 'if', 'compare', 'return'],
-      baselineMask: 2,
+      baselineMask: 13,
       summary: '合并策略要明确：同键时是覆盖还是取优，必须写清楚。',
     },
     {
@@ -811,7 +832,7 @@ export const K0_BATTLE: BossBattleDef = {
         ],
       },
       knowledge: ['list', 'for', 'try', 'if', 'return'],
-      baselineMask: 1,
+      baselineMask: 0,
       summary: '最终命令必须容错：单条坏数据不能中断整个世界的修复。',
     },
   ],

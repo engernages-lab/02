@@ -8,15 +8,23 @@ import { levelForExp, toleranceFor } from '../game/progression';
 import { recalcAchievements, achievementById } from '../game/achievements';
 import { DEFENSE_TASKS } from '../game/defense';
 import { bossById } from '../game/bosses';
-import { battleFor, createBattleState, normalizeBattleState, type BossBattleState } from '../game/battle';
-import { fragmentForCollected } from '../game/lore/fragments';
-import { chapterOfBoss } from '../game/lore/chapters';
-import type { VaultState } from '../game/types';
+import { createBattleState, normalizeBattleState, resolveSubmission, type BossBattleState, type SubmissionResult } from '../game/battle';
+import { bossBattleDef, bossDifficulties } from '../game/bossDifficulties';
+import { difficultyOf, type BossDifficulty } from '../game/difficulty';
 import {
-  defaultRewards, normalizeRewards, shopItemById,
+  handleBossFirstClear, chapterGate, canEnterServer, bossGate, originCoreGate, markOriginCoreEntered,
+  recordBossDifficultyClear, bossRecordOf, verifyBattleState, type BossFirstClearPayload,
+  type ChapterGate, type BossGate, type OriginCoreGate,
+} from '../game/chapterFlow';
+import type { VaultState, RunOutcomeShape } from '../game/types';
+import { CREATOR_FRAGMENTS } from '../game/lore/fragments';
+import { buildHarness, checkUserCode, combineWithHarness, judgeRun, type JudgeVerdict } from '../services/judge';
+import { runPython } from '../services/pythonRunner';
+import {
+  normalizeRewards, shopItemById,
   chapterRewardOf, type RewardState, type RewardBreakdown, type Grade,
 } from '../game/rewards';
-import { computeLevelRewardV2, unlocksForLevel, bossRewardFor, IMPROVEMENT_PER_STAR } from '../game/economy';
+import { computeLevelRewardV2, unlocksForLevel } from '../game/economy';
 import { slotOf, skinMetaById } from '../game/cosmetics';
 import { play, setVolumes, startMusic, stopMusic, isMusicOn } from '../services/sound';
 
@@ -51,6 +59,35 @@ export interface CompletePayload {
 
 export interface FailPayload { n: number; tolerance: number; triggered: boolean }
 
+/** Boss 攻击提交结果（由 store 统一执行真实 Python 判题 + 战斗结算 + 首胜事务） */
+export type BossAttackStatus = 'blocked' | 'timeout' | 'error' | 'miss' | 'hit' | 'victory' | 'simulation' | 'simVictory';
+
+export interface DifficultyClearInfo {
+  difficulty: BossDifficulty;
+  exp: number;
+  credits: number;
+  badgeId: string | null;
+  titleUnlocked: string | null;
+  firstTime: boolean;
+}
+
+export interface BossAttackResult {
+  status: BossAttackStatus;
+  /** 被门禁拒绝 / 安全策略阻止 / 首胜校验失败的原因 */
+  reason?: string;
+  denied?: boolean;
+  run?: RunOutcomeShape;
+  verdict?: JudgeVerdict;
+  result?: SubmissionResult;
+  /** 首次击败时由统一事务返回（幂等，只会出现一次） */
+  firstClear?: BossFirstClearPayload | null;
+  /** 模拟再战完成时返回（不发碎片/章节奖励） */
+  difficultyClear?: DifficultyClearInfo | null;
+  /** 本次是否触发 Boss 反击（意识下降） */
+  countered?: boolean;
+  toleranceTriggered?: boolean;
+}
+
 interface GameCtx {
   player: PlayerState;
   screen: Screen;
@@ -64,11 +101,24 @@ interface GameCtx {
   startNewGame: () => void;
   setCurrentLevel: (id: string | null) => void;
   setCurrentBoss: (id: string | null) => void;
-  completeBoss: (bossId: string) => { fragmentId: string; expGained: number; levelUp: boolean; newLevel: number; credits: number; trust: number; unlocks: string[] } | null;
-  beginBossBattle: (bossId: string) => BossBattleState | null;
-  applyBossDamage: (bossId: string, phaseIndex: number, r: { hpAfter: number; mask: number; phaseAfter: number; defeated: boolean }) => void;
-  bossCounterAttack: (bossId: string, amount: number) => void;
-  resetBossBattle: (bossId: string) => void;
+  completeBoss: (bossId: string) => BossFirstClearPayload | null;
+  beginBossBattle: (bossId: string, difficulty?: BossDifficulty) => BossBattleState | null;
+  /** 难度选择界面「开始挑战」：按所选难度重置整场战斗（已首胜则为模拟再战） */
+  startBossBattle: (bossId: string, difficulty: BossDifficulty) => BossBattleState | null;
+  /** 放弃当前进行中的战斗（只清战斗进度，不影响永久奖励），用于重新选择难度 */
+  abandonBossBattle: (bossId: string) => void;
+  /** 读取 Boss 难度记录（最高难度 / 各难度通关） */
+  bossRecord: (bossId: string) => import('../game/types').BossRecord;
+  /** 唯一的 Boss 攻击入口：真实判题 → 伤害 → 首胜事务 */
+  submitBossAttack: (bossId: string, phaseIndex: number, code: string) => Promise<BossAttackResult>;
+  /** 章节门禁（真实状态读取，所有正式入口共用） */
+  chapterGateOf: (chapterId: string) => ChapterGate;
+  /** 服务器入口门禁（旧档继承放行记录在 legacy 标记里） */
+  serverGate: (serverId: string) => { ok: boolean; reason: string; legacy: boolean };
+  /** Boss 入口门禁（含原初核心校验 / 模拟再战） */
+  bossEntryGate: (bossId: string) => BossGate;
+  /** 原初核心门禁（前五枚碎片校验） */
+  originCoreGateNow: () => OriginCoreGate;
   recordBug: (entryId: string) => void;
   recordEnding: (endingId: string) => void;
   markVaultRead: (fragmentId: string) => void;
@@ -113,7 +163,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   const [event, setEvent] = useState<GameEvent>({ kind: 'none' });
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [saveCorrupted] = useState<string | null>(boot.corrupted || null);
-  const [hasSave] = useState<boolean>(!boot.fresh);
+  const [hasSave, setHasSave] = useState<boolean>(!boot.fresh);
   const [respawnTick, setRespawnTick] = useState(0);
   const playerRef = useRef(player);
   playerRef.current = player;
@@ -171,6 +221,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   // ---------- 玩家操作 ----------
   const startNewGame = useCallback(() => {
     setPlayer(defaultState());
+    setHasSave(true);
     setScreen('story');
   }, []);
 
@@ -182,146 +233,117 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     setPlayer(p => ({ ...p, progress: { ...p.progress, currentBossId: id } }));
   }, []);
 
-  const completeBoss = useCallback((bossId: string): {
-    fragmentId: string;
-    expGained: number;
-    levelUp: boolean;
-    newLevel: number;
-    credits: number;
-    trust: number;
-    unlocks: string[];
-  } | null => {
-    const boss = bossById(bossId);
-    if (!boss) return null;
+  /**
+   * 同步提交：立即用最新状态计算并写入，同时更新 playerRef。
+   * Boss 战需要在同一次交互里「扣血 → 校验 → 首胜事务」，不能依赖异步 state 队列。
+   */
+  const commitPlayer = useCallback((updater: (p: PlayerState) => PlayerState): PlayerState => {
+    const next = updater(playerRef.current);
+    playerRef.current = next;
+    setPlayer(next);
+    return next;
+  }, []);
+
+  /**
+   * 统一 Boss 首胜处理入口（六个 Boss 共用，事务式 + 幂等）。
+   * 真实胜利校验、碎片发放、章节完成、下一章解锁全部由 chapterFlow 完成；
+   * 任何 UI 组件都不得自行发放碎片或解锁章节。
+   */
+  const completeBoss = useCallback((bossId: string): BossFirstClearPayload | null => {
     const cur = playerRef.current;
-    const done = cur.progress.bossesDone ?? [];
-    if (done.includes(bossId)) return null; // 已击破：不重复发经验/碎片/奖励
-
-    const newExp = cur.exp + boss.rewardExp;
-    const newLevel = levelForExp(newExp);
-    const firstGain = !cur.meta.memoryFragments.includes(boss.fragmentId);
-    const fragments = firstGain
-      ? [...cur.meta.memoryFragments, boss.fragmentId]
-      : cur.meta.memoryFragments;
-
-    // 碎片归档记录（重复挑战不会写入新时间）
-    const fragmentLog = { ...(cur.meta.fragmentLog || {}) };
-    if (firstGain) {
-      const now = Date.now();
-      fragmentLog[boss.fragmentId] = now;
-      const canon = fragmentForCollected(boss.fragmentId)?.id;
-      if (canon && !fragmentLog[canon]) fragmentLog[canon] = now;
+    const r = handleBossFirstClear(cur, bossId);
+    if (!r.changed || !r.payload) return null;
+    playerRef.current = r.player;
+    setPlayer(r.player);
+    if (r.payload.credits > 0) {
+      toast('achieve', '章节奖励：+' + r.payload.credits + ' 贡献点（' + (r.payload.unlocks[0] || '') + '）');
     }
-
-    // 章节完成标记：该章关卡全通 + Boss 首杀 → 写入 doneFlag（P0 修复）
-    const chDef = chapterOfBoss(bossId);
-    const chapterCleared = !!chDef && levelsOfServer(chDef.serverId).every(l => cur.progress.completedLevels.includes(l.id));
-    const doneFlags = chapterCleared && chDef ? { ...cur.progress.flags, [chDef.doneFlag]: true } : cur.progress.flags;
-
-    // 首次击败章节 Boss 的章节奖励（幂等）
-    const baseRw = normalizeRewards(cur.rewards);
-    let nextRw: RewardState = { ...baseRw, items: { ...baseRw.items }, skins: [...baseRw.skins] };
-    const unlocks: string[] = [];
-    let credits = 0;
-    let trust = 0;
-    const br = bossRewardFor(boss.chapter);
-    const rewardKey = 'boss-ch' + boss.chapter;
-    if (br && !(baseRw.bossRewards || []).includes(rewardKey)) {
-      nextRw.credits = baseRw.credits + br.credits;
-      nextRw.trust = Math.min(100, baseRw.trust + br.trust);
-      nextRw.bossRewards = [...(baseRw.bossRewards || []), rewardKey];
-      if (br.items) for (const [k, v] of Object.entries(br.items)) nextRw.items[k] = (nextRw.items[k] || 0) + v;
-      if (br.skins && br.skins.length) nextRw.skins = [...new Set([...nextRw.skins, ...br.skins])];
-      credits = br.credits;
-      trust = br.trust;
-      unlocks.push(br.title);
-    }
-
-    // 升级解锁（称号 / 头像框 / 粒子），自动装备
-    for (const u of unlocksForLevel(cur.level, newLevel)) {
-      if (nextRw.skins.includes(u.id)) continue;
-      nextRw.skins = [...nextRw.skins, u.id];
-      nextRw.unlocks = [...(nextRw.unlocks || []), u.id];
-      if (u.slot) nextRw.equipped = { ...nextRw.equipped, [u.slot]: u.id };
-      unlocks.push(u.name);
-    }
-
-    setPlayer(p => {
-      const next: PlayerState = {
-        ...p,
-        level: newLevel,
-        exp: newExp,
-        rewards: nextRw,
-        meta: { ...p.meta, memoryFragments: fragments, fragmentLog },
-        progress: {
-          ...p.progress,
-          flags: doneFlags,
-          bossesDone: [...(p.progress.bossesDone ?? []), bossId],
-          achievements: recalcAchievements({
-            ...p,
-            level: newLevel,
-            exp: newExp,
-            meta: { ...p.meta, memoryFragments: fragments },
-            progress: { ...p.progress, bossesDone: [...(p.progress.bossesDone ?? []), bossId] },
-          }),
-        },
-      };
-      return next;
-    });
-
-    if (credits > 0) toast('achieve', '章节奖励：+' + credits + ' 贡献点（' + (br ? br.title : '') + '）');
-    return { fragmentId: boss.fragmentId, expGained: boss.rewardExp, levelUp: newLevel > cur.level, newLevel, credits, trust, unlocks };
+    return r.payload;
   }, [toast]);
 
+
   // ---------- Boss 战 ----------
-  /** 进入战斗：没有存档就创建满血状态（已击破的 Boss 保留原状态） */
-  const beginBossBattle = useCallback((bossId: string): BossBattleState | null => {
-    const def = battleFor(bossId);
+  /**
+   * 进入战斗：
+   * - 未首胜：必须在真实门禁内（章节已开放 + 普通关卡完成 + 原初核心校验）；
+   * - 已首胜：进入「模拟再战」，不复用旧血量，但绝不改动 bossesDone / 碎片 / 章节状态。
+   * - 已有进行中的战斗：保留该难度（难度锁定），传别的难度会被拒绝。
+   */
+  const beginBossBattle = useCallback((bossId: string, difficulty: BossDifficulty = 'easy'): BossBattleState | null => {
+    const wanted = difficultyOf(difficulty);
+    const def = bossBattleDef(bossId, wanted);
     if (!def) return null;
     const cur = playerRef.current;
-    const existing = normalizeBattleState((cur.progress.battles || {})[bossId], def);
-    if (!(cur.progress.battles || {})[bossId]) {
-      setPlayer(p => ({
+    const gate = bossGate(cur, bossId);
+    if (!gate.available && !gate.simulation) return null;
+
+    const raw = (cur.progress.battles || {})[bossId];
+    const existingDiff = raw && typeof raw === 'object' ? difficultyOf((raw as { difficulty?: unknown }).difficulty) : null;
+    const normalized = raw ? normalizeBattleState(raw, bossBattleDef(bossId, existingDiff || 'easy') || def) : null;
+    const inProgress = !!normalized && !normalized.cleared && normalized.started;
+    if (normalized && inProgress && existingDiff && existingDiff !== wanted) {
+      // 本次挑战难度已锁定
+      return null;
+    }
+
+    if (gate.simulation) {
+      const fresh = createBattleState(def);
+      commitPlayer(p => ({
+        ...p,
+        progress: { ...p.progress, battles: { ...(p.progress.battles || {}), [bossId]: fresh } },
+      }));
+      return fresh;
+    }
+
+    const existing = normalizeBattleState(raw, def);
+    if (!raw || existing.difficulty !== wanted) {
+      commitPlayer(p => ({
         ...p,
         progress: { ...p.progress, battles: { ...(p.progress.battles || {}), [bossId]: existing } },
       }));
     }
+    if (bossId === 'k0') commitPlayer(p => markOriginCoreEntered(p));
     return existing;
-  }, []);
+  }, [commitPlayer]);
 
-  /** 写入一次判题结果（血量 / 阶段 / 已通过测试位掩码） */
-  const applyBossDamage = useCallback((
-    bossId: string,
-    phaseIndex: number,
-    r: { hpAfter: number; mask: number; phaseAfter: number; defeated: boolean },
-  ) => {
-    const def = battleFor(bossId);
-    if (!def) return;
-    setPlayer(p => {
-      const cur = normalizeBattleState((p.progress.battles || {})[bossId], def);
-      const masks = cur.phaseMask.slice();
-      masks[phaseIndex] = Math.max(masks[phaseIndex] || 0, r.mask);
-      const next: BossBattleState = {
-        ...cur,
-        hp: Math.max(0, Math.min(cur.maxHp, r.hpAfter)),
-        phase: Math.max(cur.phase, r.phaseAfter),
-        phaseMask: masks,
-        cleared: cur.cleared || r.defeated || r.hpAfter <= 0,
-        updatedAt: Date.now(),
-      };
-      return { ...p, progress: { ...p.progress, battles: { ...(p.progress.battles || {}), [bossId]: next } } };
+  /** 难度选择界面「开始挑战」：锁定所选难度并重置本场战斗 */
+  const startBossBattle = useCallback((bossId: string, difficulty: BossDifficulty): BossBattleState | null => {
+    const diff = difficultyOf(difficulty);
+    const def = bossBattleDef(bossId, diff);
+    if (!def) return null;
+    const allowed = bossDifficulties(bossId);
+    if (!allowed.includes(diff)) return null;
+    const gate = bossGate(playerRef.current, bossId);
+    if (!gate.available && !gate.simulation) return null;
+    const fresh = { ...createBattleState(def), started: true };
+    const next = commitPlayer(p => ({
+      ...p,
+      progress: { ...p.progress, battles: { ...(p.progress.battles || {}), [bossId]: fresh } },
+    }));
+    if (bossId === 'k0') commitPlayer(p => markOriginCoreEntered(p));
+    return normalizeBattleState((next.progress.battles || {})[bossId], def);
+  }, [commitPlayer]);
+
+  /** 放弃当前进行中的战斗（只清战斗进度，不影响永久奖励） */
+  const abandonBossBattle = useCallback((bossId: string) => {
+    commitPlayer(p => {
+      const battles = { ...(p.progress.battles || {}) };
+      delete battles[bossId];
+      return { ...p, progress: { ...p.progress, battles } };
     });
-  }, []);
+  }, [commitPlayer]);
 
   /** 判题没有造成伤害 → Boss 反击：意识值下降，失败次数 +1；意识归零走既有死亡流程 */
   const bossCounterAttack = useCallback((bossId: string, amount: number) => {
-    const def = battleFor(bossId);
-    if (!def) return;
     const cur = playerRef.current;
-    const c = Math.max(0, cur.consciousness - Math.max(0, amount));
-    setPlayer(p => {
+    const raw = (cur.progress.battles || {})[bossId];
+    const def = bossBattleDef(bossId, difficultyOf(raw && typeof raw === 'object' ? (raw as { difficulty?: unknown }).difficulty : undefined));
+    if (!def) return;
+    let death = false;
+    commitPlayer(p => {
       const b = normalizeBattleState((p.progress.battles || {})[bossId], def);
-      return {
+      const c = Math.max(0, p.consciousness - Math.max(0, amount));
+      const next: PlayerState = {
         ...p,
         consciousness: c,
         progress: {
@@ -329,25 +351,17 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
           battles: { ...(p.progress.battles || {}), [bossId]: { ...b, failures: b.failures + 1, updatedAt: Date.now() } },
         },
       };
+      if (c <= 0) {
+        death = true;
+        next.progress = {
+          ...next.progress,
+          battles: { ...(next.progress.battles || {}), [bossId]: createBattleState(def) },
+        };
+      }
+      return next;
     });
-    if (c <= 0) {
-      setPlayer(p => ({
-        ...p,
-        progress: { ...p.progress, battles: { ...(p.progress.battles || {}), [bossId]: createBattleState(def) } },
-      }));
-      startDeathRef.current(bossId, '被 ' + (def.bossId.toUpperCase()) + ' 反击击穿');
-    }
-  }, []);
-
-  /** 重置某场战斗（重生 / 手动放弃进度时使用） */
-  const resetBossBattle = useCallback((bossId: string) => {
-    const def = battleFor(bossId);
-    if (!def) return;
-    setPlayer(p => ({
-      ...p,
-      progress: { ...p.progress, battles: { ...(p.progress.battles || {}), [bossId]: createBattleState(def) } },
-    }));
-  }, []);
+    if (death) startDeathRef.current(bossId, '被 ' + (def.bossId.toUpperCase()) + ' 反击击穿');
+  }, [commitPlayer]);
 
   /** Bug 图鉴：记录一次错误遭遇（同一条目累计次数） */
   const recordBug = useCallback((entryId: string) => {
@@ -556,6 +570,9 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     const level = levelById(levelId);
     if (!level) return null;
     const prev = playerRef.current;
+    // 入口门禁：关卡所在章节必须已开放（旧档继承放行由 canEnterServer 统一处理）
+    const serverGate = canEnterServer(prev, level.serverId);
+    if (!serverGate.ok) return null;
     const firstTime = !prev.progress.completedLevels.includes(levelId);
     const att = prev.progress.failedAttempts[levelId] || 0;
     const stars = att === 0 ? 3 : att === 1 ? 2 : 1;
@@ -594,51 +611,26 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     if (serverDone && !next.progress.unlockedServers.includes(level.serverId)) {
       next.progress.unlockedServers = [...next.progress.unlockedServers, level.serverId];
     }
+    // 章节关卡完成标记：只记录「本章普通关卡全通」（Boss 是否必经由 chapterFlow 判定）
+    // 注意：这里绝不解锁下一章、绝不发放创世主碎片——二者只能由 Boss 首胜统一事务产生。
     if (level.serverId === 'syntax' && serverDone) {
       next.progress.flags.chapter1Done = true;
-      next.progress.flags.pendingChapterUnlock = true;
-      if (!next.progress.unlockedServers.includes('logs')) {
-        next.progress.unlockedServers = [...next.progress.unlockedServers, 'logs'];
-      }
     }
     if (level.serverId === 'logs' && serverDone) {
       next.progress.flags.chapter2Done = true;
-      next.progress.flags.pendingChapter3Unlock = true;
-      if (!next.progress.unlockedServers.includes('storage')) {
-        next.progress.unlockedServers = [...next.progress.unlockedServers, 'storage'];
-      }
     }
     if (level.serverId === 'storage' && serverDone) {
       next.progress.flags.chapter3Done = true;
-      next.progress.flags.pendingChapter4Unlock = true;
-      if (!next.progress.unlockedServers.includes('factory')) {
-        next.progress.unlockedServers = [...next.progress.unlockedServers, 'factory'];
-      }
     }
     if (level.serverId === 'factory' && serverDone) {
-      // 第四章完成：核心机房溢出信号，但最高权限封锁保持（终章服务器，第五章衔接）
+      // 第四章完成：核心机房溢出信号，但最高权限封锁保持
       next.progress.flags.chapter4Done = true;
-      next.progress.flags.pendingChapter5Unlock = true;
-      if (!next.progress.unlockedServers.includes('diag')) {
-        next.progress.unlockedServers = [...next.progress.unlockedServers, 'diag'];
-      }
     }
     if (level.serverId === 'diag' && serverDone) {
-      // 第五章完成：核心机房封锁开始解除（终章仍待第六章）
+      // 第五章完成：核心机房封锁开始解除（第六章入口仍需 ENTROPY 首胜 + 五枚碎片）
       next.progress.flags.chapter5Done = true;
-      next.progress.flags.pendingChapter6Unlock = true;
-      if (!next.progress.unlockedServers.includes('core')) {
-        next.progress.unlockedServers = [...next.progress.unlockedServers, 'core'];
-      }
     }
-    if (level.serverId === 'core' && serverDone) {
-      // 终章完成：全网络复原 + 收集创世主第二块记忆碎片
-      next.progress.flags.chapter6Done = true;
-      next.progress.flags.gameCompleted = true;
-      if (!next.meta.memoryFragments.includes('f2')) {
-        next.meta.memoryFragments = [...next.meta.memoryFragments, 'f2'];
-      }
-    }
+    // 终章普通关卡完成只代表外围修复完成：chapter6Done / 第六枚碎片只由 K-0 首胜写入
     const newAch = recalcAchievements(next);
     const gained = newAch.filter(a => !prev.progress.achievements.includes(a));
     next.progress.achievements = newAch;
@@ -689,7 +681,10 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       if (chapterDef.items) {
         for (const [k, v] of Object.entries(chapterDef.items)) rewards.items[k] = (rewards.items[k] || 0) + v;
       }
-      if (chapterDef.fragment && !next.meta.memoryFragments.includes(chapterDef.fragment)) {
+      if (chapterDef.fragment &&
+          !CREATOR_FRAGMENTS.some(f => f.id === chapterDef.fragment) &&
+          !next.meta.memoryFragments.includes(chapterDef.fragment)) {
+        // 章节奖励只允许非主线的档案残片（f8 等）；创世主六碎片只能由 Boss 首胜发放
         next.meta.memoryFragments = [...next.meta.memoryFragments, chapterDef.fragment];
       }
       chapterRewardPayload = {
@@ -751,7 +746,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     const prev = playerRef.current;
     const n = (prev.progress.failedAttempts[levelId] || 0) + 1;
     const tol = toleranceFor(prev.level);
-    setPlayer(p => ({
+    commitPlayer(p => ({
       ...p,
       progress: { ...p.progress, failedAttempts: { ...p.progress.failedAttempts, [levelId]: n } },
     }));
@@ -763,7 +758,127 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       return { n, tolerance: tol, triggered: true };
     }
     return { n, tolerance: tol, triggered: false };
-  }, []);
+  }, [commitPlayer]);
+
+  /**
+   * 唯一的 Boss 攻击入口。
+   * UI 只能提交「用户代码」，真实 Python 执行、判题、伤害结算、首胜事务全部在这里完成：
+   * 前端无法通过传入血量 / 掩码 / 胜利标记绕过主线条件。
+   */
+  const submitBossAttack = useCallback(async (
+    bossId: string,
+    phaseIndex: number,
+    code: string,
+  ): Promise<BossAttackResult> => {
+    const cur = playerRef.current;
+    const raw = (cur.progress.battles || {})[bossId];
+    const difficulty = difficultyOf(raw && typeof raw === 'object' ? (raw as { difficulty?: unknown }).difficulty : undefined);
+    const def = bossBattleDef(bossId, difficulty);
+    const boss = bossById(bossId);
+    if (!def || !boss) return { status: 'blocked', reason: '战斗数据缺失' };
+    if (!raw || typeof raw !== 'object') return { status: 'blocked', reason: '请先选择挑战难度' };
+
+    const gate = bossGate(cur, bossId);
+    if (!gate.available && !gate.simulation) return { status: 'blocked', reason: gate.reason };
+    const simulation = gate.simulation;
+
+    const ck = checkUserCode(code);
+    if (!ck.allowed) return { status: 'blocked', reason: '安全策略阻止：' + ck.reason, denied: true };
+
+    const phase = def.phases[Math.max(0, Math.min(phaseIndex, def.phases.length - 1))];
+    const combined = phase.judge.judgeKind === 'python'
+      ? combineWithHarness(code, buildHarness(phase.judge.pythonChecks || []))
+      : code;
+
+    const state = normalizeBattleState(raw, def);
+    if (Math.min(state.phase, def.phases.length - 1) !== phaseIndex) {
+      return { status: 'blocked', reason: '阶段不同步，请刷新战斗界面' };
+    }
+
+    const r = await runPython(combined, { timeoutMs: 5000 });
+    if (r.timedOut || !r.ok) {
+      if (!simulation) {
+        recordFail(bossId);
+        bossCounterAttack(bossId, def.counterDamage);
+      }
+      const verdict: JudgeVerdict = { passed: false, checks: [], error: r.error, timedOut: r.timedOut };
+      return { status: r.timedOut ? 'timeout' : 'error', run: r, verdict, countered: !simulation };
+    }
+
+    const verdict = judgeRun(phase.judge, r);
+    const res = resolveSubmission(def, state, phaseIndex, verdict.checks);
+    if (res.newPassed === 0) {
+      const failPayload = simulation ? { triggered: false } : recordFail(bossId);
+      if (!simulation) bossCounterAttack(bossId, def.counterDamage);
+      return {
+        status: 'miss', run: r, verdict, result: res,
+        countered: !simulation, toleranceTriggered: failPayload.triggered,
+      };
+    }
+
+    // 伤害写入（掩码来自真实判题结果；模拟再战同样推进战斗，但不发永久奖励）
+    let next = commitPlayer(p => {
+      const latestRaw = (p.progress.battles || {})[bossId];
+      const latestDiff = difficultyOf(latestRaw && typeof latestRaw === 'object' ? (latestRaw as { difficulty?: unknown }).difficulty : undefined);
+      const latestDef = bossBattleDef(bossId, latestDiff) || def;
+      const curState = normalizeBattleState(latestRaw, latestDef);
+      const masks = curState.phaseMask.slice();
+      masks[phaseIndex] = (masks[phaseIndex] || 0) | res.mask;
+      const candidate: BossBattleState = {
+        ...curState,
+        hp: Math.max(0, Math.min(curState.maxHp, res.hpAfter)),
+        phase: Math.max(curState.phase, res.phaseAfter),
+        phaseMask: masks,
+        started: true,
+        cleared: false,
+        updatedAt: Date.now(),
+      };
+      candidate.cleared = verifyBattleState(latestDef, candidate).ok;
+      return { ...p, progress: { ...p.progress, battles: { ...(p.progress.battles || {}), [bossId]: candidate } } };
+    });
+
+    if (!res.defeated) {
+      return { status: 'hit', run: r, verdict, result: res };
+    }
+
+    // 模拟再战：记录难度通关 / 一次性徽章，但不发碎片、不推进章节
+    if (simulation) {
+      const dc = recordBossDifficultyClear(next, bossId, difficulty, { now: Date.now() });
+      next = dc.player;
+      playerRef.current = next;
+      setPlayer(next);
+      return {
+        status: 'simVictory', run: r, verdict, result: res, firstClear: null,
+        difficultyClear: {
+          difficulty,
+          exp: dc.exp,
+          credits: dc.credits,
+          badgeId: dc.badgeId,
+          titleUnlocked: dc.titleUnlocked,
+          firstTime: dc.firstTime,
+        },
+      };
+    }
+
+    // 阶段全部击破 → 统一首胜事务（内部会再次校验真实战斗状态 + 难度）
+    const firstClear = handleBossFirstClear(next, bossId, { difficulty });
+    let payload: BossFirstClearPayload | null = null;
+    if (firstClear.changed && firstClear.payload) {
+      payload = firstClear.payload;
+      next = firstClear.player;
+      playerRef.current = next;
+      setPlayer(next);
+      if (payload.credits > 0) {
+        toast('achieve', '章节奖励：+' + payload.credits + ' 贡献点（' + (payload.unlocks[0] || '') + '）');
+      }
+    } else if (!firstClear.changed && res.defeated) {
+      toast('warn', '首胜事务未执行：' + firstClear.reason);
+    }
+    return {
+      status: 'victory', run: r, verdict, result: res, firstClear: payload,
+      reason: firstClear.changed ? undefined : firstClear.reason,
+    };
+  }, [commitPlayer, recordFail, bossCounterAttack, toast]);
 
   /** 攻击事件结算：成功清零容错；失败 -30% 意识（到 0 触发死亡） */
   const resolveDefense = useCallback((ok: boolean) => {
@@ -831,8 +946,11 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   const resetCurrentBattle = (p: PlayerState): Record<string, BossBattleState> => {
     const battles = { ...(p.progress.battles || {}) };
     const bossId = p.progress.currentBossId;
-    const def = bossId ? battleFor(bossId) : undefined;
-    if (bossId && def && !battles[bossId]?.cleared) battles[bossId] = createBattleState(def);
+    if (!bossId) return battles;
+    const raw = battles[bossId];
+    const diff = difficultyOf(raw && typeof raw === 'object' ? (raw as { difficulty?: unknown }).difficulty : undefined);
+    const def = bossBattleDef(bossId, diff);
+    if (def && !battles[bossId]?.cleared) battles[bossId] = createBattleState(def);
     return battles;
   };
 
@@ -840,12 +958,14 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   const finishRebirth = useCallback(() => {
     const prev = playerRef.current;
     const idx = prev.meta.rebirths;
-    const fragments = prev.meta.memoryFragments.slice();
-    if (idx >= 2 && !fragments.includes('f1')) fragments.push('f1');
+    // 重生叙事奖励只写入「记忆日志」，不计入六枚创世主碎片
+    // （创世主碎片只能来自对应章节 Boss 的首胜；旧档已收集的碎片不会被收回）
+    const logs = [...(prev.meta.memoryLogs || [])];
+    if (idx >= 2 && !logs.includes('log-f01')) logs.push('log-f01');
     const next: PlayerState = {
       ...prev,
       consciousness: 70,
-      meta: { ...prev.meta, rebirths: prev.meta.rebirths + 1, memoryFragments: fragments },
+      meta: { ...prev.meta, rebirths: prev.meta.rebirths + 1, memoryLogs: logs },
       progress: { ...prev.progress, pendingRebirth: false, battles: resetCurrentBattle(prev) },
     };
     const newAch = recalcAchievements(next);
@@ -875,6 +995,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   /** 清空存档并重置为初始状态 */
   const wipeSave = useCallback(() => {
     setPlayer(defaultState());
+    setHasSave(false);
     setScreen('menu');
     setEvent({ kind: 'none' });
   }, []);
@@ -884,6 +1005,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     const r = importSave(text);
     if (r.ok && r.state) {
       setPlayer(r.state);
+      setHasSave(true);
       toast('success', '存档已导入。');
       return { ok: true };
     }
@@ -897,11 +1019,23 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     setPlayer(p => ({ ...p, settings: { ...p.settings, ...patch } }));
   }, []);
 
+  // ---------- 章节门禁（所有正式入口共用） ----------
+  const chapterGateOf = useCallback((chapterId: string): ChapterGate =>
+    chapterGate(playerRef.current, chapterId), []);
+  const serverGate = useCallback((serverId: string) =>
+    canEnterServer(playerRef.current, serverId), []);
+  const bossEntryGate = useCallback((bossId: string): BossGate =>
+    bossGate(playerRef.current, bossId), []);
+  const originCoreGateNow = useCallback((): OriginCoreGate =>
+    originCoreGate(playerRef.current), []);
+  const bossRecord = useCallback((bossId: string) => bossRecordOf(playerRef.current, bossId), []);
+
   const value: GameCtx = {
     player, screen, event, toasts, saveCorrupted, hasSave,
     tolerance: toleranceFor(player.level),
     nav, toast, startNewGame, setCurrentLevel, setCurrentBoss, completeBoss,
-    beginBossBattle, applyBossDamage, bossCounterAttack, resetBossBattle,
+    beginBossBattle, startBossBattle, abandonBossBattle, bossRecord, submitBossAttack,
+    chapterGateOf, serverGate, bossEntryGate, originCoreGateNow,
     recordBug, recordEnding, markVaultRead, markVaultFinalSeen, setVaultLastOpened,
     completeLevel, recordFail,
     buyShopItem, equipItem, consumeItem, restoreConsciousness, markArchiveRead,

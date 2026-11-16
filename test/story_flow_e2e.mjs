@@ -265,7 +265,7 @@ const skipCinema = async (h) => {
   // ---------- 第六轮：第二章 · 进入记忆花园 ----------
   console.log('=== 第六轮：第二章 · 破碎的记忆花园 ===');
   const ch2Arrive = makeSave({
-    progress: { completedLevels: ['tut-1', '1-1', '1-2', '1-3', '1-4', '1-5'], unlockedServers: ['training', 'syntax', 'logs'], currentLevelId: null },
+    progress: { completedLevels: ['tut-1', '1-1', '1-2', '1-3', '1-4', '1-5'], unlockedServers: ['training', 'syntax', 'logs'], currentLevelId: null, bossesDone: ['gate-01'] },
     flags: { prologueDone: true, tutorialCinematicShown: true, chapter1Done: true, chapter1ArrivalSeen: true, chapter1RestoreSeen: true, chapter1CinematicShown: true },
   });
   dom = await launch(ch2Arrive);

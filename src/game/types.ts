@@ -4,6 +4,7 @@ import type { VoiceSettings } from '../services/voice';
 import type { PlayerIdentity } from './identity';
 import type { StoryReadState } from './lore/events';
 import type { BossBattleState } from './battle';
+import type { BossDifficulty } from './difficulty';
 
 export type Screen =
   | 'boot' | 'menu' | 'story' | 'map' | 'challenge'
@@ -36,11 +37,77 @@ export interface PlayerMeta {
   lastDeathLevel: string | null;
   lastDeathReason: string | null;
   memoryFragments: string[]; // 创世主记忆碎片 id
+  /** 非主线的记忆日志（重生等叙事奖励，不计入创世主碎片） */
+  memoryLogs?: string[];
   /** 碎片归档记录：碎片 id → 获得时间（毫秒；0 表示旧档早期归档） */
   fragmentLog?: Record<string, number>;
   /** Bug 图鉴记录：条目 id → { 次数, 首次时间 } */
   bugCodex?: Record<string, { count: number; firstAt: number }>;
   backupLevel: number;       // 意识备份等级
+}
+
+/** 章节主线状态（V1.1.1 起；每章一条，Boss 首胜由统一事务写入） */
+export interface ChapterProgressState {
+  /** 是否已首次击败本章 Boss（真实战斗或旧档继承） */
+  bossDefeated: boolean;
+  /** 首次击败时间（毫秒；旧档继承为 0 或碎片归档时间） */
+  bossFirstClearAt: number | null;
+  /** 首胜来源：真实战斗 / 旧版本进度继承（不得伪装成新版本战斗胜利） */
+  bossClearSource: 'battle' | 'legacy-inherit' | null;
+  /** 本章守护的创世主碎片 id */
+  fragmentId: string | null;
+  /** 碎片正式归位时间 */
+  fragmentGrantedAt: number | null;
+  /** 章节是否已完成（首胜 + 章节结算，开放下一章） */
+  completed: boolean;
+  completedAt: number | null;
+  /** 本章开放时间（进入章节区域） */
+  unlockedAt: number | null;
+}
+
+export type ChapterProgressMap = Record<string, ChapterProgressState>;
+
+/** 旧存档进度继承审计（可追溯，不与真实 Boss 战胜利混淆） */
+export interface LegacyMigrationAudit {
+  at: number;
+  fromVersion: number;
+  reason: string;
+  inheritedChapters: string[];
+  grantedFragments: string[];
+}
+
+/** 原初核心门禁状态（第六章开放 与 原初核心开放 是两个独立状态） */
+export interface OriginCoreProgress {
+  /** 首次进入原初核心（K-0 战入口）的时间 */
+  enteredAt: number | null;
+  /** K-0 首次击败时间 */
+  clearedAt: number | null;
+}
+
+/** 单个 Boss 的单个难度通关记录 */
+export interface BossDifficultyRecord {
+  /** 首次通关时间 */
+  firstAt: number;
+  /** 最近一次通关时间 */
+  lastAt: number;
+  /** 通关次数 */
+  count: number;
+  /** 是否已经发放该难度的一次性奖励（防刷） */
+  rewarded: boolean;
+}
+
+/** 单个 Boss 的挑战记录（难度 / 通关 / 最高成绩） */
+export interface BossRecord {
+  /** 首次首胜难度 */
+  firstDifficulty: BossDifficulty | null;
+  /** 已通关过的最高难度 */
+  bestDifficulty: BossDifficulty | null;
+  /** 首次首胜时间 */
+  firstClearAt: number | null;
+  /** 各难度通关记录 */
+  cleared: Partial<Record<BossDifficulty, BossDifficultyRecord>>;
+  /** 已获得的最好章节评价（可选，展示用） */
+  bestGrade?: string;
 }
 
 export interface Progress {
@@ -56,9 +123,17 @@ export interface Progress {
   /** 剧情事件解锁 + 阅读状态（v2 起；旧存档由迁移补齐） */
   story?: StoryReadState;
   flags: Record<string, boolean | number>;   // 剧情/系统标记（由 lore/vars 统一管理）
-  bossesDone: string[];                      // 已击破的章节 Boss
+  bossesDone: string[];                      // 已击破的章节 Boss（兼容旧字段）
   /** Boss 战进度（v4 起；旧存档由迁移补齐） */
   battles?: Record<string, BossBattleState>;
+  /** 章节主线状态（V1.1.1 起；统一由 chapterFlow 读写，旧存档自愈继承） */
+  chapters?: ChapterProgressMap;
+  /** 旧存档进度继承审计 */
+  migrationAudit?: LegacyMigrationAudit;
+  /** 原初核心门禁记录 */
+  originCore?: OriginCoreProgress;
+  /** Boss 难度挑战记录：bossId → 记录（V1.1.1 难度系统） */
+  bossRecords?: Record<string, BossRecord>;
   /** 记忆档案馆阅读状态（v6 起；旧存档由迁移补齐） */
   vault?: VaultState;
   /** 已解锁的结局 id（第九阶段） */

@@ -19,7 +19,7 @@ export default function Terminal({ lines, title = '维修终端', maxHeight = 32
       <div className="term-head">
         <span className="dot r" /><span className="dot y" /><span className="dot g" />
         <span style={{ marginLeft: 6 }}>{title}</span>
-        <span style={{ marginLeft: 'auto', opacity: 0.6 }}>PYTHON 3.12 // PYODIDE</span>
+        <span style={{ marginLeft: 'auto', opacity: 0.6 }}>MICROPYTHON // WASM</span>
       </div>
       <div className="term-body" ref={bodyRef} style={{ maxHeight }}>
         {lines.length === 0 && <p className="term-line muted">—— 终端空闲。点击「运行代码」执行当前程序 ——</p>}

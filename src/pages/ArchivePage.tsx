@@ -1,5 +1,6 @@
 import { useGame } from '../store/gameStore';
 import { MEMORY_FRAGMENTS } from '../game/story';
+import { MEMORY_ARCHIVES } from '../game/rewards';
 import { PROLOGUE_LINES } from '../game/lore/prologue';
 import { CHARACTERS, characterUnlocked } from '../game/lore/characters';
 import { STORY_EVENTS, normalizeStoryReadState, eventReadProgress } from '../game/lore/events';
@@ -82,6 +83,21 @@ export default function ArchivePage() {
           })}
         </div>
 
+        {flags.secretArchive === true && (() => {
+          const secret = MEMORY_ARCHIVES.find(a => a.id === 'arc-3');
+          return (
+            <div className="panel" style={{ marginBottom: 14, borderColor: 'rgba(243,183,92,0.45)' }}>
+              <div className="panel-title">机密档案 · 五年前事故<span className="panel-tag">SPECIAL</span></div>
+              {secret && (
+                <div className="archive-line">
+                  <div className="al-speaker">{secret.title}</div>
+                  <div className="al-text">{secret.content}</div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
+
         <div className="panel" style={{ marginBottom: 14 }}>
           <div className="panel-title">创世主碎片 · 六枚<span className="panel-tag">{fp.owned} / {fp.total}</span></div>
           <div className="dim" style={{ fontSize: 12.5, marginBottom: 8 }}>
@@ -111,8 +127,8 @@ export default function ArchivePage() {
 
         <div className="panel">
           <div className="panel-title">记忆残片<span className="panel-tag">旧档案</span></div>
-          {p.meta.memoryFragments.length === 0 && <div className="empty-hint">尚未收集到任何碎片。</div>}
-          {MEMORY_FRAGMENTS.filter(f => p.meta.memoryFragments.includes(f.id)).map(f => (
+          {p.meta.memoryFragments.length === 0 && (p.meta.memoryLogs || []).length === 0 && <div className="empty-hint">尚未收集到任何碎片。</div>}
+          {MEMORY_FRAGMENTS.filter(f => p.meta.memoryFragments.includes(f.id) || (p.meta.memoryLogs || []).includes(f.id) || ((p.meta.memoryLogs || []).includes('log-f01') && f.id === 'f1')).map(f => (
             <div className="frag-card" key={f.id}>
               <div className="fc-title">◇ {f.title}</div>
               <div className="fc-body">{f.content}</div>

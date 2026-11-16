@@ -140,6 +140,15 @@ export default function BossChallengePage() {
         ]);
         play('levelup');
         if (bossScenes.outro) setOutroOpen(true);
+      } else {
+        // 非六章主线的回响不保管创世主碎片（防止 Boss A 发放 Boss B 的碎片）
+        g.toast('warn', '该回响不在六章主线内：不发放创世主碎片，主线进度保持不变。');
+        pushLines([
+          { kind: 'sys', text: '── ' + opp + ' 核心逻辑修复 ──' },
+          ...v.checks.map(c => ({ kind: 'ok' as const, text: '✓ ' + c.name })),
+          { kind: 'ok', text: '⚡ ' + opp + ' 已被击破（非主线 Boss，无创世主碎片）。' },
+        ]);
+        play('success');
       }
     } else {
       pushLines([

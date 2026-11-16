@@ -2,11 +2,13 @@ import { useGame } from '../store/gameStore';
 import { milestone, titleForLevel } from '../game/progression';
 import { displayNameOf, originCodeOf, normalizeIdentity } from '../game/identity';
 import { equippedTitleName, equippedFrameClass } from '../game/cosmetics';
+import { normalizeRewards } from '../game/rewards';
 
 export default function PlayerStatus({ showTolerance = false, compact = false }: { showTolerance?: boolean; compact?: boolean }) {
-  const { player, tolerance, event } = useGame();
+  const { player, tolerance, event, consumeItem, restoreConsciousness, toast } = useGame();
   const ms = milestone(player.exp);
   const c = player.consciousness;
+  const stabilizers = normalizeRewards(player.rewards).items.stabilizer || 0;
   const cZone = c >= 81 ? 'green' : c >= 61 ? '' : c >= 41 ? 'orange' : c >= 21 ? 'orange' : 'red';
   const level = player.progress.currentLevelId;
   const att = level ? player.progress.failedAttempts[level] || 0 : 0;
@@ -41,6 +43,16 @@ export default function PlayerStatus({ showTolerance = false, compact = false }:
       <div className="pl-row">
         <div className="bar-labels"><span>意识完整度</span><span className={c <= 20 ? 'red warn-flash' : ''}>{c}%</span></div>
         <div className="bar"><div className={'bar-fill ' + cZone + (c <= 20 ? ' pulse' : '')} style={{ width: c + '%' }} /></div>
+        {stabilizers > 0 && c < 100 && (
+          <button className="nxbtn small ghost" style={{ marginTop: 6, fontSize: 11.5 }}
+            onClick={() => {
+              if (!consumeItem('stabilizer')) return;
+              restoreConsciousness(10);
+              toast('success', '已使用意识稳定模块：意识 +10');
+            }}>
+            ✚ 稳定模块 ×{stabilizers}（意识 +10）
+          </button>
+        )}
       </div>
       {showTolerance && (
         <div className="pl-row">

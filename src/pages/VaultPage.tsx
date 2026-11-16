@@ -26,6 +26,7 @@ export default function VaultPage() {
   const allOwned = fp.owned >= fp.total;
   const log = p.meta.fragmentLog || {};
   const trust = p.rewards?.trust ?? 0;
+  const miraUnlocked = trust >= HIDDEN_MEMORY.requireTrust || p.progress.flags.miraExtraTalk === true;
   const vault = p.progress.vault || { read: [], finalSeen: false, lastOpened: null };
 
   const [openId, setOpenId] = useState<string | null>(() => {
@@ -190,9 +191,9 @@ export default function VaultPage() {
         </div>
 
         {/* 隐藏记忆（MIRA 信任度解锁） */}
-        <div className={'panel vault-hidden' + (trust >= HIDDEN_MEMORY.requireTrust ? ' unlocked' : ' sealed')}>
-          <div className="panel-title">隐藏记忆 · {HIDDEN_MEMORY.title}<span className="panel-tag">信任度 ≥ {HIDDEN_MEMORY.requireTrust}</span></div>
-          {trust >= HIDDEN_MEMORY.requireTrust ? (
+        <div className={'panel vault-hidden' + (miraUnlocked ? ' unlocked' : ' sealed')}>
+          <div className="panel-title">隐藏记忆 · {HIDDEN_MEMORY.title}<span className="panel-tag">信任度 ≥ {HIDDEN_MEMORY.requireTrust}{p.progress.flags.miraExtraTalk === true ? ' · 已兑换' : ''}</span></div>
+          {miraUnlocked ? (
             <>
               <div className="vd-sub">{HIDDEN_MEMORY.subtitle}</div>
               <div className="vd-story">
@@ -204,7 +205,7 @@ export default function VaultPage() {
               <div className="vf-lock">▣</div>
               <div>
                 <div className="vf-line">这段记忆被 MIRA 锁着。</div>
-                <div className="dim" style={{ fontSize: 12.5 }}>当前信任度 {trust} / {HIDDEN_MEMORY.requireTrust}——通过修复与章节事件提升信任度。</div>
+                <div className="dim" style={{ fontSize: 12.5 }}>当前信任度 {trust} / {HIDDEN_MEMORY.requireTrust}——通过修复与章节事件提升信任度，或在兑换中心购买「MIRA 专属对话」提前解锁。</div>
               </div>
             </div>
           )}

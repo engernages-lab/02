@@ -1,5 +1,6 @@
 // 第六章《起源之外》：方舟核心机房（core）· 最终章
 import type { StoryScene } from './types';
+import { FINAL_MEMORY } from './fragments';
 const L = (id: string, speaker: string, kind: 'r07' | 'mira' | 'engel' | 'k0' | 'system', text: string) =>
   ({ id, speaker, kind, text } as const);
 
@@ -65,6 +66,23 @@ export const CHAPTER6_VICTORY_SCENES: StoryScene[] = [
       L('ch6-55', '恩格尔', 'engel', '（回声）你已经走到我停下脚步的地方了。'),
       L('ch6-56', 'MIRA', 'mira', '接下来，是你自己的决定了。'),
       L('ch6-57', 'K-0', 'k0', '……权限继承程序已就绪。选择权，移交 R-07。'),
+    ],
+  },
+];
+
+/** 六枚碎片全部归位 → 记忆重组 + 恩格尔最终记忆（只在真实集齐后播放） */
+export const CHAPTER6_FINAL_MEMORY_SCENES: StoryScene[] = [
+  {
+    id: 'ch6-recombine',
+    title: '记忆重组',
+    subtitle: '六枚创世主碎片 · 完整记忆',
+    bg: 'memory',
+    fx: 'particles',
+    lines: [
+      L('ch6-60', '系统', 'system', '六枚创世主碎片同时响应。档案馆最深处，一组从未完整过的数据开始重组。'),
+      L('ch6-61', 'MIRA', 'mira', '这不是恢复……这是第一次完整地读到它。'),
+      ...FINAL_MEMORY.memory.map((text, i) => L('ch6-62-' + (i + 1), '恩格尔', 'engel', text)),
+      L('ch6-63', '系统', 'system', '最终记忆档案《' + FINAL_MEMORY.title + '》已解锁。最终命运选择已开放。'),
     ],
   },
 ];

@@ -10,6 +10,7 @@ export const SKIN_META: SkinMeta[] = [
   { id: 'particles-net', name: '粒子背景 · 数据流', slot: 'particles' },
   { id: 'title-junior', name: '称号 · 初级修复师', slot: 'title' },
   { id: 'title-successor', name: '称号 · 原初继承者', slot: 'title' },
+  { id: 'title-expert', name: '称号 · 专家裁决者', slot: 'title' },
   { id: 'login-gold', name: '登录界面 · 黄金协议', slot: 'login' },
   { id: 'bg-ark', name: '数字世界背景 · 方舟核心', slot: 'bg' },
   { id: 'frame-bronze', name: '头像框 · 青铜回路', slot: 'avatarFrame' },

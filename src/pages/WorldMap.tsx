@@ -8,7 +8,8 @@ import { CHAPTER5_ARRIVAL_SCENES, CHAPTER5_TRUTH_SCENES, CHAPTER5_VICTORY_SCENES
 import { CHAPTER6_ARRIVAL_SCENES, CHAPTER6_ENGEL_SCENES, CHAPTER6_VICTORY_SCENES } from '../game/lore/chapter6';
 import { CHAPTER1_ARRIVAL_SCENES, CHAPTER1_RESTORED_SCENES } from '../game/lore/chapter1';
 import { bossForChapter } from '../game/bosses';
-import { chapterByServer } from '../game/lore/chapters';
+import { CHAPTERS, chapterByServer } from '../game/lore/chapters';
+import { allChapterGates, canEnterServer, originCoreGate, CHAPTER_STATUS_SHORT, CHAPTER_STATUS_TEXT } from '../game/chapterFlow';
 import DialogSystem from '../components/DialogSystem';
 import CinematicStage from '../components/CinematicStage';
 import { useGame } from '../store/gameStore';
@@ -71,67 +72,67 @@ export default function WorldMap() {
   const ch5Cin = p.flags.chapter5CinematicShown === true;
   const ch6Cin = p.flags.chapter6CinematicShown === true;
 
+  // 统一章节门禁（唯一真实状态来源；所有节点/入口提示都由它推导）
+  const chapterGates = useMemo(() => allChapterGates(g.player), [g.player]);
+  const gateByServer = useMemo(() => {
+    const map: Record<string, ReturnType<typeof allChapterGates>[number]> = {};
+    chapterGates.forEach(x => { map[x.serverId] = x; });
+    return map;
+  }, [chapterGates]);
+  const coreGate = useMemo(() => originCoreGate(g.player), [g.player]);
+  const coreLevelsDone = useMemo(
+    () => levelsOfServer('core').every(l => p.completedLevels.includes(l.id)),
+    [p.completedLevels],
+  );
+  const k0Done = (p.bossesDone || []).includes('k0');
+
   useEffect(() => {
-    if (ch6Done && !p.flags.chapter6EngelSeen) setCinema('ch6engel');
-    else if (ch6Done && !ch6Cin) setCinema('ch6');
-    else if (ch5Done && !p.flags.chapter6ArrivalSeen) setCinema('ch6arrive');
-    else if (ch4Done && !p.flags.chapter5ArrivalSeen) setCinema('ch5arrive');
+    // 顺序：先播完当前章节的真相 / 胜利，再进入下一章。
+    // 章节解锁由 chapterFlow 状态决定；这里的演出只负责展示，不参与解锁判定。
+    const bossDone = (id: string) => (p.bossesDone || []).includes(id);
+    if (coreLevelsDone && !k0Done && p.flags.chapter6EngelSeen !== true) setCinema('ch6engel');
+    else if (k0Done && !ch6Cin) setCinema('ch6');
     else if (ch5Done && !p.flags.chapter5TruthSeen) setCinema('ch5truth');
-    else if (ch5Done && !ch5Cin) setCinema('ch5');
-    else if (ch3Done && !p.flags.chapter4ArrivalSeen) setCinema('ch4arrive');
-    else if (ch4Done && !ch4Cin) setCinema('ch4');
-    else if (ch2Done && !p.flags.chapter3ArrivalSeen) setCinema('ch3arrive');
-    else if (ch3Done && !ch3Cin) setCinema('ch3');
+    else if (ch5Done && bossDone('entropy') && !ch5Cin) setCinema('ch5');
+    else if (ch5Done && ch5Cin && !p.flags.chapter6ArrivalSeen) setCinema('ch6arrive');
+    else if (ch4Done && bossDone('judgment-4') && !ch4Cin) setCinema('ch4');
+    else if (ch4Done && ch4Cin && !p.flags.chapter5ArrivalSeen) setCinema('ch5arrive');
+    else if (ch3Done && bossDone('index-0') && !ch3Cin) setCinema('ch3');
+    else if (ch3Done && ch3Cin && !p.flags.chapter4ArrivalSeen) setCinema('ch4arrive');
     else if (ch2Done && p.flags.chapter2RestoreSeen !== true) setCinema('ch2restore');
+    else if (ch2Done && ch2Cin && bossDone('somnia') && !p.flags.chapter3ArrivalSeen) setCinema('ch3arrive');
     else if (ch1Done && p.flags.chapter1RestoreSeen !== true) setCinema('ch1restore');
     else if (tutDone && !tutCin && !ch1Done) setCinema('tut');
     else if (!ch1Done && p.unlockedServers.includes('syntax') && p.flags.chapter1ArrivalSeen !== true) setCinema('ch1arrive');
-    else if (!ch2Done && p.unlockedServers.includes('logs') && p.flags.chapter2ArrivalSeen !== true) setCinema('ch2arrive');
+    else if (!ch2Done && gateByServer['logs']?.enterable && bossDone('gate-01') && p.flags.chapter2ArrivalSeen !== true) setCinema('ch2arrive');
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ch6Done, ch6Cin, ch5Done, ch5Cin, ch4Done, ch4Cin, ch3Done, ch3Cin, ch2Done, ch2Cin, ch1Done, ch1Cin, tutDone, tutCin, p.flags.chapter1RestoreSeen, p.flags.chapter1ArrivalSeen, p.flags.chapter2RestoreSeen, p.flags.chapter2ArrivalSeen, p.unlockedServers]);
+  }, [k0Done, coreLevelsDone, ch6Cin, ch5Done, ch5Cin, ch4Done, ch4Cin, ch3Done, ch3Cin, ch2Done, ch2Cin, ch1Done, ch1Cin, tutDone, tutCin, p.flags.chapter1RestoreSeen, p.flags.chapter1ArrivalSeen, p.flags.chapter2RestoreSeen, p.flags.chapter2ArrivalSeen, p.unlockedServers, p.bossesDone, gateByServer]);
 
   const baseStatusOf = useMemo(() => (id: string): NodeStatus => {
     if (id === 'training') return tutDone ? 'online' : 'damaged';
-    if (id === 'syntax') {
-      if (!p.unlockedServers.includes('syntax')) return 'locked';
-      const all = levelsOfServer('syntax');
-      return all.every(l => p.completedLevels.includes(l.id)) ? 'online' : 'damaged';
+    if (id === 'syntax' && !tutDone) return 'locked';
+    const gate = gateByServer[id];
+    if (!gate) return safeServerUnlocked(id) ? 'damaged' : 'locked';
+    if (!gate.enterable) {
+      // 终章：第五章还没通过时显示 SEALED（最高权限封锁），其余一律 LOCKED
+      const ch = chapterByServer(id);
+      return ch && ch.order === 6 && ch4Done ? 'sealed' : 'locked';
     }
-    if (id === 'logs') {
-      if (!ch1Done || !p.unlockedServers.includes('logs')) return 'locked';
-      const all = levelsOfServer('logs');
-      return all.every(l => p.completedLevels.includes(l.id)) ? 'online' : 'damaged';
-    }
-    if (id === 'storage') {
-      if (!ch2Done || !p.unlockedServers.includes('storage')) return 'locked';
-      const all = levelsOfServer('storage');
-      return all.every(l => p.completedLevels.includes(l.id)) ? 'online' : 'damaged';
-    }
-    if (id === 'factory') {
-      if (!ch3Done || !p.unlockedServers.includes('factory')) return 'locked';
-      const all = levelsOfServer('factory');
-      return all.every(l => p.completedLevels.includes(l.id)) ? 'online' : 'damaged';
-    }
-    if (id === 'diag') {
-      if (!ch4Done || !p.unlockedServers.includes('diag')) return 'locked';
-      const all = levelsOfServer('diag');
-      return all.every(l => p.completedLevels.includes(l.id)) ? 'online' : 'damaged';
-    }
-    if (id === 'core') {
-      if (!ch5Done || !p.unlockedServers.includes('core')) return ch4Done ? 'sealed' : 'locked';
-      const all = levelsOfServer('core');
-      return all.every(l => p.completedLevels.includes(l.id)) ? 'online' : 'damaged';
-    }
-    return 'locked';
+    const all = levelsOfServer(id);
+    return all.length > 0 && all.every(l => p.completedLevels.includes(l.id)) ? 'online' : 'damaged';
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tutDone, ch1Done, ch2Done, ch3Done, ch4Done, ch5Done, p.unlockedServers, p.completedLevels]);
+  }, [tutDone, ch4Done, gateByServer, p.completedLevels]);
 
-  /** Boss 击败后，该章服务器视为「完整恢复」 */
+  function safeServerUnlocked(id: string): boolean {
+    return (p.unlockedServers || []).includes(id);
+  }
+
+  /** Boss 击败后，该章服务器视为「完整恢复」（以章节状态为准，兼容旧档继承） */
   const statusOf = (id: string): NodeStatus => {
     const st = baseStatusOf(id);
     if (st !== 'online') return st;
-    const ch = chapterByServer(id || '');
-    return ch && ch.currentBossId && (p.bossesDone || []).includes(ch.currentBossId) ? 'restored' : 'online';
+    const gate = gateByServer[id];
+    return gate && gate.bossDefeated ? 'restored' : 'online';
   };
 
   useEffect(() => {
@@ -152,13 +153,12 @@ export default function WorldMap() {
   }, [p.completedLevels.length, p.bossesDone?.length]);
   const clickNode = (id: string) => {
     const s = serverById(id);
-    const st = statusOf(id);
-  // Boss 击败后该服务器视为「完整恢复」
-    if (st === 'locked' || st === 'sealed') {
+    const access = canEnterServer(g.player, id);
+    if (!access.ok) {
       play('deny');
       setShakeId(id);
       window.setTimeout(() => setShakeId(null), 450);
-      g.toast('warn', (s ? s.lockedReason : '权限不足') + (st === 'sealed' ? '（数据恢复中，将在后续版本开放）' : ''));
+      g.toast('warn', access.reason || '权限不足');
       return;
     }
     play('click');
@@ -168,6 +168,12 @@ export default function WorldMap() {
   };
 
   const enterLevel = (lv: LevelDef) => {
+    const access = canEnterServer(g.player, lv.serverId);
+    if (!access.ok) {
+      play('deny');
+      g.toast('warn', access.reason);
+      return;
+    }
     play('click');
     g.setCurrentLevel(lv.id);
     g.nav('challenge');
@@ -175,6 +181,21 @@ export default function WorldMap() {
 
   const selServer = sel ? serverById(sel) : undefined;
   const selLevels = sel ? levelsOfServer(sel) : [];
+
+  /** 章节卡片：未解锁时明确提示解锁条件（全部来自真实状态） */
+  const focusChapter = (serverId: string) => {
+    const access = canEnterServer(g.player, serverId);
+    if (!access.ok) {
+      play('deny');
+      setShakeId(serverId);
+      window.setTimeout(() => setShakeId(null), 450);
+      g.toast('warn', access.reason);
+      return;
+    }
+    play('click');
+    setSel(serverId);
+    if (!g.player.progress.flags['brief_' + serverId]) setBriefServer(serverId);
+  };
 
   return (
     <div className="page page-anim" style={{ padding: 0 }}>
@@ -192,6 +213,7 @@ export default function WorldMap() {
           {(() => {
             const cur = p.currentLevelId ? levelById(p.currentLevelId) : undefined;
             if (!cur || p.completedLevels.includes(cur.id)) return null;
+            if (!canEnterServer(g.player, cur.serverId).ok) return null;
             return (
               <button className="nxbtn small primary" onClick={() => enterLevel(cur)}>
                 ▶ 继续：{cur.title}
@@ -218,6 +240,54 @@ export default function WorldMap() {
             </div>
           );
         })()}
+
+        {/* 六章主线状态：Boss 首胜 / 碎片归位 / 下一章解锁（真实状态，不使用假数据） */}
+        <div className="chapter-track">
+          <div className="ct-head">
+            <span className="ct-title">NEXUS 主线 · 六章必经流程</span>
+            <span className="ct-sub">Boss 首胜 → 创世主碎片 → 下一章解锁</span>
+            <span className="ct-core">原初核心 {coreGate.ownedCount} / {coreGate.requiredCount}</span>
+          </div>
+          <div className="ct-list">
+            {chapterGates.map(gt => {
+              const isSel = sel === gt.serverId;
+              const statusKey = gt.status.toLowerCase().replace(/_/g, '-');
+              return (
+                <button
+                  key={gt.id}
+                  className={'ct-card st-' + statusKey + (isSel ? ' sel' : '')}
+                  onClick={() => focusChapter(gt.serverId)}
+                  title={gt.requirement}
+                >
+                  <span className="ct-order">{String(gt.order).padStart(2, '0')}</span>
+                  <span className="ct-main">
+                    <span className="ct-name">{gt.title}</span>
+                    <span className="ct-meta">{gt.bossCodename || '—'} · {gt.shardCode}</span>
+                  </span>
+                  <span className={'ct-badge s-' + statusKey}>{CHAPTER_STATUS_SHORT[gt.status]}</span>
+                  <span className="ct-progress">
+                    {gt.status === 'LOCKED'
+                      ? gt.requirement
+                      : gt.legacyUnlocked && !gt.unlocked
+                        ? gt.blockedReason
+                        : '关卡 ' + gt.levelsDone + '/' + gt.levelsTotal
+                          + (gt.bossDefeated ? ' · Boss 首胜' + (gt.bossClearSource === 'legacy-inherit' ? '（继承）' : '') : '')
+                          + (gt.completed ? ' · 已完成' : '')}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+          <div className={'core-gate' + (coreGate.unlocked ? ' open' : '')}>
+            <span className="cg-mark">◉</span>
+            <span className="cg-main">
+              <b>原初核心</b>
+              <span>{coreGate.unlocked ? (k0Done ? 'K-0 已被击败 · 最终记忆已重组' : '五枚碎片校验通过 · 可进入') : coreGate.reason}</span>
+            </span>
+            <span className="cg-count">碎片 {coreGate.ownedCount}/{coreGate.requiredCount}</span>
+          </div>
+        </div>
+
         <div className="map-wrap">
           <div className="map-toolbar">
             <button className="mt-btn" onClick={() => { play('click'); setZoom(z => Math.min(1.8, +(z + 0.15).toFixed(2))); }} title="放大">＋</button>
@@ -425,18 +495,67 @@ export default function WorldMap() {
               {(() => {
                 const boss = bossForChapter(selServer.id);
                 if (!boss) return null;
+                const gate = gateByServer[selServer.id];
+                if (!gate) return null;
                 const allDone = selLevels.length > 0 && selLevels.every(l => p.completedLevels.includes(l.id));
-                if (!allDone) return null;
-                const cleared = (p.bossesDone ?? []).includes(boss.id);
+                const cleared = gate.bossDefeated;
+                const isFinalChapter = gate.order === 6;
+                const rec = g.bossRecord(boss.id);
+                const best = rec.bestDifficulty;
+                const clearedDiffs = (['easy', 'hard', 'expert'] as const).filter(d => rec.cleared[d]);
+
+                // 第六章：入口是「原初核心」，与前五章 Boss 的普通入口不同
+                if (isFinalChapter) {
+                  const canEnterCore = coreGate.unlocked;
+                  return (
+                    <div className="boss-entry">
+                      <span className="chip echo">◉ 原初核心</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 14, fontWeight: 700, color: '#C9A7FF' }}>零号裁决者 K-0</div>
+                        <div className="dim" style={{ fontSize: 12 }}>
+                          五枚创世主碎片校验 {coreGate.ownedCount}/{coreGate.requiredCount}
+                          {canEnterCore ? ' · 校验通过' : ' · ' + coreGate.reason}
+                        </div>
+                      </div>
+                      {cleared
+                        ? <button className="nxbtn small ghost" onClick={() => { play('click'); g.setCurrentBoss(boss.id); g.nav('boss'); }}>模拟再战 ▸</button>
+                        : canEnterCore
+                          ? <button className="nxbtn small primary" onClick={() => { play('click'); g.setCurrentBoss(boss.id); g.nav('boss'); }}>进入原初核心 ▸</button>
+                          : <span className="chip dim">🔒 碎片不足</span>}
+                    </div>
+                  );
+                }
+
+                if (!allDone && !cleared) {
+                  return (
+                    <div className="boss-entry">
+                      <span className="chip echo">⚡ {boss.codename}</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 14, fontWeight: 700, color: '#C9A7FF' }}>{boss.title}</div>
+                        <div className="dim" style={{ fontSize: 12 }}>
+                          章节 Boss 尚未部署 · 完成本章普通关卡 {selLevels.filter(l => p.completedLevels.includes(l.id)).length}/{selLevels.length}
+                        </div>
+                      </div>
+                      <span className="chip dim">BOSS REQUIRED</span>
+                    </div>
+                  );
+                }
                 return (
                   <div className="boss-entry">
                     <span className="chip echo">⚡ {boss.codename}</span>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontSize: 14, fontWeight: 700, color: '#C9A7FF' }}>{boss.title}</div>
-                      <div className="dim" style={{ fontSize: 12 }}>章节 Boss · 综合本服务器全部知识点{cleared ? ' · 已击破' : ''}</div>
+                      <div className="dim" style={{ fontSize: 12 }}>
+                        章节 Boss · 首胜掉落 {gate.shardCode}《{gate.shardTitle}》{cleared ? ' · 已击破' : ''}
+                        {best ? ' · 最高 ' + best.toUpperCase() + '（' + clearedDiffs.length + '/3）' : ''}
+                      </div>
                     </div>
                     {cleared
-                      ? <span className="chip green">已击破</span>
+                      ? (
+                        <button className="nxbtn small ghost" onClick={() => { play('click'); g.setCurrentBoss(boss.id); g.nav('boss'); }}>
+                          模拟再战 ▸
+                        </button>
+                      )
                       : <button className="nxbtn small primary" onClick={() => { play('click'); g.setCurrentBoss(boss.id); g.nav('boss'); }}>挑战 ▸</button>}
                   </div>
                 );

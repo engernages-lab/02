@@ -41,6 +41,8 @@ export interface ChapterDef {
   /** 当前代码里实际存在的 Boss id（第六章暂无） */
   currentBossId: string | null;
   fragmentId: FragmentId;
+  /** 创世主碎片编号（SHARD-01 … SHARD-06，界面展示用） */
+  shardId: string;
   /** 本章必须承载的核心剧情事件（蓝本） */
   coreEvent: string;
   knowledgeFocus: string[];

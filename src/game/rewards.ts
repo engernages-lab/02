@@ -30,10 +30,14 @@ export interface RewardState {
   bossRewards?: string[];
   /** 已发放的等级解锁 id（防重复发放） */
   unlocks?: string[];
+  /** 已获得的难度徽章 id（困难 / 专家，一次性） */
+  badges?: string[];
+  /** 已发放的难度一次性奖励 key（bossId + difficulty，防刷） */
+  difficultyRewards?: string[];
 }
 
 export function defaultRewards(): RewardState {
-  return { credits: 0, trust: 10, items: {}, skins: [], equipped: {}, chapterRewards: [], cleared: {}, archiveRead: [], bossRewards: [], unlocks: [] };
+  return { credits: 0, trust: 10, items: {}, skins: [], equipped: {}, chapterRewards: [], cleared: {}, archiveRead: [], bossRewards: [], unlocks: [], badges: [], difficultyRewards: [] };
 }
 
 /** 兼容旧存档：缺失字段逐一补齐（不覆盖已有值） */
@@ -52,6 +56,8 @@ export function normalizeRewards(raw: unknown): RewardState {
     archiveRead: Array.isArray(r.archiveRead) ? r.archiveRead.slice() : [],
     bossRewards: Array.isArray(r.bossRewards) ? r.bossRewards.slice() : [],
     unlocks: Array.isArray(r.unlocks) ? r.unlocks.slice() : [],
+    badges: Array.isArray(r.badges) ? r.badges.slice() : [],
+    difficultyRewards: Array.isArray(r.difficultyRewards) ? r.difficultyRewards.slice() : [],
   };
 }
 

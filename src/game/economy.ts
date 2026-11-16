@@ -2,6 +2,7 @@
 // 原则：所有数值都来自真实通关结果；重复刷关不再产生资源。
 import type { Grade } from './rewards';
 import { gradeOf } from './rewards';
+import type { BossDifficulty } from './difficulty';
 
 export interface LevelRewardInput {
   levelExp: number;
@@ -69,6 +70,32 @@ export const BOSS_CLEAR_REWARDS: BossReward[] = [
 
 export const bossRewardFor = (chapter: number): BossReward | undefined =>
   BOSS_CLEAR_REWARDS.find(b => b.chapter === chapter);
+
+// ---------- 难度奖励（一次性，按难度分别结算，总量固定不随刷取增加） ----------
+export interface DifficultyRewardDef {
+  difficulty: BossDifficulty;
+  /** 相对 Boss 基础经验的额外比例 */
+  expPct: number;
+  /** 相对章节首杀贡献点的额外比例 */
+  creditsPct: number;
+  /** 是否发放该难度的 Boss 徽章 */
+  badge: boolean;
+  /** 专家难度额外称号（全局一次） */
+  title?: string;
+}
+
+export const DIFFICULTY_CLEAR_REWARDS: DifficultyRewardDef[] = [
+  { difficulty: 'easy', expPct: 0, creditsPct: 0, badge: false },
+  { difficulty: 'hard', expPct: 0.4, creditsPct: 0.5, badge: true },
+  { difficulty: 'expert', expPct: 0.7, creditsPct: 1.0, badge: true, title: 'title-expert' },
+];
+
+export const difficultyRewardFor = (difficulty: BossDifficulty): DifficultyRewardDef =>
+  DIFFICULTY_CLEAR_REWARDS.find(d => d.difficulty === difficulty) || DIFFICULTY_CLEAR_REWARDS[0];
+
+/** 每个 Boss / 难度的徽章 id（一次性） */
+export const bossDifficultyBadgeId = (bossId: string, difficulty: BossDifficulty): string =>
+  'badge-' + difficulty + '-' + bossId;
 
 // ---------- 等级解锁 ----------
 export interface LevelUnlock {

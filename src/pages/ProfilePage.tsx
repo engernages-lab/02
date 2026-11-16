@@ -6,6 +6,10 @@ import { levelsOfServer, levelById } from '../game/levels';
 import { KNOWLEDGE, knowledgeById } from '../game/knowledge';
 import { ACHIEVEMENTS } from '../game/achievements';
 import { CREATOR_FRAGMENTS, fragmentProgress, hasFragment } from '../game/lore/fragments';
+import { CHAPTERS } from '../game/lore/chapters';
+import { bossById } from '../game/bosses';
+import { bossRecordOf } from '../game/chapterFlow';
+import { difficultyMeta, DIFFICULTY_ORDER } from '../game/difficulty';
 import PlayerStatus from '../components/PlayerStatus';
 import { play } from '../services/sound';
 
@@ -126,6 +130,51 @@ export default function ProfilePage() {
               ))}
               {p.progress.achievements.length === 0 && <span className="dim" style={{ fontSize: 13 }}>还没有成就。去完成第一次修复吧。</span>}
             </div>
+          </div>
+
+          <div className="panel">
+            <div className="panel-title">Boss 难度战绩<span className="panel-tag">{(p.rewards?.badges || []).length} 徽章</span></div>
+            <div className="dim" style={{ fontSize: 12, marginBottom: 8 }}>
+              每个 Boss 可独立选择 EASY / HARD / EXPERT；难度徽章一次性发放，重复挑战只刷新记录。
+            </div>
+            {CHAPTERS.map(ch => {
+              const boss = ch.currentBossId ? bossById(ch.currentBossId) : undefined;
+              if (!boss) return null;
+              const rec = bossRecordOf(p, boss.id);
+              const best = rec.bestDifficulty ? difficultyMeta(rec.bestDifficulty) : null;
+              return (
+                <div className="pf-kv" key={ch.id}>
+                  <span className="k">{boss.codename} · {boss.title}</span>
+                  <span className="v">
+                    {best ? (
+                      <>
+                        <span style={{ color: best.color, fontFamily: 'Consolas, monospace' }}>{best.label}</span>
+                        {' · '}
+                        {DIFFICULTY_ORDER.filter(d => rec.cleared[d]).map(d => {
+                          const m = difficultyMeta(d);
+                          const c = rec.cleared[d]!.count;
+                          return <span key={d} className="chip" style={{ marginLeft: 4, color: m.color, borderColor: m.color }}>{m.label} ×{c}</span>;
+                        })}
+                      </>
+                    ) : <span className="dim">未首胜</span>}
+                  </span>
+                </div>
+              );
+            })}
+            {(p.rewards?.badges || []).length > 0 && (
+              <div style={{ marginTop: 8, display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                {(p.rewards?.badges || []).map(id => {
+                  const parts = id.split('-');
+                  const diffLabel = parts[1] === 'expert' ? '专家徽章' : '困难徽章';
+                  const bossName = parts.slice(2).join('-').toUpperCase();
+                  return (
+                    <span key={id} className="chip gold" title={id}>
+                      {diffLabel} · {bossName}
+                    </span>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           <div className="panel">

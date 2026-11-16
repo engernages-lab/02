@@ -20,7 +20,7 @@ export default function MiraPanel({ message, msgTag = 'MIRA', hintUsed, onAskHin
           <div className="mira-status">智能维修助手 · ONLINE</div>
         </div>
         <div style={{ marginLeft: 'auto' }}>
-          <button className="nxbtn small" onClick={onAskHint} disabled={!onAskHint}>
+          <button className="nxbtn small" onClick={onAskHint} disabled={!onAskHint || exhausted}>
             {exhausted ? '提示已用尽' : 'MIRA 提示'}
           </button>
         </div>
