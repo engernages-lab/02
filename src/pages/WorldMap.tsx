@@ -246,18 +246,35 @@ export default function WorldMap() {
           <div className="ct-head">
             <span className="ct-title">NEXUS 主线 · 六章必经流程</span>
             <span className="ct-sub">Boss 首胜 → 创世主碎片 → 下一章解锁</span>
-            <span className="ct-core">原初核心 {coreGate.ownedCount} / {coreGate.requiredCount}</span>
+            <span className="ct-core">
+              <span>原初核心</span>
+              <span className="ct-pips" aria-hidden="true">
+                {Array.from({ length: coreGate.requiredCount }).map((_, i) => (
+                  <i key={i} className={i < coreGate.ownedCount ? 'on' : ''} />
+                ))}
+              </span>
+              <b>{coreGate.ownedCount}/{coreGate.requiredCount}</b>
+            </span>
           </div>
           <div className="ct-list">
             {chapterGates.map(gt => {
               const isSel = sel === gt.serverId;
               const statusKey = gt.status.toLowerCase().replace(/_/g, '-');
+              const pct = gt.levelsTotal > 0 ? Math.max(0, Math.min(100, Math.round(gt.levelsDone / gt.levelsTotal * 100))) : 0;
+              const progressText = gt.status === 'LOCKED'
+                ? gt.requirement
+                : gt.legacyUnlocked && !gt.unlocked
+                  ? gt.blockedReason
+                  : '关卡 ' + gt.levelsDone + '/' + gt.levelsTotal
+                    + (gt.bossDefeated ? ' · Boss 首胜' + (gt.bossClearSource === 'legacy-inherit' ? '（继承）' : '') : '')
+                    + (gt.completed ? ' · 已完成' : '');
               return (
                 <button
                   key={gt.id}
                   className={'ct-card st-' + statusKey + (isSel ? ' sel' : '')}
                   onClick={() => focusChapter(gt.serverId)}
                   title={gt.requirement}
+                  aria-label={'第 ' + gt.order + ' 章 ' + gt.title + ' · ' + CHAPTER_STATUS_SHORT[gt.status]}
                 >
                   <span className="ct-order">{String(gt.order).padStart(2, '0')}</span>
                   <span className="ct-main">
@@ -266,13 +283,13 @@ export default function WorldMap() {
                   </span>
                   <span className={'ct-badge s-' + statusKey}>{CHAPTER_STATUS_SHORT[gt.status]}</span>
                   <span className="ct-progress">
-                    {gt.status === 'LOCKED'
-                      ? gt.requirement
-                      : gt.legacyUnlocked && !gt.unlocked
-                        ? gt.blockedReason
-                        : '关卡 ' + gt.levelsDone + '/' + gt.levelsTotal
-                          + (gt.bossDefeated ? ' · Boss 首胜' + (gt.bossClearSource === 'legacy-inherit' ? '（继承）' : '') : '')
-                          + (gt.completed ? ' · 已完成' : '')}
+                    <span className="ct-bar" aria-hidden="true">
+                      <i className={'ct-bar-fill' + (gt.completed ? ' full' : '')} style={{ width: pct + '%' }} />
+                    </span>
+                    <span className="ct-pmeta">{progressText}</span>
+                    <span className="ct-ratio">
+                      {String(gt.levelsDone).padStart(2, '0')}<em>/{String(gt.levelsTotal).padStart(2, '0')}</em>
+                    </span>
                   </span>
                 </button>
               );

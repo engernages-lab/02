@@ -61,6 +61,10 @@ async function main() {
   let outIndex = index.replace('<script type="module" src="/src/main.tsx"></script>', '<script src="./assets/game.js"></script>');
   // 资源改相对路径：这样部署到任意子路径（如 GitHub Pages 的 /02/）都能正确加载
   outIndex = outIndex.replace(/(href|src)="\/(?!\/)/g, '$1="./');
+  // 版本指纹：避免 GitHub Pages / 浏览器继续使用旧版 global.css 与 game.js
+  const assetVersion = JSON.parse(readFileSync(join(__dirname, 'package.json'), 'utf8')).version;
+  outIndex = outIndex.replace(/href="\.\/global\.css"/g, 'href="./global.css?v=' + assetVersion + '"');
+  outIndex = outIndex.replace(/src="\.\/assets\/game\.js"/g, 'src="./assets/game.js?v=' + assetVersion + '"');
   writeFileSync(join(__dirname, 'dist', 'index.html'), outIndex);
 
   console.log('[build] 完成，耗时', ((Date.now() - t0) / 1000).toFixed(1) + 's');
