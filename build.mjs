@@ -63,7 +63,7 @@ async function main() {
   outIndex = outIndex.replace(/(href|src)="\/(?!\/)/g, '$1="./');
   // 版本指纹：避免 GitHub Pages / 浏览器继续使用旧版 global.css 与 game.js
   const assetVersion = JSON.parse(readFileSync(join(__dirname, 'package.json'), 'utf8')).version;
-  outIndex = outIndex.replace(/href="\.\/global\.css"/g, 'href="./global.css?v=' + assetVersion + '"');
+  outIndex = outIndex.replace(/href="\.\/([^"?]+\.css)"/g, 'href="./$1?v=' + assetVersion + '"');
   outIndex = outIndex.replace(/src="\.\/assets\/game\.js"/g, 'src="./assets/game.js?v=' + assetVersion + '"');
   writeFileSync(join(__dirname, 'dist', 'index.html'), outIndex);
 

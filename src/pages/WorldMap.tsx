@@ -597,7 +597,12 @@ export default function WorldMap() {
                         <button className="nxbtn small ghost" onClick={() => enterLevel(lv)}>重玩 ▸</button>
                       </>
                     )}
-                    {lu === 'unlocked' && <button className="nxbtn small primary" onClick={() => enterLevel(lv)}>接入 ▸</button>}
+                    {lu === 'unlocked' && (
+                      <button className="nxbtn small primary enter-btn" onClick={() => enterLevel(lv)} title="接入该服务器终端">
+                        <span className="enter-ico" aria-hidden="true">▶</span>
+                        <span>接入终端</span>
+                      </button>
+                    )}
                     {lu === 'locked' && <span className="chip dim">🔒 前置未完成</span>}
                   </div>
                 );
