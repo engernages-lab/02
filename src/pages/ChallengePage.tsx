@@ -21,12 +21,39 @@ import {
   createDebouncedFlush, shouldAutosaveDraft, type DraftEntry, type DebouncedFlush,
 } from '../services/drafts';
 
+/** 与 global.css 保持一致：手机竖屏或横屏手机都用单栏标签布局 */
+const MOBILE_MQ = '(max-width: 767px), (max-width: 1100px) and (max-height: 520px)';
+
+function useMediaQuery(query: string): boolean {
+  const [matches, setMatches] = useState<boolean>(() => {
+    try { return typeof window !== 'undefined' && !!window.matchMedia && window.matchMedia(query).matches; } catch { return false; }
+  });
+  useEffect(() => {
+    let mq: MediaQueryList | null = null;
+    try { mq = window.matchMedia(query); } catch { return; }
+    const onChange = () => setMatches(mq!.matches);
+    onChange();
+    if (typeof mq.addEventListener === 'function') {
+      mq.addEventListener('change', onChange);
+      return () => mq!.removeEventListener('change', onChange);
+    }
+    // 旧 Safari
+    mq.addListener(onChange);
+    return () => mq!.removeListener(onChange);
+  }, [query]);
+  return matches;
+}
+
+const EDITOR_WRAP_KEY = 'nexus_editor_wrap';
+
 export default function ChallengePage() {
   const g = useGame();
   const levelId = g.player.progress.currentLevelId;
   const level = levelId ? levelById(levelId) : undefined;
   const player = g.player;
   const respawnTick = g.respawnTick;
+  // 手机 / 横屏手机使用单栏 + 标签；平板（768–1099）使用双栏 + 可折叠侧栏
+  const isMobile = useMediaQuery(MOBILE_MQ);
 
   const [code, setCode] = useState(level?.initialCode ?? '');
   const [term, setTerm] = useState<TermLine[]>([]);
@@ -66,6 +93,25 @@ export default function ChallengePage() {
   const [draftError, setDraftError] = useState('');
   const [draftNotice, setDraftNotice] = useState('');
   const [draftArmed, setDraftArmed] = useState(false);
+
+  // ---------- 响应式布局状态（A2） ----------
+  /** 手机端标签：任务 / 代码 / 输出 / MIRA */
+  const [view, setView] = useState<'task' | 'code' | 'out' | 'mira'>('code');
+  /** 平板侧栏显示哪一块（任务 / MIRA） */
+  const [sideTab, setSideTab] = useState<'task' | 'mira'>('task');
+  const [sideCollapsed, setSideCollapsed] = useState(false);
+  /** 窄屏编辑器自动换行开关（关闭时编辑器独立横向滚动） */
+  const [wrapMode, setWrapMode] = useState<boolean>(() => {
+    try { return localStorage.getItem(EDITOR_WRAP_KEY) === '1'; } catch { return false; }
+  });
+  const toggleWrap = () => {
+    setWrapMode(v => {
+      const next = !v;
+      try { localStorage.setItem(EDITOR_WRAP_KEY, next ? '1' : '0'); } catch { /* ignore */ }
+      return next;
+    });
+    play('click');
+  };
 
   const locked = g.event.kind !== 'none';
 
@@ -152,6 +198,7 @@ export default function ChallengePage() {
       setDraftNotice(saved ? '已恢复上次保存的草稿' : '');
     }
     levelRef.current = level.id;
+    setView('code');
 
     setTerm([]);
     setErrorLine(null);
@@ -236,6 +283,30 @@ export default function ChallengePage() {
     const id = window.setInterval(() => setLoadElapsed(Math.round((Date.now() - t0) / 1000)), 400);
     return () => window.clearInterval(id);
   }, [pyState.status]);
+
+  // 移动端视口 / 虚拟键盘补偿：底部操作栏贴住可视区域，键盘弹出时不遮挡
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const root = document.documentElement;
+    const vv = window.visualViewport;
+    const apply = () => {
+      const h = vv ? vv.height : window.innerHeight;
+      root.style.setProperty('--app-vh', Math.round(h) + 'px');
+      const offset = vv ? Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop)) : 0;
+      root.style.setProperty('--kb-offset', offset + 'px');
+    };
+    apply();
+    window.addEventListener('resize', apply);
+    vv?.addEventListener('resize', apply);
+    vv?.addEventListener('scroll', apply);
+    return () => {
+      root.style.removeProperty('--app-vh');
+      root.style.removeProperty('--kb-offset');
+      window.removeEventListener('resize', apply);
+      vv?.removeEventListener('resize', apply);
+      vv?.removeEventListener('scroll', apply);
+    };
+  }, []);
 
   useEffect(() => {
     // 重生后 MIRA 提示
@@ -711,7 +782,7 @@ export default function ChallengePage() {
   const knowledgeCards = level.knowledge.map(knowledgeById).filter(Boolean);
 
   return (
-    <div className="page page-anim" style={{ padding: '10px 14px', height: '100vh', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+    <div className={'page page-anim chlg-page v-' + view + ' st-' + sideTab + (sideCollapsed ? ' side-collapsed' : '')}>
       {/* HUD */}
       <div className="hud" style={{ marginBottom: 8 }}>
         <button className="nxbtn small ghost" disabled={locked || running || submitting} onClick={() => { play('click'); g.nav('map'); }}>◀ 服务器地图</button>
@@ -731,9 +802,29 @@ export default function ChallengePage() {
         <span className="hud-chip">{stars > 0 ? '★'.repeat(stars) : '未通关'}</span>
         <span className="hud-chip cyan">容错 {g.tolerance}</span>
         <span className="hud-chip">意识 {player.consciousness}%</span>
-        <button className="nxbtn small ghost" onClick={() => { g.toggleMusic(); setMusicOn(isMusicOn()); }}>
+        <div className="side-switch" role="group" aria-label="侧栏切换">
+          <button className={'ss-btn' + (!sideCollapsed && sideTab === 'task' ? ' on' : '')}
+            onClick={() => { play('click'); setSideTab('task'); setSideCollapsed(false); }}>任务</button>
+          <button className={'ss-btn' + (!sideCollapsed && sideTab === 'mira' ? ' on' : '')}
+            onClick={() => { play('click'); setSideTab('mira'); setSideCollapsed(false); }}>MIRA</button>
+          <button className="ss-btn ico" title={sideCollapsed ? '展开侧栏（优先编辑器）' : '收起侧栏（优先编辑器）'}
+            onClick={() => { play('click'); setSideCollapsed(v => !v); }}>{sideCollapsed ? '▸' : '◂'}</button>
+        </div>
+        <button className="nxbtn small ghost hud-music" onClick={() => { g.toggleMusic(); setMusicOn(isMusicOn()); }}>
           {musicOn ? '♪ 音乐开' : '♪ 音乐关'}
         </button>
+      </div>
+
+      {/* 手机端标签：任务 / 代码 / 输出 / MIRA */}
+      <div className="mobile-tabs" role="tablist" aria-label="挑战页分区">
+        {([['task', '任务'], ['code', '代码'], ['out', '输出'], ['mira', 'MIRA']] as const).map(([id, label]) => (
+          <button key={id} role="tab" aria-selected={view === id}
+            className={'mt-btn' + (view === id ? ' on' : '')}
+            onClick={() => { play('click'); setView(id); }}>
+            {label}
+            {id === 'out' && term.length > 0 && <span className="mt-dot" aria-hidden="true" />}
+          </button>
+        ))}
       </div>
 
       <div className="chlg-grid" style={{ flex: 1, minHeight: 0 }}>
@@ -843,6 +934,10 @@ export default function ChallengePage() {
               title="消耗 1 个回滚模块：恢复上一次代码快照">
               ↺ 回滚 ×{player.rewards?.items?.rollback || 0}
             </button>
+            <button className="nxbtn ghost small only-mobile" onClick={toggleWrap}
+              title="窄屏下切换自动换行；关闭后代码在编辑器内独立横向滚动">
+              {wrapMode ? '↩ 自动换行 开' : '↔ 自动换行 关'}
+            </button>
             <div className="sp" />
             <span className="chip">运行不增加失败次数</span>
             {locked && <span className="chip red warn-flash">紧急事件进行中——主线提交已锁定</span>}
@@ -856,7 +951,8 @@ export default function ChallengePage() {
               markLines={scanLines}
               onRun={run}
               readOnly={running || submitting}
-              fontSize={player.settings.animLevel === 'low' ? 15 : 15.5}
+              wordWrap={!isMobile || wrapMode}
+              fontSize={player.settings.animLevel === 'low' ? 15 : isMobile ? 14 : 15.5}
             />
           </div>
           {dbg && (
@@ -913,6 +1009,17 @@ export default function ChallengePage() {
       {/* 底部终端 */}
       <div className="chlg-bottom">
         <Terminal lines={term} maxHeight={210} title={'维修终端 · ' + level.codename} />
+      </div>
+
+      {/* 手机端固定操作栏：始终可见，键盘弹出时随可视区域上移 */}
+      <div className="mobile-actions">
+        <button className="nxbtn ghost" disabled={running || submitting} onClick={saveDraftNow} title="立即保存草稿">💾</button>
+        <button className="nxbtn" disabled={running || submitting || locked} onClick={run}>
+          {running ? <span className="spinner" /> : '▶'} 运行
+        </button>
+        <button className="nxbtn primary" disabled={running || submitting || locked} onClick={submit}>
+          提交修复
+        </button>
       </div>
 
       {/* 首次进入关卡简报 */}

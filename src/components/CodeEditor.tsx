@@ -36,11 +36,13 @@ export interface CodeEditorProps {
   markLines?: number[];
   onRun?: () => void;
   placeholder?: string;
+  /** 窄屏可关闭自动换行：代码在编辑器内独立横向滚动，页面不产生横向溢出 */
+  wordWrap?: boolean;
 }
 
 export default function CodeEditor({
   value, onChange, height = '100%', fontSize = 15, readOnly = false,
-  errorLine, debugLine, markLines, onRun, placeholder,
+  errorLine, debugLine, markLines, onRun, placeholder, wordWrap = true,
 }: CodeEditorProps) {
   const edRef = useRef<MonacoNS.editor.IStandaloneCodeEditor | null>(null);
   const monRef = useRef<typeof MonacoNS | null>(null);
@@ -157,7 +159,7 @@ export default function CodeEditor({
           automaticLayout: true,
           tabSize: 4,
           insertSpaces: true,
-          wordWrap: 'on',
+          wordWrap: wordWrap ? 'on' : 'off',
           renderWhitespace: 'selection',
           bracketPairColorization: { enabled: true },
           guides: { indentation: true, bracketPairs: true },
