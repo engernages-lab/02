@@ -1474,6 +1474,10 @@ input[type="range"].nx-range::-webkit-slider-thumb {
   .chlg-page .hud-title { font-size: 14px; }
   .chlg-page .hud-sub { font-size: 11px; }
   .chlg-page .chlg-bottom { height: 180px; margin-top: 10px; }
+  /* 平板侧栏切到「诊断」时，只保留诊断面板 */
+  .chlg-page.st-diag .chlg-left { display: none; }
+  .chlg-page.st-diag .chlg-right .mira-box,
+  .chlg-page.st-diag .chlg-right .panel:not(.diag-panel) { display: none; }
 }
 
 /* --- 手机 / 横屏手机：单栏 + 标签 + 固定操作栏 --- */
@@ -1600,3 +1604,75 @@ html, body { max-width: 100%; }
 .draft-time, .draft-lines { color: var(--faint); white-space: nowrap; }
 .draft-notice { color: #6FD8A8; }
 .draft-bar .nxbtn.small { padding: 3px 9px; font-size: 11.5px; }
+
+/* ===== V1.2-A A3：代码诊断面板 ===== */
+.diag-panel { gap: 7px; }
+.diag-status {
+  margin-left: 8px; font-family: var(--mono); font-size: 10.5px;
+  padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--dim);
+}
+.diag-status.running { color: var(--orange); border-color: rgba(243, 183, 92, 0.45); }
+.diag-status.ok { color: #A9F5D8; border-color: rgba(53, 211, 154, 0.45); }
+.diag-status.err { color: #FFC9CD; border-color: rgba(255, 91, 100, 0.45); }
+.diag-status.warn { color: #FFE3B8; border-color: rgba(243, 183, 92, 0.45); }
+.diag-hint { font-size: 12px; color: var(--dim); line-height: 1.7; }
+.diag-head { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.diag-kind { font-size: 11px; padding: 1px 7px; border-radius: 5px; border: 1px solid var(--line); color: var(--dim); }
+.diag-kind.k-syntax, .diag-kind.k-runtime { color: #FFC9CD; border-color: rgba(255, 91, 100, 0.5); background: rgba(255, 91, 100, 0.08); }
+.diag-kind.k-output, .diag-kind.k-logic { color: #FFE3B8; border-color: rgba(243, 183, 92, 0.5); background: rgba(243, 183, 92, 0.08); }
+.diag-kind.k-timeout { color: #FFD0A0; border-color: rgba(243, 183, 92, 0.45); background: rgba(243, 183, 92, 0.06); }
+.diag-kind.k-ok { color: #A9F5D8; border-color: rgba(53, 211, 154, 0.5); background: rgba(53, 211, 154, 0.08); }
+.diag-type { font-family: var(--mono); font-size: 11.5px; color: var(--dim); }
+.diag-line { margin-left: auto; font-family: var(--mono); font-size: 11.5px; color: var(--cyan); white-space: nowrap; }
+.diag-reason { font-size: 12.5px; line-height: 1.65; color: #C6D9E6; overflow-wrap: anywhere; }
+.diag-snippet {
+  margin: 0; padding: 6px 8px; border-radius: 6px;
+  background: rgba(255, 91, 100, 0.06); border: 1px solid rgba(255, 91, 100, 0.18);
+  font-family: var(--mono); font-size: 11.5px; color: #FF9BA2;
+  white-space: pre-wrap; overflow-wrap: anywhere; max-height: 96px; overflow: auto;
+}
+.diag-meta { display: flex; flex-wrap: wrap; gap: 8px; font-family: var(--mono); font-size: 10.5px; color: var(--faint); }
+.diag-conf.c-high { color: #6FD8A8; }
+.diag-conf.c-medium { color: var(--orange); }
+.diag-conf.c-low { color: var(--faint); }
+.diag-meta-item { color: var(--faint); }
+.diag-layers { display: flex; flex-direction: column; gap: 6px; }
+.diag-layer { border-left: 2px solid var(--line-strong); padding: 3px 0 3px 8px; }
+.diag-layer.l2 { border-color: rgba(243, 183, 92, 0.6); }
+.diag-layer.l3 { border-color: rgba(53, 211, 154, 0.6); }
+.dl-tag { font-family: var(--mono); font-size: 10px; letter-spacing: 1px; color: var(--faint); }
+.dl-text { font-size: 12.3px; line-height: 1.6; color: #C6D9E6; overflow-wrap: anywhere; }
+.diag-know { display: flex; flex-wrap: wrap; gap: 4px; }
+.diag-mira {
+  font-size: 12.3px; line-height: 1.65; color: #BDE9F2;
+  background: rgba(66, 214, 208, 0.06); border: 1px solid rgba(66, 214, 208, 0.18);
+  border-radius: 7px; padding: 7px 9px; overflow-wrap: anywhere;
+}
+.dm-tag { display: block; font-family: var(--mono); font-size: 10px; color: var(--cyan); margin-bottom: 2px; letter-spacing: 1px; }
+.diag-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.diag-raw, .diag-history { font-size: 11.5px; color: var(--dim); }
+.diag-raw summary, .diag-history summary { cursor: pointer; color: var(--faint); }
+.diag-raw pre {
+  margin: 6px 0 0; padding: 6px 8px; max-height: 150px; overflow: auto;
+  white-space: pre-wrap; overflow-wrap: anywhere;
+  background: rgba(255, 91, 100, 0.05); border-radius: 6px;
+  font-family: var(--mono); font-size: 11px;
+}
+.dh-list { margin-top: 6px; display: flex; flex-direction: column; gap: 4px; }
+.dh-item {
+  display: flex; flex-wrap: wrap; gap: 6px; font-size: 11px; color: var(--dim);
+  border-bottom: 1px dashed rgba(143, 176, 201, 0.15); padding-bottom: 3px;
+}
+.dh-kind { color: #FFC9CD; }
+.dh-line { font-family: var(--mono); color: var(--cyan); }
+.dh-reason { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+
+/* 手机：诊断 / MIRA 两个标签共用右栏，按标签只显示对应面板 */
+@media (max-width: 767px), (max-width: 1100px) and (max-height: 520px) {
+  .chlg-page.v-diag .chlg-right { display: flex; flex: 1 1 auto; overflow-y: auto; }
+  .chlg-page.v-diag .chlg-right .mira-box,
+  .chlg-page.v-diag .chlg-right .panel:not(.diag-panel) { display: none; }
+  .chlg-page.v-mira .chlg-right .diag-panel { display: none; }
+  .chlg-page .mt-btn { font-size: 12px; padding: 0 2px; }
+  .chlg-page .diag-snippet { max-height: 72px; }
+}

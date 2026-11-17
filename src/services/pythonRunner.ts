@@ -2,6 +2,7 @@
 // 用 sys.settrace 看门狗实现执行超时（死循环可被打断），不依赖 Worker 环境。
 import { parseTraceback } from './judge';
 import type { RunOutcomeShape } from '../game/types';
+import { needsLoopSandbox, canUseLoopSandbox, runInLoopSandbox } from './sandboxRunner';
 
 export type PyStatus = 'idle' | 'loading' | 'ready' | 'error';
 export interface PyState { status: PyStatus; phase: string }
@@ -45,10 +46,12 @@ const dynImport = new Function('u', 'return import(u);') as (u: string) => Promi
 
 const pyStr = (s: string) => JSON.stringify(String(s));
 
-/** 普通执行脚本：接管 print（保证换行/分隔符精确）+ settrace 看门狗（超时可打断） */
-function buildRunner(code: string, limitSec: number): string {
+/** 普通执行脚本：接管 print（保证换行/分隔符精确）+ settrace 看门狗（超时可打断）
+ *  同时用 io.StringIO 捕获 traceback —— 该 MicroPython 端口的 stderr 不可写，
+ *  只能把 sys.print_exception 的输出收进内存，结果随 __NX_RES__ 一并返回。 */
+export function buildRunnerScript(code: string, limitSec: number): string {
   return [
-    'import json, sys, time',
+    'import json, sys, time, io',
     '__nx_src = ' + pyStr(code),
     '__nx_out = []',
     'def __nx_print(*args, sep=" ", end="\\n"):',
@@ -60,14 +63,21 @@ function buildRunner(code: string, limitSec: number): string {
     '        raise RuntimeError("execution timeout")',
     '    return __nx_wd',
     '__nx_err = ""',
+    '__nx_tb = ""',
     'sys.settrace(__nx_wd)',
     'try:',
     '    exec(__nx_src, {"print": __nx_print, "__name__": "__main__"})',
     'except Exception as e:',
     '    __nx_err = type(e).__name__ + ": " + str(e)',
+    '    __nx_buf = io.StringIO()',
+    '    try:',
+    '        sys.print_exception(e, __nx_buf)',
+    '        __nx_tb = __nx_buf.getvalue()',
+    '    except Exception:',
+    '        __nx_tb = ""',
     'finally:',
     '    sys.settrace(None)',
-    'print("__NX_RES__" + json.dumps({"out": "".join(__nx_out), "err": __nx_err}))',
+    'print("__NX_RES__" + json.dumps({"out": "".join(__nx_out), "err": __nx_err, "tb": __nx_tb}))',
   ].join('\n');
 }
 
@@ -153,6 +163,16 @@ async function ensureReady(): Promise<void> {
 }
 
 let busy = false;
+/** 递归爆栈会破坏本引擎的 settrace 钩子（实测：之后 for 循环不再触发看门狗），
+ *  出现递归错误后，后续执行一律改走 Worker 沙箱，避免主线程再次被死循环卡死。 */
+let traceSuspect = false;
+
+function noteTraceRisk(o: RunOutcomeShape) {
+  const t = o.error?.type || '';
+  const m = o.error?.message || '';
+  if (t === 'RecursionError' || (t === 'RuntimeError' && /recursion/i.test(m))) traceSuspect = true;
+}
+
 interface Queued {
   code: string;
   timeoutMs: number;
@@ -166,7 +186,7 @@ function executeOne(item: Queued): RunOutcomeShape {
   const limitSec = Math.max(1, timeoutMs / 1000);
   outBuf = '';
   errBuf = '';
-  const script = debug ? buildDebug(code, limitSec) : buildRunner(code, limitSec);
+  const script = debug ? buildDebug(code, limitSec) : buildRunnerScript(code, limitSec);
   let thrown: unknown = null;
   try {
     engine!.runPython(script);
@@ -174,51 +194,89 @@ function executeOne(item: Queued): RunOutcomeShape {
     thrown = e;
   }
   const raw = outBuf;
-  if (debug) {
-    const trace = extract(raw, '__NX_TRACE__');
-    const traceArr = Array.isArray(trace) ? trace : [];
-    // 调试模式下输出分散在轨迹的各步 out 中——拼接后作为完整 stdout（实验室判题依赖）
-    const dbgOut = traceArr.map((t: { out?: string }) => String(t?.out ?? '')).join('');
-    if (thrown) {
-      const err = parseTraceback(String(thrown));
-      return { ok: false, stdout: dbgOut, stderr: errBuf, error: err, timedOut: false, trace: traceArr as RunOutcomeShape['trace'] };
-    }
-    return { ok: true, stdout: dbgOut, stderr: errBuf, timedOut: false, trace: traceArr as RunOutcomeShape['trace'] };
+  if (debug) return interpretDebug(raw, thrown ? String(thrown) : '');
+  return interpretResult(raw, thrown, errBuf);
+}
+
+/** 调试结果解释（轨迹文本 → RunOutcomeShape） */
+function interpretDebug(raw: string, thrownText: string): RunOutcomeShape {
+  const trace = extract(raw, '__NX_TRACE__');
+  const traceArr = Array.isArray(trace) ? trace : [];
+  // 调试模式下输出分散在轨迹的各步 out 中——拼接后作为完整 stdout（实验室判题依赖）
+  const dbgOut = traceArr.map((t: { out?: string }) => String(t?.out ?? '')).join('');
+  if (thrownText) {
+    const err = parseTraceback(thrownText);
+    return { ok: false, stdout: dbgOut, stderr: '', error: err, timedOut: false, trace: traceArr as RunOutcomeShape['trace'] };
   }
+  return { ok: true, stdout: dbgOut, stderr: '', timedOut: false, trace: traceArr as RunOutcomeShape['trace'] };
+}
+
+/** 普通执行结果解释：所有执行路径（主线程 / Worker 沙箱）共用同一套解析 */
+function interpretResult(raw: string, thrown: unknown, errBufText: string): RunOutcomeShape {
   const res = extract(raw, '__NX_RES__');
   const out = res ? String(res.out ?? '') : '';
   const errText = res ? String(res.err ?? '') : '';
+  const tb = res ? String(res.tb ?? '') : '';
   if (errText) {
     if (errText.includes('execution timeout')) {
-      return { ok: false, stdout: out, stderr: errBuf, timedOut: true };
+      return { ok: false, stdout: out, stderr: errBufText, timedOut: true, traceback: tb || undefined };
     }
-    return { ok: false, stdout: out, stderr: errBuf, error: parseTraceback(errText), timedOut: false };
+    return { ok: false, stdout: out, stderr: errBufText, error: parseTraceback(errText), timedOut: false, traceback: tb || undefined };
   }
   if (thrown) {
-    return { ok: false, stdout: out, stderr: errBuf, error: parseTraceback(String(thrown)), timedOut: false };
+    return { ok: false, stdout: out, stderr: errBufText, error: parseTraceback(String(thrown)), timedOut: false, traceback: tb || undefined };
   }
-  return { ok: true, stdout: out, stderr: errBuf, timedOut: false };
+  return { ok: true, stdout: out, stderr: errBufText, timedOut: false, traceback: tb || undefined };
 }
 
 function pump() {
   if (busy || queue.length === 0) return;
   busy = true;
   const next = queue.shift()!;
-  ensureReady()
-    .then(() => {
-      const outcome = executeOne(next);
-      busy = false;
-      next.resolve(outcome);
-      pump();
-    })
-    .catch((e: unknown) => {
-      busy = false;
-      next.resolve({
+  const limitSec = Math.max(1, next.timeoutMs / 1000);
+
+  const settle = (outcome: RunOutcomeShape) => {
+    noteTraceRisk(outcome);
+    busy = false;
+    next.resolve(outcome);
+    pump();
+  };
+
+  /** 主线程执行（原有路径） */
+  const runMain = () => {
+    ensureReady()
+      .then(() => settle(executeOne(next)))
+      .catch((e: unknown) => settle({
         ok: false, stdout: '', stderr: '', timedOut: false,
         error: { type: 'EngineError', message: String((e as Error)?.message || e) },
-      });
-      pump();
-    });
+      }));
+  };
+
+  // 含 while 的代码放进一次性 Worker：settrace 对 while 不产生事件，主线程会被永久阻塞
+  if (canUseLoopSandbox() && (needsLoopSandbox(next.code) || traceSuspect)) {
+    const script = next.debug ? buildDebug(next.code, limitSec) : buildRunnerScript(next.code, limitSec);
+    runInLoopSandbox(script, next.timeoutMs, ENGINE_BASE)
+      .then((res) => {
+        // Worker 起不来（老浏览器 / CSP）：退回主线程，至少不改变原有可用性
+        if (res.fatal && !res.timedOut) {
+          runMain();
+          return;
+        }
+        let outcome: RunOutcomeShape;
+        if (res.timedOut) {
+          outcome = { ok: false, stdout: '', stderr: '', timedOut: true };
+        } else if (next.debug) {
+          outcome = interpretDebug(res.raw, res.thrown);
+        } else {
+          outcome = interpretResult(res.raw, res.thrown, '');
+        }
+        settle(outcome);
+      })
+      .catch(() => runMain());
+    return;
+  }
+
+  runMain();
 }
 
 export function runPython(code: string, opts?: { timeoutMs?: number; debug?: boolean }): Promise<RunOutcomeShape> {
@@ -233,4 +291,5 @@ export function resetEngine() {
   loading = null;
   status = 'idle';
   phase = '';
+  traceSuspect = false;
 }

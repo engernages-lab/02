@@ -190,4 +190,6 @@ export interface RunOutcomeShape {
   timedOut: boolean;
   /** 调试轨迹：每步 {执行行号, 变量快照, 输出增量} */
   trace?: { line: number; vars: Record<string, string>; out?: string }[];
+  /** 真实 traceback 原文（MicroPython sys.print_exception 捕获，V1.2-A A3 起） */
+  traceback?: string;
 }

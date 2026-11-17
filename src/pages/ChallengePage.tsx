@@ -2,15 +2,18 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import CodeEditor from '../components/CodeEditor';
 import Terminal, { type TermLine } from '../components/Terminal';
 import MiraPanel from '../components/MiraPanel';
+import DiagnosisPanel from '../components/DiagnosisPanel';
 import PlayerStatus from '../components/PlayerStatus';
 import DialogSystem from '../components/DialogSystem';
 import { useGame, type CompletePayload } from '../store/gameStore';
+import type { RunOutcomeShape } from '../game/types';
 import { levelById, levelsOfServer, serverById, type LevelDef } from '../game/levels';
 import { canEnterServer } from '../game/chapterFlow';
 import { toleranceFor } from '../game/progression';
 import { buildHarness, checkUserCode, combineWithHarness, filterMarkerLines, judgeRun, parseMarker, type JudgeCheck, type JudgeVerdict, type ParsedError } from '../services/judge';
 import { miraLevelHint, miraOnError, miraOnFail, miraOnRespawn } from '../services/ai';
 import { runPython, onPyStatus, warmUp, type PyState } from '../services/pythonRunner';
+import { diagnoseRun, type Diagnosis } from '../services/diagnose';
 import { knowledgeById } from '../game/knowledge';
 import { achievementById } from '../game/achievements';
 import { play, isMusicOn } from '../services/sound';
@@ -94,11 +97,20 @@ export default function ChallengePage() {
   const [draftNotice, setDraftNotice] = useState('');
   const [draftArmed, setDraftArmed] = useState(false);
 
+  // ---------- 智能诊断（A3） ----------
+  const [diag, setDiag] = useState<Diagnosis | null>(null);
+  const [diagStatus, setDiagStatus] = useState<'idle' | 'running' | 'done'>('idle');
+  const [diagHistory, setDiagHistory] = useState<Diagnosis[]>([]);
+  /** 同一错误连续触发次数：决定面板默认展开到第几层 */
+  const [diagStreak, setDiagStreak] = useState(0);
+  const diagSigRef = useRef('');
+  const diagStreakRef = useRef(0);
+
   // ---------- 响应式布局状态（A2） ----------
-  /** 手机端标签：任务 / 代码 / 输出 / MIRA */
-  const [view, setView] = useState<'task' | 'code' | 'out' | 'mira'>('code');
-  /** 平板侧栏显示哪一块（任务 / MIRA） */
-  const [sideTab, setSideTab] = useState<'task' | 'mira'>('task');
+  /** 手机端标签：任务 / 代码 / 输出 / 诊断 / MIRA */
+  const [view, setView] = useState<'task' | 'code' | 'out' | 'diag' | 'mira'>('code');
+  /** 平板侧栏显示哪一块（任务 / 诊断 / MIRA） */
+  const [sideTab, setSideTab] = useState<'task' | 'diag' | 'mira'>('task');
   const [sideCollapsed, setSideCollapsed] = useState(false);
   /** 窄屏编辑器自动换行开关（关闭时编辑器独立横向滚动） */
   const [wrapMode, setWrapMode] = useState<boolean>(() => {
@@ -199,6 +211,13 @@ export default function ChallengePage() {
     }
     levelRef.current = level.id;
     setView('code');
+    // 新关卡重置诊断（历史只保留本次挑战内）
+    setDiag(null);
+    setDiagStatus('idle');
+    setDiagHistory([]);
+    setDiagStreak(0);
+    diagSigRef.current = '';
+    diagStreakRef.current = 0;
 
     setTerm([]);
     setErrorLine(null);
@@ -501,6 +520,35 @@ export default function ChallengePage() {
     play('click');
   };
 
+  /**
+   * 生成并展示诊断。
+   * 只读取真实执行结果与判题结果，绝不参与判定；同一错误连续出现时自动加深提示层级。
+   */
+  const diagnoseAndShow = (run: RunOutcomeShape, verdict: JudgeVerdict | null, codeUsed: string): Diagnosis | null => {
+    if (!level) return null;
+    const prevSig = diagSigRef.current;
+    const guess = prevSig ? diagStreakRef.current + 1 : 1;
+    let d = diagnoseRun({ level, code: codeUsed, run, verdict, streak: guess });
+    if (d.signature !== prevSig) {
+      diagStreakRef.current = 1;
+      d = diagnoseRun({ level, code: codeUsed, run, verdict, streak: 1 });
+    } else {
+      diagStreakRef.current = guess;
+    }
+    diagSigRef.current = d.signature;
+    setDiagStreak(diagStreakRef.current);
+    setDiag(d);
+    setDiagStatus('done');
+    if (d.kind !== 'ok') {
+      setDiagHistory((h) => [d, ...h.filter((x) => x.signature !== d.signature)].slice(0, 6));
+    }
+    if (d.mira && (d.kind !== 'ok' || verdict?.passed)) {
+      setMiraTag(d.kind === 'ok' ? 'MIRA' : d.kind === 'syntax' || d.kind === 'runtime' ? '排错助手' : '诊断');
+      setMiraMsg(d.mira);
+    }
+    return d;
+  };
+
   const run = async () => {
     if (!level || running || submitting || locked) return;
     const ck = checkUserCode(code);
@@ -516,6 +564,7 @@ export default function ChallengePage() {
     }
     snapshot(code);
     setRunning(true);
+    setDiagStatus('running');
     setVerdict(null);
     setErrorLine(null);
     setScanLines([]);
@@ -532,12 +581,12 @@ export default function ChallengePage() {
       pushLines(outputLines(r));
       if (r.error) {
         setErrorLine(r.error.line && r.error.line <= code.split('\n').length ? r.error.line : null);
-        setMiraTag('排错助手');
-        setMiraMsg('终端报错了。' + miraOnError(r.error.type));
       }
     } else {
       pushLines(outputLines(r));
     }
+    // 无论成功失败都给出诊断：成功时显示「运行成功（未判题）」，失败时定位错误
+    diagnoseAndShow(r, null, code);
   };
 
   const submit = async () => {
@@ -570,8 +619,9 @@ export default function ChallengePage() {
     if (r.timedOut) {
       pushLines(outputLines(r));
       setVerdict({ passed: false, checks: [], timedOut: true });
+      const d = diagnoseAndShow(r, { passed: false, checks: [], timedOut: true }, code);
       setMiraTag('系统警告');
-      setMiraMsg('判题超时。提交已计为一次失败——检查代码里是否有死循环。');
+      setMiraMsg((d?.mira || '判题超时。') + ' 本次提交已计为一次失败——先处理循环的结束条件。');
       g.recordFail(level.id);
       play('error');
       return;
@@ -581,15 +631,18 @@ export default function ChallengePage() {
       const errLine = r.error && r.error.line && r.error.line <= codeLines ? r.error.line : null;
       setErrorLine(errLine);
       setVerdict({ passed: false, checks: [], error: r.error });
-      setMiraTag('排错助手');
-      setMiraMsg('程序没能通过判题（执行出错）。' + miraOnError(r.error?.type));
+      const d = diagnoseAndShow(r, { passed: false, checks: [], error: r.error }, code);
       // 执行错误同样计入失败提交
       const fp = g.recordFail(level.id);
       if (!fp.triggered) {
         const m = miraOnFail(fp.n, fp.tolerance);
-        setMiraTag(m.tone === 'danger' ? '系统警告' : 'MIRA');
-        setMiraMsg(String(m.text));
-        if (m.tone === 'danger') play('warning');
+        if (m.tone === 'danger') {
+          setMiraTag('系统警告');
+          setMiraMsg(String(m.text));
+          play('warning');
+        } else if (d) {
+          setMiraMsg(d.mira + ' ' + String(m.text));
+        }
       }
       play('error');
       return;
@@ -605,6 +658,7 @@ export default function ChallengePage() {
       ]);
       const payload = g.completeLevel(level.id);
       setVerdict({ passed: true, checks: v.checks });
+      diagnoseAndShow(r, v, code);
       // 真实判题通过：把这版代码记为「通关代码」。只写草稿层，不改动关卡完成记录。
       writeNow(code, true);
       setDraftNotice('通关代码已存档（可随时回看）');
@@ -648,7 +702,7 @@ export default function ChallengePage() {
         { kind: 'err', text: '测试未全部通过。请继续修复。' },
       ]);
       setVerdict(v);
-      setMiraTag('判题反馈');
+      const d = diagnoseAndShow(r, v, code);
       g.recordBug(codexForError(r.error?.type)?.id || 'logic');
       const fp = g.recordFail(level.id);
       if (fp.triggered) {
@@ -657,10 +711,14 @@ export default function ChallengePage() {
         play('alarm');
       } else {
         const m = miraOnFail(fp.n, fp.tolerance);
-        setMiraTag(m.tone === 'danger' ? '系统警告' : 'MIRA');
-        setMiraMsg(String(m.text));
-        if (m.tone === 'danger') play('warning');
-        else play('error');
+        if (m.tone === 'danger') {
+          setMiraTag('系统警告');
+          setMiraMsg(String(m.text));
+          play('warning');
+        } else {
+          if (d) setMiraMsg(d.mira + ' ' + String(m.text));
+          play('error');
+        }
       }
     }
   };
@@ -805,6 +863,8 @@ export default function ChallengePage() {
         <div className="side-switch" role="group" aria-label="侧栏切换">
           <button className={'ss-btn' + (!sideCollapsed && sideTab === 'task' ? ' on' : '')}
             onClick={() => { play('click'); setSideTab('task'); setSideCollapsed(false); }}>任务</button>
+          <button className={'ss-btn' + (!sideCollapsed && sideTab === 'diag' ? ' on' : '')}
+            onClick={() => { play('click'); setSideTab('diag'); setSideCollapsed(false); }}>诊断</button>
           <button className={'ss-btn' + (!sideCollapsed && sideTab === 'mira' ? ' on' : '')}
             onClick={() => { play('click'); setSideTab('mira'); setSideCollapsed(false); }}>MIRA</button>
           <button className="ss-btn ico" title={sideCollapsed ? '展开侧栏（优先编辑器）' : '收起侧栏（优先编辑器）'}
@@ -817,12 +877,13 @@ export default function ChallengePage() {
 
       {/* 手机端标签：任务 / 代码 / 输出 / MIRA */}
       <div className="mobile-tabs" role="tablist" aria-label="挑战页分区">
-        {([['task', '任务'], ['code', '代码'], ['out', '输出'], ['mira', 'MIRA']] as const).map(([id, label]) => (
+        {([['task', '任务'], ['code', '代码'], ['out', '输出'], ['diag', '诊断'], ['mira', 'MIRA']] as const).map(([id, label]) => (
           <button key={id} role="tab" aria-selected={view === id}
             className={'mt-btn' + (view === id ? ' on' : '')}
             onClick={() => { play('click'); setView(id); }}>
             {label}
             {id === 'out' && term.length > 0 && <span className="mt-dot" aria-hidden="true" />}
+            {id === 'diag' && diag && diag.kind !== 'ok' && <span className="mt-dot" aria-hidden="true" />}
           </button>
         ))}
       </div>
@@ -986,6 +1047,7 @@ export default function ChallengePage() {
 
         {/* 右栏：MIRA + 状态 */}
         <div className="chlg-right" style={{ overflowY: 'auto' }}>
+          <DiagnosisPanel diag={diag} status={diagStatus} streak={diagStreak} history={diagHistory} />
           <MiraPanel message={miraMsg} msgTag={miraTag} hintUsed={hintUsed} onAskHint={locked ? undefined : askHint} />
           {dbg && (
             <div className="panel">
