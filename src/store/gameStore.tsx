@@ -27,6 +27,7 @@ import {
 import { computeLevelRewardV2, unlocksForLevel } from '../game/economy';
 import { slotOf, skinMetaById } from '../game/cosmetics';
 import { play, setVolumes, startMusic, stopMusic, isMusicOn } from '../services/sound';
+import { clearAllDrafts } from '../services/drafts';
 
 function chapterIndexForServer(serverId: string): number {
   const map: Record<string, number> = { syntax: 1, logs: 2, storage: 3, factory: 4, diag: 5, core: 6 };
@@ -994,6 +995,8 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
   /** 清空存档并重置为初始状态 */
   const wipeSave = useCallback(() => {
+    // 清空存档时同时清掉本机的代码草稿：新存档不应看到上一周目的残留草稿
+    clearAllDrafts();
     setPlayer(defaultState());
     setHasSave(false);
     setScreen('menu');

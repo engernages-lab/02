@@ -16,6 +16,10 @@ import { achievementById } from '../game/achievements';
 import { play, isMusicOn } from '../services/sound';
 import { GRADE_META } from '../game/rewards';
 import { codexForError } from '../game/codex';
+import {
+  DRAFT_DEBOUNCE_MS, draftNamespace, readDraft, writeDraft, clearDraft, formatDraftClock,
+  createDebouncedFlush, shouldAutosaveDraft, type DraftEntry, type DebouncedFlush,
+} from '../services/drafts';
 
 export default function ChallengePage() {
   const g = useGame();
@@ -43,7 +47,70 @@ export default function ChallengePage() {
   const [scanLines, setScanLines] = useState<number[]>([]);
   const historyRef = useRef<string[]>([]);
 
+  // ---------- 代码草稿（A1：挑战页自动保存 / 恢复） ----------
+  /** 草稿按「玩家存档 + 关卡」隔离：同一份存档的不同关卡互不覆盖 */
+  const draftNs = draftNamespace(player);
+  const nsRef = useRef(draftNs);
+  nsRef.current = draftNs;
+  const levelRef = useRef<string | null>(null);
+  /** 本次进入后玩家是否真的改过代码（避免把未修改的初始故障版写成草稿） */
+  const touchedRef = useRef(false);
+  const draftRef = useRef<DraftEntry | null>(null);
+  const pendingRef = useRef('');
+  const lastSavedRef = useRef('');
+  const passedNextRef = useRef(false);
+  const saverRef = useRef<DebouncedFlush<string> | null>(null);
+  const [draft, setDraft] = useState<DraftEntry | null>(null);
+  const [draftStatus, setDraftStatus] = useState<'idle' | 'saving' | 'saved' | 'error' | 'cleared'>('idle');
+  const [savedAt, setSavedAt] = useState<number | null>(null);
+  const [draftError, setDraftError] = useState('');
+  const [draftNotice, setDraftNotice] = useState('');
+  const [draftArmed, setDraftArmed] = useState(false);
+
   const locked = g.event.kind !== 'none';
+
+  /** 落盘一次草稿（不经过防抖）；失败时保留错误状态，绝不静默丢弃 */
+  const commitDraft = useCallback((next: string, passed = false, force = false): boolean => {
+    const lid = levelRef.current;
+    if (!lid) return false;
+    const r = writeDraft(nsRef.current, lid, next, { passed, force });
+    if (r.entry) {
+      draftRef.current = r.entry;
+      setDraft(r.entry);
+    }
+    if (r.ok) {
+      lastSavedRef.current = next;
+      setSavedAt(r.entry?.updatedAt ?? Date.now());
+      setDraftStatus('saved');
+      setDraftError('');
+      return true;
+    }
+    setDraftStatus('error');
+    setDraftError(r.reason || '保存失败');
+    return false;
+  }, []);
+
+  /** 立即写入（手动保存 / 切关 / 离开页面），并取消待执行的防抖写入 */
+  const writeNow = useCallback((next: string, passed = false, force = false): boolean => {
+    saverRef.current?.cancel();
+    pendingRef.current = next;
+    return commitDraft(next, passed, force);
+  }, [commitDraft]);
+
+  /** 把防抖队列里尚未落盘的内容立即写入 */
+  const flushDraft = useCallback(() => {
+    const s = saverRef.current;
+    if (s && s.pending()) s.flush();
+  }, []);
+
+  /** 切换编辑器内容（显式操作可要求立即存档，避免「选了初始代码、刷新又回到草稿」） */
+  const applyCode = useCallback((next: string, opts?: { touch?: boolean; save?: boolean; passed?: boolean; notice?: string }) => {
+    setCode(next);
+    pendingRef.current = next;
+    if (opts?.touch) touchedRef.current = true;
+    if (opts?.save) writeNow(next, opts?.passed);
+    if (opts?.notice !== undefined) setDraftNotice(opts.notice);
+  }, [writeNow]);
 
   useEffect(() => {
     if (!level) { g.nav('map'); return; }
@@ -55,7 +122,37 @@ export default function ChallengePage() {
       g.nav('map');
       return;
     }
-    setCode(level.initialCode);
+
+    const sameLevel = levelRef.current === level.id;
+    // 切关前把上一关尚未落盘的输入立即保存，避免切换丢代码
+    if (!sameLevel) flushDraft();
+
+    const saved = readDraft(draftNs, level.id);
+    draftRef.current = saved;
+    setDraft(saved);
+    setSavedAt(saved?.updatedAt ?? null);
+    setDraftError('');
+    setDraftArmed(false);
+    touchedRef.current = false;
+
+    if (sameLevel) {
+      // 重生 / 同关重新进入：编辑器回到初始故障版，但草稿保留，可一键恢复
+      setCode(level.initialCode);
+      pendingRef.current = level.initialCode;
+      lastSavedRef.current = level.initialCode;
+      setDraftStatus(saved ? 'saved' : 'idle');
+      setDraftNotice(saved ? '意识重组后代码已重置，本地仍保留你的草稿' : '');
+    } else {
+      // 首次进入 / 切换关卡：有草稿就恢复草稿，没有则用初始故障版
+      const start = saved?.code ?? level.initialCode;
+      setCode(start);
+      pendingRef.current = start;
+      lastSavedRef.current = saved?.code ?? level.initialCode;
+      setDraftStatus(saved ? 'saved' : 'idle');
+      setDraftNotice(saved ? '已恢复上次保存的草稿' : '');
+    }
+    levelRef.current = level.id;
+
     setTerm([]);
     setErrorLine(null);
     setVerdict(null);
@@ -68,6 +165,54 @@ export default function ChallengePage() {
     setDebugLine(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [levelId, respawnTick, level?.id]);
+
+  // 草稿防抖写入器：关掉页面 / 切关时由 cleanup 立即补写
+  useEffect(() => {
+    if (!level?.id) return;
+    const saver = createDebouncedFlush<string>((next) => {
+      const passed = passedNextRef.current;
+      passedNextRef.current = false;
+      commitDraft(next, passed);
+    }, DRAFT_DEBOUNCE_MS);
+    saverRef.current = saver;
+    return () => {
+      saver.flush();
+      if (saverRef.current === saver) saverRef.current = null;
+    };
+  }, [draftNs, level?.id, commitDraft]);
+
+  // 输入防抖自动保存：只在真正改过代码（或已有草稿）时写入
+  useEffect(() => {
+    if (!shouldAutosaveDraft({
+      code,
+      pending: pendingRef.current,
+      touched: touchedRef.current,
+      hasDraft: !!draftRef.current,
+      lastSaved: lastSavedRef.current,
+    })) return;
+    setDraftStatus(s => (s === 'error' ? s : 'saving'));
+    saverRef.current?.schedule(code);
+  }, [code, level?.id, draftNs]);
+
+  // 失焦 / 切后台 / 关闭页面：补充保存（localStorage 同步写入，关页也来得及）
+  useEffect(() => {
+    const onLeave = () => {
+      if (!levelRef.current) return;
+      if (!touchedRef.current && !draftRef.current) return;
+      if (pendingRef.current === lastSavedRef.current) return;
+      writeNow(pendingRef.current);
+    };
+    const onVisibility = () => { if (document.visibilityState === 'hidden') onLeave(); };
+    window.addEventListener('beforeunload', onLeave);
+    window.addEventListener('blur', onLeave);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('beforeunload', onLeave);
+      window.removeEventListener('blur', onLeave);
+      document.removeEventListener('visibilitychange', onVisibility);
+      onLeave();
+    };
+  }, [writeNow]);
 
   useEffect(() => {
     if (levelId && !level) g.nav('map');
@@ -119,6 +264,120 @@ export default function ChallengePage() {
 
   if (!level) return null;
 
+  // ---------- 草稿操作 ----------
+  /** 编辑器内容变化：标记为「玩家真的改过」，交给防抖保存 */
+  const handleCodeChange = (v: string) => {
+    touchedRef.current = true;
+    pendingRef.current = v;
+    setCode(v);
+  };
+
+  const saveDraftNow = () => {
+    if (!level) return;
+    const ok = writeNow(code, false, true);
+    if (ok) {
+      g.toast('success', '草稿已保存到本机');
+      setDraftNotice('已手动保存');
+    } else {
+      g.toast('warn', draftError || '草稿保存失败，请先复制代码');
+    }
+    play('click');
+  };
+
+  const clearDraftNow = () => {
+    if (!level) return;
+    if (!draftArmed) {
+      setDraftArmed(true);
+      window.setTimeout(() => setDraftArmed(false), 3000);
+      return;
+    }
+    saverRef.current?.cancel();
+    clearDraft(draftNs, level.id);
+    draftRef.current = null;
+    setDraft(null);
+    setDraftArmed(false);
+    setDraftStatus('cleared');
+    setDraftError('');
+    setSavedAt(null);
+    touchedRef.current = false;
+    setCode(level.initialCode);
+    pendingRef.current = level.initialCode;
+    lastSavedRef.current = level.initialCode;
+    setDraftNotice('草稿已清除，编辑器已回到初始故障版本');
+    g.toast('info', '本关草稿已清除');
+    play('click');
+  };
+
+  /** 显式「改用初始代码」：覆盖草稿但把旧内容压入历史，仍可恢复 */
+  const useInitialCode = () => {
+    if (!level) return;
+    applyCode(level.initialCode, { touch: true, save: true, notice: '已改用初始故障版本（旧内容已存入历史）' });
+    play('click');
+  };
+
+  /** 恢复本地草稿 */
+  const restoreDraft = () => {
+    const d = draftRef.current;
+    if (!d) return;
+    applyCode(d.code, { touch: true, notice: '已恢复本地草稿' });
+    lastSavedRef.current = d.code;
+    setDraftStatus('saved');
+    play('click');
+  };
+
+  /** 恢复上一版（历史上一次不同的内容） */
+  const restoreHistory = () => {
+    const h = draftRef.current?.history || [];
+    const last = h[h.length - 1];
+    if (!last) return;
+    applyCode(last.code, { touch: true, save: true, notice: '已恢复到上一个版本（刚改的内容已存入历史）' });
+    play('click');
+  };
+
+  /** 查看真实判题通过时的代码（只预览，不覆盖当前草稿） */
+  const previewPassed = () => {
+    const d = draftRef.current;
+    if (!d?.passedCode) {
+      g.toast('info', '本关还没有记录到通关代码（只记录真实判题通过的那一版）。');
+      return;
+    }
+    setCode(d.passedCode);
+    pendingRef.current = d.passedCode;
+    lastSavedRef.current = d.passedCode;
+    setDraftNotice('已载入通关代码（仅查看，不会覆盖当前草稿）');
+    play('click');
+  };
+
+  /** 保存失败时的兜底：把代码复制到剪贴板，避免玩家丢失 */
+  const copyCode = () => {
+    const fallback = () => {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = code;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        const ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+        if (ok) g.toast('success', '代码已复制到剪贴板');
+        else g.toast('warn', '复制失败，请手动选中代码');
+      } catch {
+        g.toast('warn', '复制失败，请手动选中代码');
+      }
+    };
+    try {
+      const nav = navigator as Navigator & { clipboard?: { writeText?: (t: string) => Promise<void> } };
+      if (nav.clipboard?.writeText) {
+        nav.clipboard.writeText(code).then(() => g.toast('success', '代码已复制到剪贴板')).catch(fallback);
+      } else {
+        fallback();
+      }
+    } catch {
+      fallback();
+    }
+  };
+
   /** 记录一次代码快照（回滚道具用） */
   const snapshot = useCallback((current: string) => {
     historyRef.current.push(current);
@@ -161,6 +420,9 @@ export default function ChallengePage() {
       return;
     }
     setCode(prev);
+    pendingRef.current = prev;
+    touchedRef.current = true;
+    writeNow(prev);
     setScanLines([]);
     setVerdict(null);
     setErrorLine(null);
@@ -272,6 +534,9 @@ export default function ChallengePage() {
       ]);
       const payload = g.completeLevel(level.id);
       setVerdict({ passed: true, checks: v.checks });
+      // 真实判题通过：把这版代码记为「通关代码」。只写草稿层，不改动关卡完成记录。
+      writeNow(code, true);
+      setDraftNotice('通关代码已存档（可随时回看）');
       if (payload) {
         // 「下一个修复端」：同服务器下一关 → 否则下一个已开放服务器的首个未通关关卡
         const progress = g.player.progress;
@@ -342,7 +607,7 @@ export default function ChallengePage() {
   const resetCode = () => {
     if (resetArmed) {
       snapshot(code);
-      setCode(level.initialCode);
+      applyCode(level.initialCode, { touch: true, save: true, notice: '已恢复初始故障版本（旧内容已存入历史）' });
       setScanLines([]);
       setResetArmed(false);
       setVerdict(null);
@@ -518,6 +783,43 @@ export default function ChallengePage() {
 
         {/* 中栏：编辑器 */}
         <div className="chlg-center">
+          <div className="draft-bar" role="status" aria-live="polite">
+            <span className={'draft-pill ' + draftStatus} title={draftError || undefined}>
+              <span className="dot" />
+              {draftStatus === 'saving' ? '草稿 · 保存中…'
+                : draftStatus === 'saved' ? '草稿 · 已保存'
+                  : draftStatus === 'error' ? '草稿 · 保存失败'
+                    : draftStatus === 'cleared' ? '草稿 · 已清除'
+                      : '草稿 · 未保存'}
+            </span>
+            {savedAt ? <span className="draft-time">保存于 {formatDraftClock(savedAt)}</span> : null}
+            <span className="draft-lines">当前 {code.split('\n').length} 行</span>
+            {draftNotice && <span className="draft-notice">{draftNotice}</span>}
+            <div className="sp" />
+            {draftStatus === 'error' && (
+              <button className="nxbtn small danger" onClick={copyCode}>复制代码</button>
+            )}
+            {draft && draft.code !== code && (
+              <button className="nxbtn small ghost" onClick={restoreDraft}>恢复草稿</button>
+            )}
+            {draft?.passedCode && draft.passedCode !== code && (
+              <button className="nxbtn small ghost" onClick={previewPassed}>查看通关代码</button>
+            )}
+            {draft && code !== level.initialCode && (
+              <button className="nxbtn small ghost" onClick={useInitialCode}>改用初始代码</button>
+            )}
+            {!!(draft?.history && draft.history.length > 0) && (
+              <button className="nxbtn small ghost" onClick={restoreHistory}>恢复上一版</button>
+            )}
+            <button className="nxbtn small ghost" disabled={running || submitting} onClick={saveDraftNow}
+              title="立即把当前代码保存到本机（不等自动保存）">
+              💾 保存草稿
+            </button>
+            <button className={'nxbtn small ' + (draftArmed ? 'danger' : 'ghost')} disabled={running || submitting} onClick={clearDraftNow}
+              title="清除本关草稿并回到初始故障版本">
+              {draftArmed ? '确认清除？' : '清除草稿'}
+            </button>
+          </div>
           <div className="toolbar">
             <button className="nxbtn" disabled={running || submitting || locked} onClick={run}>
               {running ? <span className="spinner" /> : '▶'} 运行代码
@@ -548,7 +850,7 @@ export default function ChallengePage() {
           <div className="code-frame" style={{ flex: 1 }}>
             <CodeEditor
               value={code}
-              onChange={setCode}
+              onChange={handleCodeChange}
               errorLine={errorLine}
               debugLine={debugLine}
               markLines={scanLines}
