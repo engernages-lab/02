@@ -15,9 +15,10 @@ const CHAPTER_FLAGS = CHAPTERS.map(c => ({
 import { normalizeIdentity } from '../game/identity';
 import { normalizeStoryReadState } from '../game/lore/events';
 import { normalizeStoryVars } from '../game/lore/vars';
+import { normalizeSessions } from '../game/challengeSession';
 
 /** 当前存档版本 */
-export const CURRENT_SAVE_VERSION = 7;
+export const CURRENT_SAVE_VERSION = 8;
 
 interface MigrationStep {
   /** 迁移到的目标版本 */
@@ -118,6 +119,27 @@ const STEPS: MigrationStep[] = [
         if (allDone && bossOk) flags[ch.flag] = true;
       }
       return { ...p, progress: { ...progress, flags } };
+    },
+  },
+  {
+    to: 8,
+    name: 'v7→v8：挑战会话（progress.challengeSessions）',
+    run: (p) => {
+      const progress = (p && typeof p.progress === 'object' && p.progress ? { ...(p.progress as AnyPlayer) } : {});
+      const failed = (progress.failedAttempts && typeof progress.failedAttempts === 'object' ? { ...(progress.failedAttempts as AnyPlayer) } : {}) as Record<string, unknown>;
+      // 兼容旧档：失败计数只保留非负整数，NaN / null / 负数一律归零
+      for (const key of Object.keys(failed)) {
+        const v = Number(failed[key]);
+        failed[key] = Number.isFinite(v) && v > 0 ? Math.floor(v) : 0;
+      }
+      return {
+        ...p,
+        progress: {
+          ...progress,
+          failedAttempts: failed,
+          challengeSessions: normalizeSessions(progress.challengeSessions),
+        },
+      };
     },
   },
 ];

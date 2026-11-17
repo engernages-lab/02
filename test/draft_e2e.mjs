@@ -276,7 +276,7 @@ const curLines = (h) => {
   ok(JSON.stringify(saved.player.progress.completedLevels) === JSON.stringify(['tut-1', '1-1', '1-2']), '草稿操作不影响已通关记录');
   ok(saved.player.progress.stars['1-1'] === 3 && saved.player.progress.stars['1-2'] === 2, '星级记录保持不变');
   ok(saved.player.level === 5 && saved.player.exp === 1040, '等级与经验保持不变');
-  ok(saved.version === 7, '存档版本仍为 v7（A1 不改存档结构）');
+  ok(saved.version === 8, '存档版本 v8（A4 新增挑战会话）');
 
   console.log('=== 第九轮：刷新后恢复 ===');
   const snapshot = storageSnapshot(dom);

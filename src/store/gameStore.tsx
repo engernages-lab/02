@@ -28,10 +28,47 @@ import { computeLevelRewardV2, unlocksForLevel } from '../game/economy';
 import { slotOf, skinMetaById } from '../game/cosmetics';
 import { play, setVolumes, startMusic, stopMusic, isMusicOn } from '../services/sound';
 import { clearAllDrafts } from '../services/drafts';
+import {
+  beginSession, createSession, countRun, countSubmit, countError, settle,
+  buildPassedSettlement, buildFailedSettlement, normalizeSessions,
+  type ChallengeSession, type ChallengeSettlement, type ChallengeKind,
+} from '../game/challengeSession';
 
 function chapterIndexForServer(serverId: string): number {
   const map: Record<string, number> = { syntax: 1, logs: 2, storage: 3, factory: 4, diag: 5, core: 6 };
   return map[serverId] || 0;
+}
+
+/** 把当前关卡的进行中会话结算为失败（幂等：已结算的会话不再改动） */
+function failedSessionsFor(p: PlayerState, levelId: string, reason: string, consciousnessLoss: number): Record<string, ChallengeSession> {
+  const sessions = p.progress.challengeSessions || {};
+  const cur = sessions[levelId];
+  if (!cur || cur.status !== 'active') return sessions;
+  const settlement = buildFailedSettlement(cur, {
+    now: Date.now(),
+    reason,
+    levelNow: p.level,
+    expNow: p.exp,
+    consciousnessLoss,
+  });
+  return { ...sessions, [levelId]: settle(cur, settlement) };
+}
+
+/** Boss 通关：把进行中会话结算为通过（不改动战斗/奖励数据） */
+function passedBossSessionsFor(p: PlayerState, bossId: string, expGain: number, creditsGain: number): Record<string, ChallengeSession> {
+  const sessions = p.progress.challengeSessions || {};
+  const cur = sessions[bossId];
+  if (!cur || cur.status !== 'active') return sessions;
+  const expBefore = Math.max(0, p.exp - Math.max(0, expGain));
+  const settlement = buildPassedSettlement(cur, {
+    now: Date.now(),
+    levelBefore: levelForExp(expBefore),
+    levelAfter: p.level,
+    expBefore,
+    expAfter: p.exp,
+    creditsGained: creditsGain,
+  });
+  return { ...sessions, [bossId]: settle(cur, settlement) };
 }
 
 export interface CompletePayload {
@@ -56,6 +93,8 @@ export interface CompletePayload {
     chapterReward?: { id: string; title: string; desc: string; credits: number; skins: string[]; items: Record<string, number>; fragment?: string };
     duplicate: boolean;
   };
+  /** 统一挑战会话结算（A4 起，结算面板的唯一数据源） */
+  session?: ChallengeSettlement;
 }
 
 export interface FailPayload { n: number; tolerance: number; triggered: boolean }
@@ -132,11 +171,17 @@ interface GameCtx {
   markArchiveRead: (archiveId: string) => void;
   completeLevel: (levelId: string) => CompletePayload | null;
   recordFail: (levelId: string) => FailPayload;
+  /** 进入/恢复一次挑战会话（进行中的会话保留统计；已结算的会新开） */
+  beginChallenge: (id: string, kind?: ChallengeKind) => ChallengeSession;
+  /** 预览运行一次（只影响本会话的运行次数） */
+  recordRun: (id: string) => void;
+  /** 正式提交一次（只影响本会话的提交次数） */
+  recordSubmit: (id: string) => void;
   resetAttempts: (levelId: string) => void;
   hintUsed: (levelId: string) => number;
   resolveDefense: (ok: boolean) => void;
   finishRebirth: () => void;
-  startDeath: (levelId: string, reason: string) => void;
+  startDeath: (levelId: string, reason: string, consciousnessLoss?: number) => void;
   decrementAttackAttempt: () => void;
   triggerPendingDeath: () => void;
   wipeSave: () => void;
@@ -171,7 +216,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   const eventRef = useRef(event);
   eventRef.current = event;
   // 死亡流程的稳定引用（Boss 反击在 startDeath 定义之前就需要调用它）
-  const startDeathRef = useRef<(levelId: string, reason: string) => void>(() => {});
+  const startDeathRef = useRef<(levelId: string, reason: string, consciousnessLoss?: number) => void>(() => {});
 
   const toast = useCallback((kind: Toast['kind'], text: string) => {
     const id = toastSeq++;
@@ -319,7 +364,14 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     const fresh = { ...createBattleState(def), started: true };
     const next = commitPlayer(p => ({
       ...p,
-      progress: { ...p.progress, battles: { ...(p.progress.battles || {}), [bossId]: fresh } },
+      progress: {
+        ...p.progress,
+        battles: { ...(p.progress.battles || {}), [bossId]: fresh },
+        challengeSessions: normalizeSessions({
+          ...(p.progress.challengeSessions || {}),
+          [bossId]: beginSession(p.progress.challengeSessions?.[bossId] || null, bossId, 'boss', Date.now(), toleranceFor(p.level)),
+        }),
+      },
     }));
     if (bossId === 'k0') commitPlayer(p => markOriginCoreEntered(p));
     return normalizeBattleState((next.progress.battles || {})[bossId], def);
@@ -341,6 +393,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     const def = bossBattleDef(bossId, difficultyOf(raw && typeof raw === 'object' ? (raw as { difficulty?: unknown }).difficulty : undefined));
     if (!def) return;
     let death = false;
+    let lost = 0;
     commitPlayer(p => {
       const b = normalizeBattleState((p.progress.battles || {})[bossId], def);
       const c = Math.max(0, p.consciousness - Math.max(0, amount));
@@ -354,6 +407,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       };
       if (c <= 0) {
         death = true;
+        lost = Math.max(0, p.consciousness);
         next.progress = {
           ...next.progress,
           battles: { ...(next.progress.battles || {}), [bossId]: createBattleState(def) },
@@ -361,7 +415,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       }
       return next;
     });
-    if (death) startDeathRef.current(bossId, '被 ' + (def.bossId.toUpperCase()) + ' 反击击穿');
+    if (death) startDeathRef.current(bossId, '被 ' + (def.bossId.toUpperCase()) + ' 反击击穿', lost);
   }, [commitPlayer]);
 
   /** Bug 图鉴：记录一次错误遭遇（同一条目累计次数） */
@@ -566,6 +620,36 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     }));
   }, []);
 
+  /** 进入/恢复一次挑战会话（进行中保留统计；已结算则新开） */
+  const beginChallenge = useCallback((id: string, kind: ChallengeKind = 'level'): ChallengeSession => {
+    const prev = playerRef.current;
+    const existing = prev.progress.challengeSessions?.[id] || null;
+    const s = beginSession(existing, id, kind, Date.now(), toleranceFor(prev.level));
+    if (existing && existing.id === s.id && existing.status === 'active') return existing;
+    commitPlayer(p => ({
+      ...p,
+      progress: {
+        ...p.progress,
+        challengeSessions: normalizeSessions({ ...(p.progress.challengeSessions || {}), [id]: s }),
+      },
+    }));
+    return s;
+  }, [commitPlayer]);
+
+  const updateSession = useCallback((id: string, fn: (s: ChallengeSession) => ChallengeSession) => {
+    commitPlayer(p => {
+      const sessions = p.progress.challengeSessions || {};
+      const cur = sessions[id];
+      if (!cur) return p;
+      const nextS = fn(cur);
+      if (nextS === cur) return p;
+      return { ...p, progress: { ...p.progress, challengeSessions: { ...sessions, [id]: nextS } } };
+    });
+  }, [commitPlayer]);
+
+  const recordRun = useCallback((id: string) => updateSession(id, countRun), [updateSession]);
+  const recordSubmit = useCallback((id: string) => updateSession(id, countSubmit), [updateSession]);
+
   /** 通关：经验、星级、知识卡片、关卡/服务器解锁、成就、升级 */
   const completeLevel = useCallback((levelId: string): CompletePayload | null => {
     const level = levelById(levelId);
@@ -575,6 +659,9 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     const serverGate = canEnterServer(prev, level.serverId);
     if (!serverGate.ok) return null;
     const firstTime = !prev.progress.completedLevels.includes(levelId);
+    // 同一会话只允许结算一次：重复提交/重复触发结算不会重复发奖
+    const activeSession = prev.progress.challengeSessions?.[levelId];
+    if (activeSession && activeSession.status === 'passed') return null;
     const att = prev.progress.failedAttempts[levelId] || 0;
     const stars = att === 0 ? 3 : att === 1 ? 2 : 1;
     const prevStars = prev.progress.stars[levelId] || 0;
@@ -704,6 +791,22 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       unlockNames.push(u.name);
     }
 
+    // ---------- 统一挑战会话结算（A4）：成功结算的唯一数据源 ----------
+    const settleNow = Date.now();
+    const sessionBase = activeSession ?? { ...createSession(levelId, 'level', settleNow, toleranceFor(oldLevel)), errors: att };
+    const settlement = buildPassedSettlement(sessionBase, {
+      now: settleNow,
+      levelBefore: oldLevel,
+      levelAfter: next.level,
+      expBefore: prev.exp,
+      expAfter: next.exp,
+      creditsGained: breakdown.total + (chapterRewardPayload?.credits || 0),
+    });
+    next.progress.challengeSessions = normalizeSessions({
+      ...(prev.progress.challengeSessions || {}),
+      [levelId]: settle(sessionBase, settlement),
+    });
+
     next.rewards = rewards;
 
     setPlayer(next);
@@ -728,6 +831,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       stars,
       newAchievements: gained,
       unlocks: unlockNames,
+      session: settlement,
       reward: {
         breakdown,
         fails: att,
@@ -747,10 +851,19 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     const prev = playerRef.current;
     const n = (prev.progress.failedAttempts[levelId] || 0) + 1;
     const tol = toleranceFor(prev.level);
-    commitPlayer(p => ({
-      ...p,
-      progress: { ...p.progress, failedAttempts: { ...p.progress.failedAttempts, [levelId]: n } },
-    }));
+    commitPlayer(p => {
+      const sessions = p.progress.challengeSessions || {};
+      const cur = sessions[levelId];
+      return {
+        ...p,
+        progress: {
+          ...p.progress,
+          failedAttempts: { ...p.progress.failedAttempts, [levelId]: n },
+          // 会话里的 errors 与 failedAttempts 同源同步，避免两套计数漂移
+          challengeSessions: cur ? { ...sessions, [levelId]: countError(cur) } : sessions,
+        },
+      };
+    });
     if (n > tol) {
       const pool = DEFENSE_TASKS.map(t => t.id);
       const defenseId = pool[Math.floor(Math.random() * pool.length)];
@@ -785,6 +898,16 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
     const ck = checkUserCode(code);
     if (!ck.allowed) return { status: 'blocked', reason: '安全策略阻止：' + ck.reason, denied: true };
+
+    // Boss 与普通关卡共用同一套会话计数：每次攻击 = 一次提交 + 一次运行
+    commitPlayer(p => {
+      const sessions = p.progress.challengeSessions || {};
+      const base = beginSession(sessions[bossId] || null, bossId, 'boss', Date.now(), toleranceFor(p.level));
+      return {
+        ...p,
+        progress: { ...p.progress, challengeSessions: { ...sessions, [bossId]: countRun(countSubmit(base)) } },
+      };
+    });
 
     const phase = def.phases[Math.max(0, Math.min(phaseIndex, def.phases.length - 1))];
     const combined = phase.judge.judgeKind === 'python'
@@ -846,6 +969,10 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     if (simulation) {
       const dc = recordBossDifficultyClear(next, bossId, difficulty, { now: Date.now() });
       next = dc.player;
+      next = {
+        ...next,
+        progress: { ...next.progress, challengeSessions: passedBossSessionsFor(next, bossId, dc.exp, dc.credits) },
+      };
       playerRef.current = next;
       setPlayer(next);
       return {
@@ -875,6 +1002,16 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     } else if (!firstClear.changed && res.defeated) {
       toast('warn', '首胜事务未执行：' + firstClear.reason);
     }
+    // Boss 会话结算：无论是否首胜，本次战斗都算一次通过的挑战（不发额外奖励）
+    next = {
+      ...next,
+      progress: {
+        ...next.progress,
+        challengeSessions: passedBossSessionsFor(next, bossId, payload?.expGained || 0, payload?.credits || 0),
+      },
+    };
+    playerRef.current = next;
+    setPlayer(next);
     return {
       status: 'victory', run: r, verdict, result: res, firstClear: payload,
       reason: firstClear.changed ? undefined : firstClear.reason,
@@ -897,6 +1034,10 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     };
     if (ok) {
       next.progress.flags.defenseWon = true;
+      // 防御成功：本关容错计数清零（会话与 failedAttempts 同步清零）
+      const sessions = next.progress.challengeSessions || {};
+      const cur = sessions[levelId];
+      if (cur) next.progress.challengeSessions = { ...sessions, [levelId]: { ...cur, errors: 0 } };
       const newAch = recalcAchievements(next);
       const gained = newAch.filter(a => !prev.progress.achievements.includes(a));
       next.progress.achievements = newAch;
@@ -919,6 +1060,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
           lastDeathReason: '纠错者攻击 · 两次防御失败',
         };
         next.progress.pendingRebirth = true;
+        next.progress.challengeSessions = failedSessionsFor(next, levelId, '纠错者攻击 · 两次防御失败', prev.consciousness);
         setPlayer(next);
         setEvent({ kind: 'death', levelId, reason: next.meta.lastDeathReason || '' });
         play('death');
@@ -931,12 +1073,19 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     }
   }, [toast]);
 
-  const startDeath = useCallback((levelId: string, reason: string) => {
-    // eslint-disable-next-line @typescript-eslint/no-unused-expressions
+  /** 意识归零：写死亡标记 + 结算本次挑战（失败），随后进入重生流程 */
+  const startDeath = useCallback((levelId: string, reason: string, consciousnessLoss?: number) => {
     setPlayer(p => ({
       ...p,
       meta: { ...p.meta, deaths: p.meta.deaths + 1, lastDeathLevel: levelId, lastDeathReason: reason },
-      progress: { ...p.progress, pendingRebirth: true },
+      progress: {
+        ...p.progress,
+        pendingRebirth: true,
+        challengeSessions: failedSessionsFor(
+          p, levelId, reason,
+          typeof consciousnessLoss === 'number' && isFinite(consciousnessLoss) ? consciousnessLoss : p.consciousness,
+        ),
+      },
     }));
     setEvent({ kind: 'death', levelId, reason });
     play('death');
@@ -963,11 +1112,16 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     // （创世主碎片只能来自对应章节 Boss 的首胜；旧档已收集的碎片不会被收回）
     const logs = [...(prev.meta.memoryLogs || [])];
     if (idx >= 2 && !logs.includes('log-f01')) logs.push('log-f01');
+    const curLevel = prev.progress.currentLevelId;
+    // 重生后本关容错计数清零（与 MIRA 提示一致；旧实现会保留计数导致重生后立刻再次触发攻击）
+    const failedAttempts = curLevel
+      ? { ...prev.progress.failedAttempts, [curLevel]: 0 }
+      : prev.progress.failedAttempts;
     const next: PlayerState = {
       ...prev,
       consciousness: 70,
       meta: { ...prev.meta, rebirths: prev.meta.rebirths + 1, memoryLogs: logs },
-      progress: { ...prev.progress, pendingRebirth: false, battles: resetCurrentBattle(prev) },
+      progress: { ...prev.progress, pendingRebirth: false, failedAttempts, battles: resetCurrentBattle(prev) },
     };
     const newAch = recalcAchievements(next);
     const gained = newAch.filter(a => !prev.progress.achievements.includes(a));
@@ -1040,7 +1194,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     beginBossBattle, startBossBattle, abandonBossBattle, bossRecord, submitBossAttack,
     chapterGateOf, serverGate, bossEntryGate, originCoreGateNow,
     recordBug, recordEnding, markVaultRead, markVaultFinalSeen, setVaultLastOpened,
-    completeLevel, recordFail,
+    completeLevel, recordFail, beginChallenge, recordRun, recordSubmit,
     buyShopItem, equipItem, consumeItem, restoreConsciousness, markArchiveRead,
     resetAttempts, hintUsed, resolveDefense, finishRebirth, startDeath,
     decrementAttackAttempt, triggerPendingDeath, wipeSave,

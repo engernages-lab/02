@@ -5,6 +5,7 @@ import type { PlayerIdentity } from './identity';
 import type { StoryReadState } from './lore/events';
 import type { BossBattleState } from './battle';
 import type { BossDifficulty } from './difficulty';
+import type { ChallengeSession } from './challengeSession';
 
 export type Screen =
   | 'boot' | 'menu' | 'story' | 'map' | 'challenge'
@@ -136,6 +137,8 @@ export interface Progress {
   bossRecords?: Record<string, BossRecord>;
   /** 记忆档案馆阅读状态（v6 起；旧存档由迁移补齐） */
   vault?: VaultState;
+  /** 挑战会话（v8 起）：按关卡 id 记录运行/提交/失误/容错与结算，旧存档由迁移补齐 */
+  challengeSessions?: Record<string, ChallengeSession>;
   /** 已解锁的结局 id（第九阶段） */
   endings?: string[];
   /** 玩家最终选择的结局 */

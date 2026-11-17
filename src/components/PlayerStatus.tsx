@@ -32,7 +32,7 @@ export default function PlayerStatus({ showTolerance = false, compact = false }:
             )}
           </div>
           <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
-            <div className="chip cyan">容错 {tolerance}</div>
+            <div className="chip cyan" title="本关容错上限">容错上限 {tolerance}</div>
           </div>
         </div>
       )}

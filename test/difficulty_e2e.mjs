@@ -214,7 +214,12 @@ async function openBoss(h) {
   await h.wait(() => !h.q('.diff-gate'), 8000, '关闭难度界面');
   h.click(h.qa('button').find(b => b.textContent.includes('提交攻击')));
   await h.wait(() => h.q('.cine-root') || h.text().includes('意识核心崩解'), 20000, '意识崩解流程');
-  await h.wait(() => h.q('.dlg-text') || h.text().includes('R-07'), 15000, '重生对话');
+  // A4：死亡后先展示「挑战失败结算」，确认后再进入重组对话
+  await h.wait(() => h.q('.reb-settle'), 25000, '挑战失败结算');
+  ok(/挑战失败/.test(h.q('.reb-settle').textContent), '失败后展示挑战失败结算');
+  ok(/容错/.test(h.q('.reb-settle').textContent), '失败结算包含容错数据');
+  h.click(h.qa('button').find(b => b.textContent.includes('重新挑战')));
+  await h.wait(() => h.q('.dlg-text'), 15000, '重生对话');
   for (let i = 0; i < 60 && !h.q('.diff-gate'); i++) {
     const sk = h.qa('button').find(b => b.textContent.includes('跳过'));
     if (sk) h.click(sk);
@@ -222,7 +227,7 @@ async function openBoss(h) {
     if (txt) h.click(txt);
     await sleep(150);
   }
-  await h.wait(() => h.q('.diff-gate'), 12000, '重生后重新打开难度界面');
+  await h.wait(() => h.q('.diff-gate'), 15000, '重生后重新打开难度界面');
   ok(!!h.q('.diff-gate'), '战斗失败/重生后重新出现难度选择');
   ok(!h.q('.diff-hard').disabled, '失败后可以重新选择难度');
   const reborn = h.save();

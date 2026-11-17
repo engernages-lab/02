@@ -9,7 +9,8 @@ import { useGame, type CompletePayload } from '../store/gameStore';
 import type { RunOutcomeShape } from '../game/types';
 import { levelById, levelsOfServer, serverById, type LevelDef } from '../game/levels';
 import { canEnterServer } from '../game/chapterFlow';
-import { toleranceFor } from '../game/progression';
+import { milestone } from '../game/progression';
+import { formatDuration } from '../game/challengeSession';
 import { buildHarness, checkUserCode, combineWithHarness, filterMarkerLines, judgeRun, parseMarker, type JudgeCheck, type JudgeVerdict, type ParsedError } from '../services/judge';
 import { miraLevelHint, miraOnError, miraOnFail, miraOnRespawn } from '../services/ai';
 import { runPython, onPyStatus, warmUp, type PyState } from '../services/pythonRunner';
@@ -105,6 +106,9 @@ export default function ChallengePage() {
   const [diagStreak, setDiagStreak] = useState(0);
   const diagSigRef = useRef('');
   const diagStreakRef = useRef(0);
+  /** 提交/运行防连点：状态更新是异步的，用同步锁挡住同一帧内的重复点击 */
+  const submitLockRef = useRef(false);
+  const runLockRef = useRef(false);
 
   // ---------- 响应式布局状态（A2） ----------
   /** 手机端标签：任务 / 代码 / 输出 / 诊断 / MIRA */
@@ -211,6 +215,8 @@ export default function ChallengePage() {
     }
     levelRef.current = level.id;
     setView('code');
+    // 开启/恢复本次挑战会话（刷新保留统计；已结算则新开，避免上一关数据串场）
+    g.beginChallenge(level.id);
     // 新关卡重置诊断（历史只保留本次挑战内）
     setDiag(null);
     setDiagStatus('idle');
@@ -551,6 +557,9 @@ export default function ChallengePage() {
 
   const run = async () => {
     if (!level || running || submitting || locked) return;
+    if (runLockRef.current) return;
+    runLockRef.current = true;
+    try {
     const ck = checkUserCode(code);
     if (!ck.allowed) {
       pushLines([
@@ -566,6 +575,7 @@ export default function ChallengePage() {
     setRunning(true);
     setDiagStatus('running');
     setVerdict(null);
+    g.recordRun(level.id);
     setErrorLine(null);
     setScanLines([]);
     pushLines([{ kind: 'cmd', text: 'python task.py' }]);
@@ -587,10 +597,16 @@ export default function ChallengePage() {
     }
     // 无论成功失败都给出诊断：成功时显示「运行成功（未判题）」，失败时定位错误
     diagnoseAndShow(r, null, code);
+    } finally {
+      runLockRef.current = false;
+    }
   };
 
   const submit = async () => {
     if (!level || running || submitting || locked) return;
+    if (submitLockRef.current) return;
+    submitLockRef.current = true;
+    try {
     const ck = checkUserCode(code);
     if (!ck.allowed) {
       pushLines([
@@ -604,7 +620,9 @@ export default function ChallengePage() {
     }
     snapshot(code);
     setSubmitting(true);
+    setDiagStatus('running');
     setVerdict(null);
+    g.recordSubmit(level.id);
     setErrorLine(null);
     setScanLines([]);
     play('run');
@@ -721,6 +739,9 @@ export default function ChallengePage() {
         }
       }
     }
+    } finally {
+      submitLockRef.current = false;
+    }
   };
 
   const askHint = () => {
@@ -835,6 +856,12 @@ export default function ChallengePage() {
   };
 
   const hintUsed = player.progress.hintLevels[level.id] || 0;
+  // 容错显示统一取会话（进行中）或存档镜像，剩余值永不小于 0
+  const activeSession = player.progress.challengeSessions?.[level.id];
+  const tolUsed = activeSession && activeSession.status === 'active'
+    ? activeSession.errors
+    : (player.progress.failedAttempts[level.id] || 0);
+  const tolLeft = Math.max(0, g.tolerance - tolUsed);
   const stars = player.progress.stars[level.id] || 0;
   const server = serverById(level.serverId);
   const knowledgeCards = level.knowledge.map(knowledgeById).filter(Boolean);
@@ -858,7 +885,7 @@ export default function ChallengePage() {
               : pyState.status === 'error' ? '引擎错误' : 'ADAPTER STANDBY'}
         </div>
         <span className="hud-chip">{stars > 0 ? '★'.repeat(stars) : '未通关'}</span>
-        <span className="hud-chip cyan">容错 {g.tolerance}</span>
+        <span className="hud-chip cyan" title="剩余容错 / 本关容错上限">容错 {tolLeft}/{g.tolerance}</span>
         <span className="hud-chip">意识 {player.consciousness}%</span>
         <div className="side-switch" role="group" aria-label="侧栏切换">
           <button className={'ss-btn' + (!sideCollapsed && sideTab === 'task' ? ' on' : '')}
@@ -1101,7 +1128,7 @@ export default function ChallengePage() {
 
       {/* 通关结算 */}
       {done && (
-        <div className="overlay" style={{ background: 'rgba(3,10,16,0.72)', backdropFilter: 'blur(5px)' }}>
+        <div className="overlay ov-result" style={{ background: 'rgba(3,10,16,0.72)', backdropFilter: 'blur(5px)' }}>
           <div className={'complete-panel' + (g.player.progress.flags.fxRepair === true ? ' fx-repair' : '')}>
             <div className="cp-ico">✓</div>
             <div className="cp-title">修复成功</div>
@@ -1157,11 +1184,41 @@ export default function ChallengePage() {
               <div className="cp-reward"><div className="rv">Lv.{done.payload.newLevel}</div><div className="rl">等级</div></div>
               <div className="cp-reward"><div className="rv">{level.knowledge.length}</div><div className="rl">知识卡片</div></div>
             </div>
-            {done.payload.levelUp && (
-              <div className="result-banner ok" style={{ marginBottom: 10 }}>
-                ⬆ 等级提升！Lv.{done.payload.oldLevel} → Lv.{done.payload.newLevel}　容错次数 +{Math.max(0, g.tolerance - toleranceFor(done.payload.oldLevel))}（当前 {g.tolerance}）
-              </div>
-            )}
+            {done.payload.session && (() => {
+              const st = done.payload.session!;
+              const ms = milestone(st.expAfter);
+              return (
+                <div className="settle-detail">
+                  <div className="sd-row">
+                    <span>用时 <b>{formatDuration(st.durationMs)}</b></span>
+                    <span>运行 <b>{st.runs}</b> 次</span>
+                    <span>提交 <b>{st.submits}</b> 次</span>
+                    <span>失误 <b>{st.errors}</b> 次</span>
+                    <span>提示 <b>{st.hints}</b> 层</span>
+                  </div>
+                  <div className="sd-row">
+                    <span>容错 剩余 <b>{st.toleranceRemaining}</b> / 上限 {st.toleranceMax}</span>
+                    <span>本次消耗 <b>{st.toleranceUsed}</b> 次</span>
+                  </div>
+                  <div className="sd-row">
+                    <span>等级 Lv.{st.levelAfter}</span>
+                    <span>经验 {st.expAfter}{ms.maxed ? '（已满级）' : `（距 Lv.${ms.level + 1} 还差 ${Math.max(0, ms.need - ms.into)}）`}</span>
+                  </div>
+                  {done.payload.levelUp && (st.toleranceGain > 0 ? (
+                    <div className="result-banner ok" style={{ marginTop: 8 }}>
+                      ⬆ 等级提升 Lv.{st.levelBefore} → Lv.{st.levelAfter} · 容错次数 +{st.toleranceGain}（当前 {st.toleranceMax}）
+                    </div>
+                  ) : (
+                    <div className="settle-note">
+                      ⬆ 等级提升 Lv.{st.levelBefore} → Lv.{st.levelAfter} ·{' '}
+                      {st.toleranceCapped
+                        ? `容错次数已达到最高上限 ${st.toleranceMax} 次`
+                        : `本次容错次数不变（当前 ${st.toleranceMax} 次${st.toleranceNextLevel ? `；下次提升 Lv.${st.toleranceNextLevel} → ${st.toleranceNextMax} 次` : ''}）`}
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
             {!done.payload.firstTime && <div className="dim" style={{ fontSize: 12.5, marginBottom: 8 }}>已通关关卡：不再发放经验与基础贡献点（仅星级提升给少量补偿）。</div>}
             {(done.payload.unlocks || []).length > 0 && (
               <div className="result-banner ok" style={{ marginBottom: 8 }}>

@@ -7,6 +7,7 @@ import { defaultRewards, normalizeRewards } from '../game/rewards';
 import { DEFAULT_VOICE, normalizeVoice } from './voice';
 import { CURRENT_SAVE_VERSION, migrateSave } from './migrations';
 import { normalizeChapterProgress } from '../game/chapterFlow';
+import { normalizeSessions } from '../game/challengeSession';
 
 /** 存储键保持不变，确保旧存档仍能被读取（改名会导致所有玩家进度丢失） */
 export const SAVE_KEY = 'nexus_code_repair_save_v1';
@@ -41,6 +42,7 @@ export function defaultState(): PlayerState {
       storySeen: {},
       story: defaultStoryReadState(),
       vault: { read: [], finalSeen: false, lastOpened: null },
+      challengeSessions: {},
       endings: [],
       ending: null,
       flags: {},
@@ -110,6 +112,7 @@ export function normalizePlayerState(raw: PlayerState, fromVersion?: number): Pl
         lastOpened: typeof progress.vault?.lastOpened === 'string' ? progress.vault.lastOpened : null,
       },
       flags: normalizeStoryVars(progress.flags),
+      challengeSessions: normalizeSessions(progress.challengeSessions),
     },
     rewards: normalizeRewards((raw as Partial<PlayerState>).rewards),
     settings: {
