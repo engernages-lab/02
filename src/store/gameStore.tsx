@@ -33,6 +33,8 @@ import {
   buildPassedSettlement, buildFailedSettlement, normalizeSessions,
   type ChallengeSession, type ChallengeSettlement, type ChallengeKind,
 } from '../game/challengeSession';
+import { purchaseItem, useItem as applyUseItem, equipItemById, unequipSlot } from '../game/shopTx';
+import type { ShopTransaction, EquipSlot } from '../game/shop';
 
 function chapterIndexForServer(serverId: string): number {
   const map: Record<string, number> = { syntax: 1, logs: 2, storage: 3, factory: 4, diag: 5, core: 6 };
@@ -95,9 +97,12 @@ export interface CompletePayload {
   };
   /** 统一挑战会话结算（A4 起，结算面板的唯一数据源） */
   session?: ChallengeSettlement;
+  /** A5：本次经验是否吃到增幅（true 时面板显示倍率） */
+  expBoosted?: boolean;
+  expBoostMult?: number;
 }
 
-export interface FailPayload { n: number; tolerance: number; triggered: boolean }
+export interface FailPayload { n: number; tolerance: number; triggered: boolean; protectedBy?: 'guard' | 'shield' }
 
 /** Boss 攻击提交结果（由 store 统一执行真实 Python 判题 + 战斗结算 + 首胜事务） */
 export type BossAttackStatus = 'blocked' | 'timeout' | 'error' | 'miss' | 'hit' | 'victory' | 'simulation' | 'simVictory';
@@ -165,7 +170,16 @@ interface GameCtx {
   markVaultFinalSeen: () => void;
   setVaultLastOpened: (id: string | null) => void;
   buyShopItem: (itemId: string) => { ok: boolean; reason?: string };
+  /** A5 统一购买：数量/请求 id 由 UI 生成，价格与限购由业务层重新校验 */
+  purchaseShopItem: (itemId: string, qty?: number, requestId?: string) => {
+    ok: boolean; reason?: string; duplicate?: boolean; transaction?: ShopTransaction | null; charged?: number;
+  };
+  /** A5 使用道具（恢复意识 / 激活增益） */
+  useShopItem: (itemId: string) => { ok: boolean; reason?: string; message?: string };
   equipItem: (itemId: string) => { ok: boolean; reason?: string };
+  unequipItem: (slot: EquipSlot) => { ok: boolean; reason?: string };
+  /** 挑战页提示：消耗提示券，不计入本关提示层数 */
+  consumeHintTicket: () => boolean;
   consumeItem: (itemId: string) => boolean;
   restoreConsciousness: (amount: number) => void;
   markArchiveRead: (archiveId: string) => void;
@@ -396,10 +410,14 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     let lost = 0;
     commitPlayer(p => {
       const b = normalizeBattleState((p.progress.battles || {})[bossId], def);
-      const c = Math.max(0, p.consciousness - Math.max(0, amount));
+      const rwB = normalizeRewards(p.rewards);
+      const barrier = rwB.buffs.barrier > 0;
+      const dmg = barrier ? Math.ceil(Math.max(0, amount) / 2) : Math.max(0, amount);
+      const c = Math.max(0, p.consciousness - dmg);
       const next: PlayerState = {
         ...p,
         consciousness: c,
+        rewards: barrier ? { ...rwB, buffs: { ...rwB.buffs, barrier: rwB.buffs.barrier - 1 } } : p.rewards,
         progress: {
           ...p.progress,
           battles: { ...(p.progress.battles || {}), [bossId]: { ...b, failures: b.failures + 1, updatedAt: Date.now() } },
@@ -478,45 +496,81 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
-  /** 兑换中心购买（外观一次性、道具可重复购买） */
-  const buyShopItem = useCallback((itemId: string): { ok: boolean; reason?: string } => {
-    const item = shopItemById(itemId);
-    if (!item) return { ok: false, reason: '商品不存在' };
-    const cur = playerRef.current;
-    const rw = normalizeRewards(cur.rewards);
-    if (item.unique && (rw.skins.includes(itemId) || (item.flag && cur.progress.flags[item.flag] === true))) {
-      return { ok: false, reason: '已拥有该奖励' };
+  /** A5 统一购买事务：价格/限购/余额由商品目录与纯逻辑层重新校验 */
+  const purchaseShopItem = useCallback((itemId: string, qty = 1, requestId?: string) => {
+    const rid = requestId || 'rq-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 7);
+    const res = purchaseItem(playerRef.current, itemId, qty, rid);
+    if (res.player !== playerRef.current) {
+      playerRef.current = res.player;
+      setPlayer(res.player);
     }
-    if (rw.credits < item.price) return { ok: false, reason: '贡献点不足（还差 ' + (item.price - rw.credits) + '）' };
-    const next: RewardState = {
-      ...rw,
-      credits: rw.credits - item.price,
-      skins: item.unique ? [...new Set([...rw.skins, itemId])] : rw.skins,
-      items: item.count ? { ...rw.items, [itemId]: (rw.items[itemId] || 0) + item.count } : { ...rw.items },
-    };
-    const flags = { ...cur.progress.flags };
-    if (item.flag) flags[item.flag] = true;
-    setPlayer(p => ({ ...p, rewards: next, progress: { ...p.progress, flags } }));
-    toast('achieve', '兑换成功：' + item.name);
+    if (!res.ok) {
+      toast('warn', res.reason || '购买失败');
+      play('deny');
+      return { ok: false, reason: res.reason, transaction: res.transaction as ShopTransaction | null };
+    }
+    if (res.duplicate) return { ok: true, duplicate: true };
+    toast('achieve', '交易完成：' + (res.transaction?.itemName || itemId) + ' ×' + (res.transaction?.qty || qty) + '（-' + res.charged + ' 贡献点）');
     play('success');
-    return { ok: true };
+    return { ok: true, transaction: res.transaction as ShopTransaction | null, charged: res.charged };
+  }, [toast]);
+
+  /** 兼容旧调用：买 1 件 */
+  const buyShopItem = useCallback((itemId: string): { ok: boolean; reason?: string } => {
+    const r = purchaseShopItem(itemId, 1);
+    return { ok: r.ok, reason: r.reason };
+  }, [purchaseShopItem]);
+
+  /** A5 使用道具：恢复意识 / 激活增益，条件与上限在这里统一校验 */
+  const useShopItem = useCallback((itemId: string) => {
+    const res = applyUseItem(playerRef.current, itemId);
+    if (!res.ok) {
+      toast('warn', res.reason || '无法使用');
+      play('deny');
+      return { ok: false, reason: res.reason };
+    }
+    playerRef.current = res.player;
+    setPlayer(res.player);
+    toast('success', res.message || '已使用');
+    play('success');
+    return { ok: true, message: res.message };
   }, [toast]);
 
   /** 装备外观 */
   const equipItem = useCallback((itemId: string): { ok: boolean; reason?: string } => {
-    const slot = slotOf(itemId);
-    if (!slot) return { ok: false, reason: '该物品不可装备' };
-    const cur = playerRef.current;
-    const rw = normalizeRewards(cur.rewards);
-    if (!rw.skins.includes(itemId)) return { ok: false, reason: '尚未拥有' };
-    const equipped = { ...rw.equipped, [slot]: itemId };
-    setPlayer(p => ({ ...p, rewards: { ...normalizeRewards(p.rewards), equipped } }));
-    toast('success', '已装备：' + (skinMetaById(itemId)?.name || itemId));
+    const res = equipItemById(playerRef.current, itemId);
+    if (!res.ok) return { ok: false, reason: res.reason };
+    playerRef.current = res.player;
+    setPlayer(res.player);
+    toast('success', res.message || '已装备');
     play('click');
     return { ok: true };
   }, [toast]);
 
-  /** 消耗一个道具 */
+  /** 卸下某个装备槽 */
+  const unequipItem = useCallback((slot: EquipSlot): { ok: boolean; reason?: string } => {
+    const res = unequipSlot(playerRef.current, slot);
+    if (!res.ok) return { ok: false, reason: res.reason };
+    playerRef.current = res.player;
+    setPlayer(res.player);
+    toast('success', res.message || '已卸下');
+    play('click');
+    return { ok: true };
+  }, [toast]);
+
+  /** 挑战页请求提示：优先消耗提示券（不计入本关提示层数） */
+  const consumeHintTicket = useCallback((): boolean => {
+    const rw = normalizeRewards(playerRef.current.rewards);
+    if (rw.buffs.hintTicket <= 0) return false;
+    commitPlayer(p => {
+      const cur = normalizeRewards(p.rewards);
+      if (cur.buffs.hintTicket <= 0) return p;
+      return { ...p, rewards: { ...cur, buffs: { ...cur.buffs, hintTicket: cur.buffs.hintTicket - 1 } } };
+    });
+    return true;
+  }, [commitPlayer]);
+
+  /** 消耗一个道具（挑战页的扫描器 / 回滚 / 解码器沿用） */
   const consumeItem = useCallback((itemId: string): boolean => {
     const cur = playerRef.current;
     const rw = normalizeRewards(cur.rewards);
@@ -671,7 +725,11 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       ? prev.progress.completedLevels
       : [...prev.progress.completedLevels, levelId];
     const knowledge = [...new Set([...prev.progress.knowledge, ...level.knowledge])];
-    const nextExp = firstTime ? prev.exp + level.rewardExp : prev.exp;
+    // A5 经验增幅：只在首次通关时生效，按配置倍率结算并消耗 1 次
+    const boostRw = normalizeRewards(prev.rewards);
+    const expBoost = firstTime && boostRw.buffs.expBoost && boostRw.buffs.expBoost.uses > 0 ? boostRw.buffs.expBoost : null;
+    const expGain = firstTime ? Math.round(level.rewardExp * (expBoost ? expBoost.mult : 1)) : 0;
+    const nextExp = prev.exp + expGain;
     const next: PlayerState = {
       ...prev,
       exp: nextExp,
@@ -723,7 +781,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     const gained = newAch.filter(a => !prev.progress.achievements.includes(a));
     next.progress.achievements = newAch;
     // ---------- 奖励系统结算（与经验/等级并行，互不覆盖；仅在真实判题通过时执行） ----------
-    const prevRewards: RewardState = normalizeRewards(prev.rewards);
+    const prevRewards = normalizeRewards(prev.rewards);
     const hintsUsed = prev.progress.hintLevels[levelId] || 0;
     const alreadyCleared = !!prevRewards.cleared[levelId];
     const v2 = computeLevelRewardV2({
@@ -757,6 +815,10 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       items: { ...prevRewards.items },
       chapterRewards: [...prevRewards.chapterRewards],
     };
+    if (expBoost) {
+      const uses = Math.max(0, expBoost.uses - 1);
+      rewards.buffs = { ...prevRewards.buffs, expBoost: uses > 0 ? { ...expBoost, uses } : null };
+    }
 
     // 章节奖励：整章通关时发放一次（幂等）
     let chapterRewardPayload: NonNullable<CompletePayload['reward']>['chapterReward'] = undefined;
@@ -824,7 +886,9 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     return {
       levelId,
       firstTime,
-      expGained: firstTime ? level.rewardExp : 0,
+      expGained: expGain,
+      expBoosted: !!expBoost,
+      expBoostMult: expBoost ? expBoost.mult : undefined,
       levelUp: next.level > oldLevel,
       oldLevel,
       newLevel: next.level,
@@ -845,25 +909,45 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     };
   }, [toast]);
 
-  /** 正式提交失败：计数 +1；超过容错上限时触发纠错者攻击事件 */
+  /** 正式提交失败：计数 +1；超过容错时优先消耗护符/护盾，否则触发纠错者攻击 */
   const recordFail = useCallback((levelId: string): FailPayload => {
     if (eventRef.current.kind !== 'none') return { n: 0, tolerance: 0, triggered: false };
     const prev = playerRef.current;
     const n = (prev.progress.failedAttempts[levelId] || 0) + 1;
     const tol = toleranceFor(prev.level);
+    let protectedBy: 'guard' | 'shield' | undefined;
+
     commitPlayer(p => {
       const sessions = p.progress.challengeSessions || {};
       const cur = sessions[levelId];
+      const rw = normalizeRewards(p.rewards);
+      let fails = n;
+      let buffs = rw.buffs;
+      if (n > tol) {
+        if (rw.buffs.guard > 0) { protectedBy = 'guard'; buffs = { ...rw.buffs, guard: rw.buffs.guard - 1 }; fails = 0; }
+        else if (rw.buffs.shield > 0) { protectedBy = 'shield'; buffs = { ...rw.buffs, shield: rw.buffs.shield - 1 }; fails = 0; }
+      }
       return {
         ...p,
+        rewards: { ...rw, buffs },
         progress: {
           ...p.progress,
-          failedAttempts: { ...p.progress.failedAttempts, [levelId]: n },
-          // 会话里的 errors 与 failedAttempts 同源同步，避免两套计数漂移
-          challengeSessions: cur ? { ...sessions, [levelId]: countError(cur) } : sessions,
+          failedAttempts: { ...p.progress.failedAttempts, [levelId]: fails },
+          // 会话 errors 与 failedAttempts 同源；防护生效时按「防御成功」语义清零
+          challengeSessions: cur
+            ? { ...sessions, [levelId]: protectedBy ? { ...cur, errors: 0 } : countError(cur) }
+            : sessions,
         },
       };
     });
+
+    if (protectedBy) {
+      toast('success', protectedBy === 'guard'
+        ? '容错护符生效：这次攻击被挡下，本关失误计数已清零'
+        : '护盾核心生效：攻击被自动拦截，本关失误计数已清零');
+      play('shield');
+      return { n, tolerance: tol, triggered: false, protectedBy };
+    }
     if (n > tol) {
       const pool = DEFENSE_TASKS.map(t => t.id);
       const defenseId = pool[Math.floor(Math.random() * pool.length)];
@@ -872,7 +956,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       return { n, tolerance: tol, triggered: true };
     }
     return { n, tolerance: tol, triggered: false };
-  }, [commitPlayer]);
+  }, [commitPlayer, toast]);
 
   /**
    * 唯一的 Boss 攻击入口。
@@ -1050,7 +1134,11 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       });
       toast('success', '防御成功：纠错者已被击退，本关容错计数已清零。');
     } else {
-      const c = Math.max(0, next.consciousness - 30);
+      const rwB = normalizeRewards(next.rewards);
+      const barrier = rwB.buffs.barrier > 0;
+      const dmg = barrier ? Math.ceil(30 / 2) : 30;
+      if (barrier) next.rewards = { ...rwB, buffs: { ...rwB.buffs, barrier: rwB.buffs.barrier - 1 } };
+      const c = Math.max(0, next.consciousness - dmg);
       next.consciousness = c;
       if (c <= 0) {
         next.meta = {
@@ -1068,7 +1156,8 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
         setPlayer(next);
         setEvent({ kind: 'none' });
         play('error');
-        toast('warn', '防御失败：意识完整度 -30%（当前 ' + c + '%）。纠错者被暂时击退。');
+        const barrierNote = barrier ? '（意识护罩已抵消一半伤害）' : '';
+        toast('warn', '防御失败：意识完整度 -' + dmg + '%' + barrierNote + '（当前 ' + c + '%）。纠错者被暂时击退。');
       }
     }
   }, [toast]);
@@ -1195,7 +1284,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     chapterGateOf, serverGate, bossEntryGate, originCoreGateNow,
     recordBug, recordEnding, markVaultRead, markVaultFinalSeen, setVaultLastOpened,
     completeLevel, recordFail, beginChallenge, recordRun, recordSubmit,
-    buyShopItem, equipItem, consumeItem, restoreConsciousness, markArchiveRead,
+    buyShopItem, purchaseShopItem, useShopItem, equipItem, unequipItem, consumeHintTicket, consumeItem, restoreConsciousness, markArchiveRead,
     resetAttempts, hintUsed, resolveDefense, finishRebirth, startDeath,
     decrementAttackAttempt, triggerPendingDeath, wipeSave,
     markStory, unlockStoryEvent, recordStoryChoice, renamePlayer,

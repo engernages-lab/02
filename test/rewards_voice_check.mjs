@@ -1,6 +1,6 @@
 // 奖励系统 + 语音模块的逻辑验证（node 环境，无浏览器）
-import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { readFileSync, existsSync } from 'node:fs';
+import { dirname, join, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 
@@ -8,11 +8,15 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, '..');
 const ts = createRequire(join(root, 'package.json'))('typescript');
 
+const cache = new Map();
 function loadTS(file) {
-  const src = readFileSync(file, 'utf8');
+  const abs = extname(file) ? file : existsSync(file + '.ts') ? file + '.ts' : file;
+  if (cache.has(abs)) return cache.get(abs).exports;
+  const src = readFileSync(abs, 'utf8');
   const out = ts.transpileModule(src, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true } }).outputText;
   const mod = { exports: {} };
-  new Function('exports', 'module', 'require', out)(mod.exports, mod, () => { throw new Error('no require'); });
+  cache.set(abs, mod);
+  new Function('exports', 'module', 'require', out)(mod.exports, mod, (sp) => loadTS(join(dirname(abs), sp)));
   return mod.exports;
 }
 

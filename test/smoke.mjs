@@ -144,7 +144,7 @@ function qa(dom, sel) { return Array.from(dom.window.document.querySelectorAll(s
   ok(!!saveRaw, 'localStorage 已写入存档');
   if (saveRaw) {
     const save = JSON.parse(saveRaw);
-    ok(save.version === 8, '存档版本 v8');
+    ok(save.version === 9, '存档版本 v9');
     ok(save.player.identity && save.player.identity.displayName === 'R-07', '存档含玩家身份（默认显示名 R-07）');
     ok(save.player.identity && save.player.identity.originCode === 'R-07', '存档保留原始实验编号 R-07');
     ok(save.player.progress.story && Array.isArray(save.player.progress.story.unlocked), '存档含剧情事件状态');
@@ -445,16 +445,31 @@ function qa(dom, sel) { return Array.from(dom.window.document.querySelectorAll(s
   await waitFor(() => text(dom).includes('REWARD NEXUS'), 12000, 's11 兑换中心渲染');
   ok(text(dom).includes('贡献点') && text(dom).includes('信任度'), '兑换中心显示贡献点与信任度');
   ok(qa(dom, '.shop-card').length > 0, '兑换中心渲染商品卡片（' + qa(dom, '.shop-card').length + ' 个）');
-  // 购买流程：点击第一个可购买商品的按钮，贡献点应减少
-  const creditBefore = (text(dom).match(/贡献点 (\d+)/) || [])[1];
-  const buyBtn = qa(dom, '.shop-card button').find(b => /◈\s*\d+/.test(b.textContent || ''));
-  ok(!!buyBtn, '商品卡片有兑换按钮（◈ 价格）');
-  if (buyBtn) {
-    clickEl(dom, buyBtn);
-    await sleep(500);
-    const creditAfter = (text(dom).match(/贡献点 (\d+)/) || [])[1];
-    ok(!!creditBefore && !!creditAfter && Number(creditAfter) < Number(creditBefore), '兑换后贡献点减少（' + creditBefore + ' → ' + creditAfter + '）');
-    ok(text(dom).includes('兑换成功') || text(dom).includes('已拥有') || text(dom).includes('已解锁'), '兑换结果有反馈');
+  // 购买流程（A5）：点击商品卡片 → 详情 → 购买 → 二次确认 → 扣费
+  const creditNode = dom.window.document.querySelector('.shop-page .hud-chip.gold');
+  const creditBefore = creditNode ? (creditNode.textContent.match(/(\d+)/) || [])[1] : null;
+  const card = qa(dom, '.shop-card')[0];
+  ok(!!card && /◈\s*\d+/.test(card.textContent || ''), '商品卡片显示价格与详情入口');
+  if (card) {
+    clickEl(dom, card);
+    await sleep(300);
+    ok(!!dom.window.document.querySelector('.shop-drawer'), '点击商品打开详情面板');
+    const buyBtn = dom.window.document.querySelector('.sd-foot button');
+    ok(!!buyBtn && !buyBtn.disabled, '详情面板提供可用的购买按钮');
+    if (buyBtn && !buyBtn.disabled) {
+      clickEl(dom, buyBtn);
+      await sleep(300);
+      const pay = qa(dom, '.shop-confirm button').find(b => /确认支付/.test(b.textContent || ''));
+      ok(!!pay, '购买前弹出二次确认');
+      if (pay) {
+        clickEl(dom, pay);
+        await sleep(600);
+        const creditAfterNode = dom.window.document.querySelector('.shop-page .hud-chip.gold');
+        const creditAfter = creditAfterNode ? (creditAfterNode.textContent.match(/(\d+)/) || [])[1] : null;
+        ok(!!creditBefore && !!creditAfter && Number(creditAfter) < Number(creditBefore), '兑换后贡献点减少（' + creditBefore + ' → ' + creditAfter + '）');
+        ok(text(dom).includes('交易完成'), '交易结果有反馈');
+      }
+    }
   }
   ok(text(dom).includes('记忆档案'), '兑换中心有记忆档案标签');
   dom.window.close();

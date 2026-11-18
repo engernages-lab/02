@@ -99,16 +99,23 @@ async function enterMenu(h) {
 
   const frameCard = h.qa('.shop-card').find(c => c.textContent.includes('青铜回路'));
   ok(!!frameCard, '商店包含头像框商品');
-  const buyBtn = frameCard && frameCard.querySelector('button');
+  // A5：卡片 → 详情 → 购买 → 二次确认
+  h.click(frameCard);
+  await h.wait(() => h.q('.shop-drawer'), 5000, '商品详情');
+  const buyBtn = h.q('.sd-foot button');
+  ok(!!buyBtn && /购买/.test(buyBtn.textContent), '详情面板提供购买按钮');
   h.click(buyBtn);
-  await sleep(300);
+  await h.wait(() => h.q('.shop-confirm'), 5000, '二次确认');
+  const payBtn = h.qa('.shop-confirm button').find(b => /确认支付/.test(b.textContent));
+  ok(!!payBtn, '购买前出现二次确认');
+  h.click(payBtn);
+  await sleep(400);
   let sv = h.save();
   ok(sv.player.rewards.credits === 430, '兑换扣除贡献点（500 → 430）', String(sv.player.rewards.credits));
   ok(sv.player.rewards.skins.includes('frame-bronze'), '头像框已加入已拥有外观');
 
-  // 装备
-  const card2 = h.qa('.shop-card').find(c => c.textContent.includes('青铜回路'));
-  const eqBtn = card2 && Array.from(card2.querySelectorAll('button')).find(b => b.textContent.includes('装备'));
+  // 装备（详情面板在购买后变为装备按钮）
+  const eqBtn = h.qa('.sd-foot button').find(b => b.textContent.includes('装备'));
   ok(!!eqBtn, '已购买商品出现装备按钮');
   h.click(eqBtn);
   await sleep(300);

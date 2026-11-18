@@ -237,7 +237,7 @@ const SYNTAX = 'if True\n    print(1)';
 
   let s = await evalJS(readSession('1-1'));
   ok(s && s.status === 'active' && s.runs === 1 && s.submits === 1 && s.errors === 1, '会话记录运行/提交/失误', JSON.stringify(s && { r: s.runs, s: s.submits, e: s.errors }));
-  ok((await evalJS(`(() => { const s=${readSave}; return s.version; })()`)) === 8, '旧档 v7 已迁移为 v8');
+  ok((await evalJS(`(() => { const s=${readSave}; return s.version; })()`)) === 9, '旧档 v7 已迁移为 v9');
   const hudText = `([...document.querySelectorAll('.hud-chip')].find(x => (x.textContent || '').includes('容错')) || {}).textContent || ''`;
   ok((await evalJS(hudText)).includes('2/3'), '失败一次后 HUD 显示容错 2/3（上限 3）');
 

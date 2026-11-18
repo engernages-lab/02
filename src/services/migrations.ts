@@ -16,9 +16,10 @@ import { normalizeIdentity } from '../game/identity';
 import { normalizeStoryReadState } from '../game/lore/events';
 import { normalizeStoryVars } from '../game/lore/vars';
 import { normalizeSessions } from '../game/challengeSession';
+import { normalizeRewards } from '../game/rewards';
 
 /** 当前存档版本 */
-export const CURRENT_SAVE_VERSION = 8;
+export const CURRENT_SAVE_VERSION = 9;
 
 interface MigrationStep {
   /** 迁移到的目标版本 */
@@ -141,6 +142,14 @@ const STEPS: MigrationStep[] = [
         },
       };
     },
+  },
+  {
+    to: 9,
+    name: 'v8→v9：商城交易记录 / 限购计数 / 道具增益',
+    run: (p) => ({
+      ...p,
+      rewards: normalizeRewards(p && typeof p === 'object' ? (p as AnyPlayer).rewards : undefined),
+    }),
   },
 ];
 

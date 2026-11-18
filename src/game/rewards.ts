@@ -1,6 +1,14 @@
 // NEXUS 奖励系统：修复贡献点 / MIRA 信任度 / 关卡评级 / 兑换中心 / 章节奖励
 // 与经验等级、成就、知识卡、意识值、剧情进度并行，互不覆盖（旧的 exp/level 逻辑完全保留）。
 
+import {
+  SHOP_ITEMS, shopItemById, defaultBuffs, MAX_TRANSACTIONS, MAX_BUFF_CHARGES, EXP_BOOST_MAX_USES, EXP_BOOST_MULT,
+  type ShopItem, type ShopTransaction, type RewardBuffs,
+} from './shop';
+
+export { SHOP_ITEMS, shopItemById };
+export type { ShopItem, ShopTransaction, RewardBuffs };
+
 export type Grade = 'S' | 'A' | 'B' | 'C';
 
 /** 奖励系统状态（作为 PlayerState.rewards 可选字段，旧存档自动补默认） */
@@ -34,14 +42,31 @@ export interface RewardState {
   badges?: string[];
   /** 已发放的难度一次性奖励 key（bossId + difficulty，防刷） */
   difficultyRewards?: string[];
+  /** 交易记录（A5，最近 MAX_TRANSACTIONS 条） */
+  transactions?: ShopTransaction[];
+  /** 每种商品已购买数量（A5，限购依据） */
+  purchases?: Record<string, number>;
+  /** 道具增益（A5：护盾/护符/护罩/提示券/经验增幅） */
+  buffs?: RewardBuffs;
 }
 
-export function defaultRewards(): RewardState {
-  return { credits: 0, trust: 10, items: {}, skins: [], equipped: {}, chapterRewards: [], cleared: {}, archiveRead: [], bossRewards: [], unlocks: [], badges: [], difficultyRewards: [] };
+export function defaultRewards(): NormalizedRewards {
+  return {
+    credits: 0, trust: 10, items: {}, skins: [], equipped: {}, chapterRewards: [], cleared: {}, archiveRead: [],
+    bossRewards: [], unlocks: [], badges: [], difficultyRewards: [],
+    transactions: [], purchases: {}, buffs: defaultBuffs(),
+  };
 }
+
+/** 规范化后的奖励状态：A5 字段保证存在，调用方无需再做空判断 */
+export type NormalizedRewards = RewardState & {
+  transactions: ShopTransaction[];
+  purchases: Record<string, number>;
+  buffs: RewardBuffs;
+};
 
 /** 兼容旧存档：缺失字段逐一补齐（不覆盖已有值） */
-export function normalizeRewards(raw: unknown): RewardState {
+export function normalizeRewards(raw: unknown): NormalizedRewards {
   const d = defaultRewards();
   if (!raw || typeof raw !== 'object') return d;
   const r = raw as Partial<RewardState>;
@@ -58,6 +83,9 @@ export function normalizeRewards(raw: unknown): RewardState {
     unlocks: Array.isArray(r.unlocks) ? r.unlocks.slice() : [],
     badges: Array.isArray(r.badges) ? r.badges.slice() : [],
     difficultyRewards: Array.isArray(r.difficultyRewards) ? r.difficultyRewards.slice() : [],
+    transactions: normalizeTransactions(r.transactions),
+    purchases: normalizePurchases(r.purchases),
+    buffs: normalizeBuffs(r.buffs),
   };
 }
 
@@ -127,50 +155,6 @@ export const CHAPTER_REWARDS: ChapterReward[] = [
 
 export const chapterRewardOf = (chapter: number): ChapterReward | undefined => CHAPTER_REWARDS.find(c => c.chapter === chapter);
 
-// ---------- 兑换中心商品 ----------
-export type ShopCategory = 'look' | 'tool' | 'special';
-
-export interface ShopItem {
-  id: string;
-  name: string;
-  category: ShopCategory;
-  price: number;
-  desc: string;
-  icon: string;
-  /** 一次性外观（拥有后不可重复购买） */
-  unique?: boolean;
-  /** 道具每次购买获得的库存数量 */
-  count?: number;
-  /** 装备槽位（外观） */
-  slot?: 'terminal' | 'particles' | 'title' | 'avatarFrame' | 'login' | 'bg';
-  /** 特殊奖励（购买即解锁标记） */
-  flag?: string;
-}
-
-export const SHOP_ITEMS: ShopItem[] = [
-  // 外观
-  { id: 'terminal-neon', name: '终端主题 · 霓虹脉冲', category: 'look', price: 80, desc: '高对比度的青紫配色，代码看起来更锋利。', icon: '▤', unique: true, slot: 'terminal' },
-  { id: 'terminal-deep', name: '终端主题 · 深海回路', category: 'look', price: 90, desc: 'MIRA 调制：低亮度蓝绿，久看不累。', icon: '▥', unique: true, slot: 'terminal' },
-  { id: 'particles-net', name: '粒子背景 · 数据流', category: 'look', price: 120, desc: '背景漂浮着缓慢流动的绿色数据点。', icon: '✧', unique: true, slot: 'particles' },
-  { id: 'title-junior', name: '称号 · 初级修复师', category: 'look', price: 60, desc: '在玩家档案与地图上显示。', icon: '◈', unique: true, slot: 'title' },
-  { id: 'title-successor', name: '称号 · 原初继承者', category: 'look', price: 260, desc: '创世主遗留的最终称谓。', icon: '✦', unique: true, slot: 'title' },
-  { id: 'login-gold', name: '登录界面 · 黄金协议', category: 'look', price: 150, desc: '启动页换成金色协议风格。', icon: '⧉', unique: true, slot: 'login' },
-  { id: 'bg-ark', name: '数字世界背景 · 方舟核心', category: 'look', price: 200, desc: '地图背景换成核心机房的发光脉络。', icon: '◉', unique: true, slot: 'bg' },
-  { id: 'frame-bronze', name: '头像框 · 青铜回路', category: 'look', price: 70, desc: '档案页与状态卡的 R-07 头像外框。', icon: '◯', unique: true, slot: 'avatarFrame' },
-  { id: 'frame-neon', name: '头像框 · 霓虹脉冲', category: 'look', price: 130, desc: '青紫脉冲边框，会随意识值呼吸。', icon: '◎', unique: true, slot: 'avatarFrame' },
-  // 道具
-  { id: 'scan', name: '错误定位扫描器', category: 'tool', price: 50, count: 1, desc: '在编辑器中标出最可能出错的行范围（不直接给答案）。', icon: '⌖' },
-  { id: 'rollback', name: '数据回滚模块', category: 'tool', price: 40, count: 1, desc: '把编辑器恢复到本次修改前的状态。', icon: '↺' },
-  { id: 'stabilizer', name: '意识稳定模块', category: 'tool', price: 70, count: 1, desc: '恢复 10 点意识值（不超过上限，不改变难度）。', icon: '✚' },
-  { id: 'decoder', name: '记忆解码器', category: 'tool', price: 90, count: 1, desc: '解锁一份尚未收集的记忆档案（不影响关卡判题）。', icon: '✦' },
-  // 特殊
-  { id: 'mira-talk', name: 'MIRA 专属对话', category: 'special', price: 100, desc: '解锁一段 MIRA 的额外对话（信任度相关）。', icon: '◍', unique: true, flag: 'miraExtraTalk' },
-  { id: 'archive-secret', name: '特殊剧情档案', category: 'special', price: 120, desc: '解锁「五年前事故」的机密档案条目。', icon: '▣', unique: true, flag: 'secretArchive' },
-  { id: 'fx-repair', name: '修复特效 · 数据重构', category: 'special', price: 140, desc: '通关结算时播放额外的数据重构光效。', icon: '✺', unique: true, flag: 'fxRepair' },
-];
-
-export const shopItemById = (id: string): ShopItem | undefined => SHOP_ITEMS.find(i => i.id === id);
-
 // ---------- 记忆档案（按碎片数量解锁） ----------
 export interface MemoryArchive {
   id: string;
@@ -204,4 +188,58 @@ export function trustTier(trust: number): { name: string; desc: string; at: numb
   let cur = TRUST_TIERS[0];
   for (const t of TRUST_TIERS) if (trust >= t.at) cur = t;
   return cur;
+}
+
+// ---------- A5：交易记录 / 限购计数 / 增益状态 ----------
+
+function normalizeTransactions(raw: unknown): ShopTransaction[] {
+  if (!Array.isArray(raw)) return [];
+  const out: ShopTransaction[] = [];
+  for (const t of raw) {
+    if (!t || typeof t !== 'object') continue;
+    const x = t as Partial<ShopTransaction>;
+    if (typeof x.itemId !== 'string' || !x.itemId) continue;
+    const status = x.status === 'failed' ? 'failed' : 'ok';
+    out.push({
+      id: typeof x.id === 'string' ? x.id : 'tx-' + Math.max(0, Number(x.at) || 0),
+      requestId: typeof x.requestId === 'string' ? x.requestId : '',
+      itemId: x.itemId,
+      itemName: typeof x.itemName === 'string' ? x.itemName : x.itemId,
+      at: Number.isFinite(Number(x.at)) ? Math.max(0, Math.floor(Number(x.at))) : 0,
+      qty: Math.max(1, Math.min(99, Math.floor(Number(x.qty) || 1))),
+      unitPrice: Math.max(0, Math.floor(Number(x.unitPrice) || 0)),
+      total: Math.max(0, Math.floor(Number(x.total) || 0)),
+      status,
+      reason: typeof x.reason === 'string' ? x.reason : undefined,
+    });
+  }
+  return out.slice(-MAX_TRANSACTIONS);
+}
+
+function normalizePurchases(raw: unknown): Record<string, number> {
+  if (!raw || typeof raw !== 'object') return {};
+  const out: Record<string, number> = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    const n = Math.floor(Number(v));
+    if (k && Number.isFinite(n) && n > 0) out[k] = Math.min(999, n);
+  }
+  return out;
+}
+
+function normalizeBuffs(raw: unknown): RewardBuffs {
+  const d = defaultBuffs();
+  if (!raw || typeof raw !== 'object') return d;
+  const r = raw as Partial<RewardBuffs>;
+  const charge = (v: unknown) => Math.max(0, Math.min(MAX_BUFF_CHARGES, Math.floor(Number(v) || 0)));
+  const boost = r.expBoost;
+  const uses = boost && typeof boost === 'object' ? Math.max(0, Math.min(EXP_BOOST_MAX_USES, Math.floor(Number(boost.uses) || 0))) : 0;
+  const mult = boost && typeof boost === 'object' && Number.isFinite(Number(boost.mult)) ? Number(boost.mult) : EXP_BOOST_MULT;
+  return {
+    shield: charge(r.shield),
+    guard: charge(r.guard),
+    barrier: charge(r.barrier),
+    hintTicket: charge(r.hintTicket),
+    // 倍率不合法（≤1 或非数字）的增幅直接丢弃，避免出现「吃了增幅却没加成」
+    expBoost: uses > 0 && mult > 1 ? { uses, mult } : null,
+  };
 }

@@ -11,6 +11,7 @@ import { levelById, levelsOfServer, serverById, type LevelDef } from '../game/le
 import { canEnterServer } from '../game/chapterFlow';
 import { milestone } from '../game/progression';
 import { formatDuration } from '../game/challengeSession';
+import { normalizeRewards } from '../game/rewards';
 import { buildHarness, checkUserCode, combineWithHarness, filterMarkerLines, judgeRun, parseMarker, type JudgeCheck, type JudgeVerdict, type ParsedError } from '../services/judge';
 import { miraLevelHint, miraOnError, miraOnFail, miraOnRespawn } from '../services/ai';
 import { runPython, onPyStatus, warmUp, type PyState } from '../services/pythonRunner';
@@ -748,9 +749,12 @@ export default function ChallengePage() {
     if (!level) return;
     const used = player.progress.hintLevels[level.id] || 0;
     const r = miraLevelHint(level, used);
+    // A5 提示券：优先消耗，不计入本关提示层数（保护评级）
+    const rw = normalizeRewards(player.rewards);
+    const byTicket = rw.buffs.hintTicket > 0 && g.consumeHintTicket();
     setMiraTag('提示 LEVEL ' + r.level);
-    setMiraMsg(r.text);
-    g.hintUsed(level.id);
+    setMiraMsg(byTicket ? r.text + '（已消耗 1 张提示券，本关提示次数未增加）' : r.text);
+    if (!byTicket) g.hintUsed(level.id);
     play('click');
   };
 
@@ -862,6 +866,7 @@ export default function ChallengePage() {
     ? activeSession.errors
     : (player.progress.failedAttempts[level.id] || 0);
   const tolLeft = Math.max(0, g.tolerance - tolUsed);
+  const buffs = normalizeRewards(player.rewards).buffs;
   const stars = player.progress.stars[level.id] || 0;
   const server = serverById(level.serverId);
   const knowledgeCards = level.knowledge.map(knowledgeById).filter(Boolean);
@@ -886,6 +891,9 @@ export default function ChallengePage() {
         </div>
         <span className="hud-chip">{stars > 0 ? '★'.repeat(stars) : '未通关'}</span>
         <span className="hud-chip cyan" title="剩余容错 / 本关容错上限">容错 {tolLeft}/{g.tolerance}</span>
+        {buffs.shield > 0 && <span className="hud-chip" title="护盾：自动拦截下一次纠错者攻击">⛨ 护盾 {buffs.shield}</span>}
+        {buffs.guard > 0 && <span className="hud-chip" title="容错护符：挡下一次超限攻击">◈ 护符 {buffs.guard}</span>}
+        {buffs.hintTicket > 0 && <span className="hud-chip" title="提示券：不计入本关提示次数">◇ 提示券 {buffs.hintTicket}</span>}
         <span className="hud-chip">意识 {player.consciousness}%</span>
         <div className="side-switch" role="group" aria-label="侧栏切换">
           <button className={'ss-btn' + (!sideCollapsed && sideTab === 'task' ? ' on' : '')}
@@ -1203,6 +1211,7 @@ export default function ChallengePage() {
                   <div className="sd-row">
                     <span>等级 Lv.{st.levelAfter}</span>
                     <span>经验 {st.expAfter}{ms.maxed ? '（已满级）' : `（距 Lv.${ms.level + 1} 还差 ${Math.max(0, ms.need - ms.into)}）`}</span>
+                    {done.payload.expBoosted && <span className="chip cyan">经验增幅 ×{done.payload.expBoostMult || 1.5}</span>}
                   </div>
                   {done.payload.levelUp && (st.toleranceGain > 0 ? (
                     <div className="result-banner ok" style={{ marginTop: 8 }}>
