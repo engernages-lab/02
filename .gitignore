@@ -21,3 +21,7 @@ Thumbs.db
 # session artifacts
 dsh-session-*.zip
 *.zip
+
+# 本地备份目录（不提交，避免把副本推上仓库）
+backup_*/
+
