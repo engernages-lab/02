@@ -144,7 +144,7 @@ function qa(dom, sel) { return Array.from(dom.window.document.querySelectorAll(s
   ok(!!saveRaw, 'localStorage 已写入存档');
   if (saveRaw) {
     const save = JSON.parse(saveRaw);
-    ok(save.version === 9, '存档版本 v9');
+    ok(save.version === 10, '存档版本 v10');
     ok(save.player.identity && save.player.identity.displayName === 'R-07', '存档含玩家身份（默认显示名 R-07）');
     ok(save.player.identity && save.player.identity.originCode === 'R-07', '存档保留原始实验编号 R-07');
     ok(save.player.progress.story && Array.isArray(save.player.progress.story.unlocked), '存档含剧情事件状态');

@@ -1,13 +1,14 @@
 import { useGame } from '../store/gameStore';
 import { milestone, titleForLevel } from '../game/progression';
+import { normalizeRewards } from '../game/rewards';
 import { displayNameOf, originCodeOf, normalizeIdentity } from '../game/identity';
 import { equippedTitleName, equippedFrameClass } from '../game/cosmetics';
-import { normalizeRewards } from '../game/rewards';
 
 export default function PlayerStatus({ showTolerance = false, compact = false }: { showTolerance?: boolean; compact?: boolean }) {
   const { player, tolerance, event, consumeItem, restoreConsciousness, toast } = useGame();
   const ms = milestone(player.exp);
   const c = player.consciousness;
+  const credits = normalizeRewards(player.rewards).credits;
   const stabilizers = normalizeRewards(player.rewards).items.stabilizer || 0;
   const cZone = c >= 81 ? 'green' : c >= 61 ? '' : c >= 41 ? 'orange' : c >= 21 ? 'orange' : 'red';
   const level = player.progress.currentLevelId;
@@ -31,7 +32,8 @@ export default function PlayerStatus({ showTolerance = false, compact = false }:
               </div>
             )}
           </div>
-          <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
+          <div style={{ marginLeft: 'auto', textAlign: 'right', display: 'flex', gap: 6, alignItems: 'center' }}>
+            <div className="chip gold" title="贡献点">◈ {credits}</div>
             <div className="chip cyan" title="本关容错上限">容错上限 {tolerance}</div>
           </div>
         </div>

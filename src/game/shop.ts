@@ -139,18 +139,18 @@ export const SHOP_ITEMS: ShopItem[] = [
   // ---------- 外观装饰 ----------
   { id: 'terminal-neon', name: '终端主题 · 霓虹脉冲', category: 'look', type: 'look', price: 80, rarity: 'rare', kind: 'equipment', equippable: true, unique: true, slot: 'terminal', icon: '▤', desc: '高对比度的青紫配色，代码看起来更锋利。', effect: '装备后改变代码终端配色，立即生效并保存。' },
   { id: 'terminal-deep', name: '终端主题 · 深海回路', category: 'look', type: 'look', price: 90, rarity: 'rare', kind: 'equipment', equippable: true, unique: true, slot: 'terminal', icon: '▥', desc: 'MIRA 调制：低亮度蓝绿，久看不累。', effect: '装备后改变代码终端配色，立即生效并保存。' },
-  { id: 'particles-net', name: '粒子背景 · 数据流', category: 'look', type: 'look', price: 120, rarity: 'epic', kind: 'equipment', equippable: true, unique: true, slot: 'particles', icon: '✧', desc: '背景漂浮着缓慢流动的绿色数据点。', effect: '装备后在地图与档案页显示数据流粒子背景。' },
+  { id: 'particles-net', name: '粒子背景 · 数据流', category: 'look', type: 'look', price: 150, rarity: 'epic', kind: 'equipment', equippable: true, unique: true, slot: 'particles', icon: '✧', desc: '背景漂浮着缓慢流动的绿色数据点。', effect: '装备后在地图与档案页显示数据流粒子背景。' },
   { id: 'title-junior', name: '称号 · 初级修复师', category: 'look', type: 'look', price: 60, rarity: 'common', kind: 'equipment', equippable: true, unique: true, slot: 'title', icon: '◈', desc: '在玩家档案与状态卡显示。', effect: '装备后在档案与 HUD 显示该称号。' },
-  { id: 'title-successor', name: '称号 · 原初继承者', category: 'look', type: 'look', price: 260, rarity: 'legendary', kind: 'equipment', equippable: true, unique: true, slot: 'title', icon: '✦', desc: '创世主遗留的最终称谓。', effect: '装备后在档案与 HUD 显示该称号。' },
-  { id: 'login-gold', name: '登录界面 · 黄金协议', category: 'look', type: 'look', price: 150, rarity: 'epic', kind: 'equipment', equippable: true, unique: true, slot: 'login', icon: '⧉', desc: '启动页换成金色协议风格。', effect: '装备后启动页使用黄金协议视觉。' },
-  { id: 'bg-ark', name: '数字世界背景 · 方舟核心', category: 'look', type: 'look', price: 200, rarity: 'legendary', kind: 'equipment', equippable: true, unique: true, slot: 'bg', icon: '◉', desc: '地图背景换成核心机房的发光脉络。', effect: '装备后地图背景切换为方舟核心。' },
+  { id: 'title-successor', name: '称号 · 原初继承者', category: 'look', type: 'look', price: 420, rarity: 'legendary', kind: 'equipment', equippable: true, unique: true, slot: 'title', icon: '✦', desc: '创世主遗留的最终称谓。', effect: '装备后在档案与 HUD 显示该称号。' },
+  { id: 'login-gold', name: '登录界面 · 黄金协议', category: 'look', type: 'look', price: 220, rarity: 'epic', kind: 'equipment', equippable: true, unique: true, slot: 'login', icon: '⧉', desc: '启动页换成金色协议风格。', effect: '装备后启动页使用黄金协议视觉。' },
+  { id: 'bg-ark', name: '数字世界背景 · 方舟核心', category: 'look', type: 'look', price: 320, rarity: 'legendary', kind: 'equipment', equippable: true, unique: true, slot: 'bg', icon: '◉', desc: '地图背景换成核心机房的发光脉络。', effect: '装备后地图背景切换为方舟核心。' },
   { id: 'frame-bronze', name: '头像框 · 青铜回路', category: 'look', type: 'look', price: 70, rarity: 'common', kind: 'equipment', equippable: true, unique: true, slot: 'avatarFrame', icon: '◯', desc: '档案页与状态卡的 R-07 头像外框。', effect: '装备后头像显示青铜回路边框。' },
-  { id: 'frame-neon', name: '头像框 · 霓虹脉冲', category: 'look', type: 'look', price: 130, rarity: 'rare', kind: 'equipment', equippable: true, unique: true, slot: 'avatarFrame', icon: '◎', desc: '青紫脉冲边框，会随意识值呼吸。', effect: '装备后头像显示霓虹脉冲边框。' },
+  { id: 'frame-neon', name: '头像框 · 霓虹脉冲', category: 'look', type: 'look', price: 160, rarity: 'rare', kind: 'equipment', equippable: true, unique: true, slot: 'avatarFrame', icon: '◎', desc: '青紫脉冲边框，会随意识值呼吸。', effect: '装备后头像显示霓虹脉冲边框。' },
 
   // ---------- 特殊物品 ----------
   { id: 'decoder', name: '记忆解码器', icon: '✦', category: 'tool', type: 'special', price: 90, rarity: 'rare', kind: 'consumable', usable: true, count: 1, maxOwn: 10, desc: '解锁一份尚未收集的记忆档案（不影响关卡判题）。', effect: '在「记忆档案」中消耗 1 个，直接解锁并阅读指定档案。' },
   { id: 'mira-talk', name: 'MIRA 专属对话', icon: '◍', category: 'special', type: 'special', price: 100, rarity: 'epic', kind: 'permanent', unique: true, permanent: true, flag: 'miraExtraTalk', desc: '解锁一段 MIRA 的额外对话（信任度相关）。', effect: '永久解锁：档案页 MIRA 会多出一段关于自己的对话。' },
-  { id: 'archive-secret', name: '特殊剧情档案', icon: '▣', category: 'special', type: 'special', price: 120, rarity: 'epic', kind: 'permanent', unique: true, permanent: true, flag: 'secretArchive', desc: '解锁「五年前事故」的机密档案条目。', effect: '永久解锁：记忆档案中出现「五年前事故」机密条目。' },
+  { id: 'archive-secret', name: '特殊剧情档案', icon: '▣', category: 'special', type: 'special', price: 150, rarity: 'epic', kind: 'permanent', unique: true, permanent: true, flag: 'secretArchive', desc: '解锁「五年前事故」的机密档案条目。', effect: '永久解锁：记忆档案中出现「五年前事故」机密条目。' },
   { id: 'fx-repair', name: '修复特效 · 数据重构', icon: '✺', category: 'special', type: 'special', price: 140, rarity: 'epic', kind: 'permanent', unique: true, permanent: true, flag: 'fxRepair', desc: '通关结算时播放额外的数据重构光效。', effect: '永久生效：通关结算面板附加数据重构光效。' },
 ];
 

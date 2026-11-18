@@ -5,6 +5,7 @@ import {
   SHOP_ITEMS, shopItemById, defaultBuffs, MAX_TRANSACTIONS, MAX_BUFF_CHARGES, EXP_BOOST_MAX_USES, EXP_BOOST_MULT,
   type ShopItem, type ShopTransaction, type RewardBuffs,
 } from './shop';
+import { normalizeLedger, safeCredits, type RewardLedgerEntry } from './economyConfig';
 
 export { SHOP_ITEMS, shopItemById };
 export type { ShopItem, ShopTransaction, RewardBuffs };
@@ -48,13 +49,15 @@ export interface RewardState {
   purchases?: Record<string, number>;
   /** 道具增益（A5：护盾/护符/护罩/提示券/经验增幅） */
   buffs?: RewardBuffs;
+  /** 奖励账本（A6：每次入账的唯一流水，可追溯） */
+  ledger?: RewardLedgerEntry[];
 }
 
 export function defaultRewards(): NormalizedRewards {
   return {
     credits: 0, trust: 10, items: {}, skins: [], equipped: {}, chapterRewards: [], cleared: {}, archiveRead: [],
     bossRewards: [], unlocks: [], badges: [], difficultyRewards: [],
-    transactions: [], purchases: {}, buffs: defaultBuffs(),
+    transactions: [], purchases: {}, buffs: defaultBuffs(), ledger: [],
   };
 }
 
@@ -71,7 +74,7 @@ export function normalizeRewards(raw: unknown): NormalizedRewards {
   if (!raw || typeof raw !== 'object') return d;
   const r = raw as Partial<RewardState>;
   return {
-    credits: typeof r.credits === 'number' && isFinite(r.credits) ? Math.max(0, Math.floor(r.credits)) : d.credits,
+    credits: safeCredits(r.credits),
     trust: typeof r.trust === 'number' && isFinite(r.trust) ? Math.min(100, Math.max(0, Math.round(r.trust))) : d.trust,
     items: r.items && typeof r.items === 'object' ? { ...r.items } : {},
     skins: Array.isArray(r.skins) ? r.skins.slice() : [],
@@ -86,6 +89,7 @@ export function normalizeRewards(raw: unknown): NormalizedRewards {
     transactions: normalizeTransactions(r.transactions),
     purchases: normalizePurchases(r.purchases),
     buffs: normalizeBuffs(r.buffs),
+    ledger: normalizeLedger(r.ledger),
   };
 }
 

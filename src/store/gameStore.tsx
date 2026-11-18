@@ -35,6 +35,7 @@ import {
 } from '../game/challengeSession';
 import { purchaseItem, useItem as applyUseItem, equipItemById, unequipSlot } from '../game/shopTx';
 import type { ShopTransaction, EquipSlot } from '../game/shop';
+import { appendLedger, safeCredits } from '../game/economy';
 
 function chapterIndexForServer(serverId: string): number {
   const map: Record<string, number> = { syntax: 1, logs: 2, storage: 3, factory: 4, diag: 5, core: 6 };
@@ -313,8 +314,18 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     const cur = playerRef.current;
     const r = handleBossFirstClear(cur, bossId);
     if (!r.changed || !r.payload) return null;
-    playerRef.current = r.player;
-    setPlayer(r.player);
+    const withLedger: PlayerState = {
+      ...r.player,
+      rewards: {
+        ...normalizeRewards(r.player.rewards),
+        ledger: appendLedger(normalizeRewards(r.player.rewards).ledger, {
+          kind: 'boss', ref: bossId,
+          credits: r.payload.credits, exp: r.payload.expGained || 0,
+        }),
+      },
+    };
+    playerRef.current = withLedger;
+    setPlayer(withLedger);
     if (r.payload.credits > 0) {
       toast('achieve', '章节奖励：+' + r.payload.credits + ' 贡献点（' + (r.payload.unlocks[0] || '') + '）');
     }
@@ -805,7 +816,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     };
     const rewards: RewardState = {
       ...prevRewards,
-      credits: prevRewards.credits + breakdown.total,
+      credits: safeCredits(prevRewards.credits + breakdown.total),
       trust: Math.min(100, prevRewards.trust + breakdown.trustGain),
       cleared: {
         ...prevRewards.cleared,
@@ -826,7 +837,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
     const serverDoneAfter = siblings.length > 0 && siblings.every(l => next.progress.completedLevels.includes(l.id));
     if (chapterDef && serverDoneAfter && !rewards.chapterRewards.includes(chapterDef.id)) {
       rewards.chapterRewards.push(chapterDef.id);
-      rewards.credits += chapterDef.credits;
+      rewards.credits = safeCredits(rewards.credits + chapterDef.credits);
       if (chapterDef.skins && chapterDef.skins.length) rewards.skins = [...new Set([...rewards.skins, ...chapterDef.skins])];
       if (chapterDef.items) {
         for (const [k, v] of Object.entries(chapterDef.items)) rewards.items[k] = (rewards.items[k] || 0) + v;
@@ -868,6 +879,16 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       ...(prev.progress.challengeSessions || {}),
       [levelId]: settle(sessionBase, settlement),
     });
+
+    // A6 奖励账本：首通入账一次；重复通关只记录星级补偿；章节奖励独立入账
+    const ledgerAt = settleNow;
+    rewards.ledger = appendLedger(rewards.ledger, { kind: 'level', ref: levelId, credits: breakdown.total, exp: expGain, at: ledgerAt });
+    if (!firstTime && (breakdown.improvement || 0) > 0) {
+      rewards.ledger = appendLedger(rewards.ledger, { kind: 'level-repeat', ref: levelId + ':' + stars, credits: breakdown.improvement || 0, exp: 0, at: ledgerAt });
+    }
+    if (chapterRewardPayload) {
+      rewards.ledger = appendLedger(rewards.ledger, { kind: 'chapter', ref: chapterRewardPayload.id, credits: chapterRewardPayload.credits, exp: 0, at: ledgerAt });
+    }
 
     next.rewards = rewards;
 
@@ -1055,6 +1076,13 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       next = dc.player;
       next = {
         ...next,
+        rewards: {
+          ...normalizeRewards(next.rewards),
+          ledger: appendLedger(normalizeRewards(next.rewards).ledger, {
+            kind: 'difficulty', ref: bossId + ':' + difficulty,
+            credits: dc.credits, exp: dc.exp,
+          }),
+        },
         progress: { ...next.progress, challengeSessions: passedBossSessionsFor(next, bossId, dc.exp, dc.credits) },
       };
       playerRef.current = next;
@@ -1087,8 +1115,19 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
       toast('warn', '首胜事务未执行：' + firstClear.reason);
     }
     // Boss 会话结算：无论是否首胜，本次战斗都算一次通过的挑战（不发额外奖励）
+    const bossRw = normalizeRewards(next.rewards);
+    let bossLedger = appendLedger(bossRw.ledger, {
+      kind: 'boss', ref: bossId, credits: payload?.credits || 0, exp: payload?.expGained || 0,
+    });
+    if (payload && (payload.difficultyCredits > 0 || payload.difficultyExp > 0)) {
+      bossLedger = appendLedger(bossLedger, {
+        kind: 'difficulty', ref: bossId + ':' + difficulty,
+        credits: payload.difficultyCredits, exp: payload.difficultyExp,
+      });
+    }
     next = {
       ...next,
+      rewards: { ...bossRw, ledger: bossLedger },
       progress: {
         ...next.progress,
         challengeSessions: passedBossSessionsFor(next, bossId, payload?.expGained || 0, payload?.credits || 0),

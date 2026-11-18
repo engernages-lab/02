@@ -118,7 +118,7 @@ async function enterMenu(h) {
 
   const raw1 = dom.window.localStorage.getItem('nexus_code_repair_save_v1');
   const save1 = JSON.parse(raw1);
-  ok(save1.version === 9, '旧存档已迁移为 v9', 'version=' + save1.version);
+  ok(save1.version === 10, '旧存档已迁移为 v10', 'version=' + save1.version);
   ok(save1.player.level === 3 && save1.player.exp === 390, '迁移保留等级与经验');
   ok(JSON.stringify(save1.player.progress.completedLevels) === JSON.stringify(['tut-1', '1-1']), '迁移保留通关记录');
   ok(save1.player.progress.flags.chapter1ZeroFail === true, '迁移保留 flags 语义');

@@ -4,6 +4,8 @@ import { defaultIdentity, normalizeIdentity } from '../game/identity';
 import { normalizeStoryReadState, defaultStoryReadState } from '../game/lore/events';
 import { normalizeStoryVars } from '../game/lore/vars';
 import { defaultRewards, normalizeRewards } from '../game/rewards';
+import { safeExp } from '../game/economyConfig';
+import { levelForExp } from '../game/progression';
 import { DEFAULT_VOICE, normalizeVoice } from './voice';
 import { CURRENT_SAVE_VERSION, migrateSave } from './migrations';
 import { normalizeChapterProgress } from '../game/chapterFlow';
@@ -93,6 +95,9 @@ export function normalizePlayerState(raw: PlayerState, fromVersion?: number): Pl
     ...raw,
     name: identity.displayName,
     identity,
+    exp: safeExp(raw.exp),
+    level: levelForExp(safeExp(raw.exp)),
+    consciousness: Math.max(0, Math.min(100, Math.floor(Number(raw.consciousness) || 0))),
     meta: {
       ...raw.meta,
       memoryFragments: Array.isArray(raw.meta?.memoryFragments) ? raw.meta.memoryFragments : [],

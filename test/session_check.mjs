@@ -139,7 +139,7 @@ console.log('=== G. 脏数据 / 旧数据兼容 ===');
 
 console.log('=== H. 存档迁移 v7 → v8 ===');
 {
-  ok(CURRENT_SAVE_VERSION === 9, '当前存档版本为 9', String(CURRENT_SAVE_VERSION));
+  ok(CURRENT_SAVE_VERSION === 10, '当前存档版本为 10', String(CURRENT_SAVE_VERSION));
   const r = migrateSave({
     version: 7,
     player: {

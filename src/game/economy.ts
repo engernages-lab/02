@@ -3,6 +3,31 @@
 import type { Grade } from './rewards';
 import { gradeOf } from './rewards';
 import type { BossDifficulty } from './difficulty';
+import { LEVEL_XP, MAX_LEVEL } from './progression';
+import { ECONOMY, safeCredits, safeExp } from './economyConfig';
+
+export {
+  ECONOMY, safeCredits, safeExp,
+  MAX_LEDGER, ledgerId, hasLedger, appendLedger, normalizeLedger,
+} from './economyConfig';
+export type { LedgerKind, RewardLedgerEntry } from './economyConfig';
+
+/** 升级曲线自检：单调、首级门槛、末级门槛、增长倍率 */
+export function auditLevelCurve(): { ok: boolean; issues: string[] } {
+  const issues: string[] = [];
+  if (LEVEL_XP.length !== MAX_LEVEL) issues.push('LEVEL_XP 长度与 MAX_LEVEL 不一致');
+  if (LEVEL_XP[0] !== 0) issues.push('Lv.1 门槛必须为 0');
+  for (let i = 1; i < LEVEL_XP.length; i++) {
+    if (LEVEL_XP[i] <= LEVEL_XP[i - 1]) issues.push('Lv.' + (i + 1) + ' 门槛未递增');
+  }
+  const firstDelta = LEVEL_XP[1] - LEVEL_XP[0];
+  if (firstDelta > ECONOMY.curve.firstMax) issues.push('首级门槛过高：' + firstDelta);
+  const lastDelta = LEVEL_XP[LEVEL_XP.length - 1] - LEVEL_XP[LEVEL_XP.length - 2];
+  if (lastDelta > ECONOMY.curve.lastMax) issues.push('末级门槛过高：' + lastDelta);
+  const ratio = firstDelta > 0 ? lastDelta / firstDelta : 0;
+  if (ratio > ECONOMY.curve.growthRatioMax) issues.push('单级门槛增长倍率过高：' + ratio.toFixed(1));
+  return { ok: issues.length === 0, issues };
+}
 
 export interface LevelRewardInput {
   levelExp: number;
@@ -27,7 +52,7 @@ export interface LevelRewardResult {
 }
 
 /** 重复通关的收益上限：每提升一颗星给 6 贡献点，最多两颗星 */
-export const IMPROVEMENT_PER_STAR = 6;
+export const IMPROVEMENT_PER_STAR = ECONOMY.level.improvementPerStar;
 
 /**
  * 关卡结算：
@@ -35,17 +60,20 @@ export const IMPROVEMENT_PER_STAR = 6;
  * - 重复：不计基础收益，只在星级提升时给少量补偿（防止刷关刷资源）。
  */
 export function computeLevelRewardV2(input: LevelRewardInput): LevelRewardResult {
+  const L = ECONOMY.level;
   const { levelExp, fails, hints, firstClear, prevStars, newStars } = input;
   const grade = gradeOf(fails, hints);
-  const base = firstClear ? Math.max(15, Math.round(levelExp / 3)) : 0;
-  const firstClearBonus = firstClear ? 30 : 0;
-  const noFail = firstClear && fails <= 0 ? 10 : 0;
-  const noHint = firstClear && hints <= 0 ? 10 : 0;
-  const gradeBonus = firstClear ? (grade === 'S' ? 20 : grade === 'A' ? 12 : grade === 'B' ? 6 : 0) : 0;
+  const base = firstClear ? Math.max(L.baseMin, Math.round(levelExp / L.baseDivisor)) : 0;
+  const firstClearBonus = firstClear ? L.firstClear : 0;
+  const noFail = firstClear && fails <= 0 ? L.noFail : 0;
+  const noHint = firstClear && hints <= 0 ? L.noHint : 0;
+  const gradeBonus = firstClear ? (grade === 'S' ? L.gradeS : grade === 'A' ? L.gradeA : grade === 'B' ? L.gradeB : 0) : 0;
   const gained = Math.max(0, newStars - prevStars);
-  const improvement = firstClear ? 0 : Math.min(2, gained) * IMPROVEMENT_PER_STAR;
+  const improvement = firstClear ? 0 : Math.min(L.improvementMaxStars, gained) * L.improvementPerStar;
   const total = base + firstClearBonus + noFail + noHint + gradeBonus + improvement;
-  const trustGain = firstClear ? (2 + (grade === 'S' ? 1 : 0) + 1) : (improvement > 0 ? 1 : 0);
+  const trustGain = firstClear
+    ? (L.trustFirst + (grade === 'S' ? L.trustS : 0) + L.trustFirstExtra)
+    : (improvement > 0 ? L.trustImprove : 0);
   return { grade, base, firstClearBonus, noFail, noHint, gradeBonus, improvement, total, trustGain };
 }
 

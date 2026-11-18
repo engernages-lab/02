@@ -383,6 +383,9 @@ export default function RewardCenterPage() {
               <div className="sd-effect"><span>实际功能</span><b>{detail.effect}</b></div>
               <div className="sd-kv"><span>单价</span><b>◈ {detail.price}</b></div>
               <div className="sd-kv"><span>当前余额</span><b>◈ {rw.credits}</b></div>
+              {stateOf(detail, qty) === 'insufficient' && (
+                <div className="sd-hint">还差 ◈ {detail.price * qty - rw.credits} 贡献点 · 首次通关或挑战高难关卡可获得更多</div>
+              )}
               <div className="sd-kv"><span>购买限制</span><b>限购 {maxOwnOf(detail)} 件 · 已购 {rw.purchases[detail.id] || 0}</b></div>
               {detail.kind !== 'permanent' && detail.kind !== 'equipment' && (
                 <div className="sd-qty">

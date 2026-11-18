@@ -17,9 +17,10 @@ import { normalizeStoryReadState } from '../game/lore/events';
 import { normalizeStoryVars } from '../game/lore/vars';
 import { normalizeSessions } from '../game/challengeSession';
 import { normalizeRewards } from '../game/rewards';
+import { safeCredits, safeExp } from '../game/economyConfig';
 
 /** 当前存档版本 */
-export const CURRENT_SAVE_VERSION = 9;
+export const CURRENT_SAVE_VERSION = 10;
 
 interface MigrationStep {
   /** 迁移到的目标版本 */
@@ -148,6 +149,15 @@ const STEPS: MigrationStep[] = [
     name: 'v8→v9：商城交易记录 / 限购计数 / 道具增益',
     run: (p) => ({
       ...p,
+      rewards: normalizeRewards(p && typeof p === 'object' ? (p as AnyPlayer).rewards : undefined),
+    }),
+  },
+  {
+    to: 10,
+    name: 'v9→v10：奖励账本 / 货币与经验上限保护',
+    run: (p) => ({
+      ...p,
+      exp: safeExp(p && typeof p === 'object' ? (p as AnyPlayer).exp : 0),
       rewards: normalizeRewards(p && typeof p === 'object' ? (p as AnyPlayer).rewards : undefined),
     }),
   },

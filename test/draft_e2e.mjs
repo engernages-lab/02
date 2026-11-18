@@ -66,7 +66,7 @@ function saveSeed(createdAt = 1700000000000) {
       name: 'R-07',
       identity: { displayName: 'R-07', originCode: 'R-07', renamed: false, createdAt },
       level: 5,
-      exp: 1040,
+      exp: 1000,
       consciousness: 100,
       meta: { deaths: 0, rebirths: 0, lastDeathLevel: null, lastDeathReason: null, memoryFragments: [], memoryLogs: [], fragmentLog: {}, backupLevel: 1 },
       progress: {
@@ -275,8 +275,8 @@ const curLines = (h) => {
   const saved = JSON.parse(dom.window.localStorage.getItem(SAVE_KEY));
   ok(JSON.stringify(saved.player.progress.completedLevels) === JSON.stringify(['tut-1', '1-1', '1-2']), '草稿操作不影响已通关记录');
   ok(saved.player.progress.stars['1-1'] === 3 && saved.player.progress.stars['1-2'] === 2, '星级记录保持不变');
-  ok(saved.player.level === 5 && saved.player.exp === 1040, '等级与经验保持不变');
-  ok(saved.version === 9, '存档版本 v9（A5 新增商城交易）');
+  ok(saved.player.level === 5 && saved.player.exp === 1000, '等级与经验保持不变');
+  ok(saved.version === 10, '存档版本 v10（A6 奖励账本）');
 
   console.log('=== 第九轮：刷新后恢复 ===');
   const snapshot = storageSnapshot(dom);

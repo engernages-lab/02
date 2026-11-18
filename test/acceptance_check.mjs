@@ -54,7 +54,7 @@ for (const v of [1, 2, 3, 4, 5]) {
   check(imp.state.rewards.credits === 120 && imp.state.rewards.trust === 20, 'v' + v + ' 保留贡献点/信任度');
 }
 const v1 = SV.importSave(base(1));
-check(SV.SAVE_VERSION === 9, '当前存档版本 9');
+check(SV.SAVE_VERSION === 10, '当前存档版本 10');
 check(v1.state.progress.story && typeof v1.state.progress.story.unlocked !== 'undefined', 'v1 补齐剧情结构');
 check(Array.isArray(v1.state.progress.endings) && v1.state.progress.vault, 'v1 补齐结局/档案馆字段');
 

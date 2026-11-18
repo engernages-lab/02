@@ -164,7 +164,7 @@ eq(EV.eventReadProgress(s4, ['p1', 'p2']), { read: 1, total: 2 }, '事件阅读�
 check(EV.storyEventById('chapter-6').chapter === 'ch6', '剧情事件注册表包含终章');
 
 console.log('=== 10. 存档迁移（v1 → v2） ===');
-check(SV.SAVE_VERSION === 9, '当前存档版本为 v9');
+check(SV.SAVE_VERSION === 10, '当前存档版本为 v10');
 const v1Player = {
   name: 'R-07', level: 2, exp: 150, consciousness: 90,
   meta: { deaths: 1, rebirths: 0, lastDeathLevel: '1-1', lastDeathReason: '测试', memoryFragments: ['f3'], backupLevel: 1 },

@@ -78,7 +78,7 @@ check(F.finalMemoryUnlocked(['frag-01', 'frag-02', 'frag-03', 'frag-04', 'frag-0
 check(F.finalMemoryUnlocked(['f1', 'f2', 'f3', 'f4', 'f5', 'f6', 'f7']) === true, '旧档 7 枚碎片同样解锁');
 
 console.log('=== 5. 存档 v6 迁移 ===');
-check(SV.SAVE_VERSION === 9, '当前存档版本为 v9');
+check(SV.SAVE_VERSION === 10, '当前存档版本为 v10');
 const v5Player = {
   name: 'R-07',
   identity: { displayName: 'R-07', originCode: 'R-07', renamed: false, createdAt: 1 },

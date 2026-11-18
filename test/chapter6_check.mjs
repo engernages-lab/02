@@ -62,7 +62,7 @@ console.log('=== 3. 碎片与迁移 ===');
 const frag = F.fragmentById('frag-06');
 check(frag && frag.title === '起源之外', '第六枚碎片名称正确');
 check(frag.order === 6, '碎片顺序为 4');
-check(SV.SAVE_VERSION === 9, '存档版本 v9');
+check(SV.SAVE_VERSION === 10, '存档版本 v10');
 const imp = SV.importSave(JSON.stringify({ version: 6, updatedAt: 1, player: {
   name: 'R-07', identity: { displayName: 'R-07', originCode: 'R-07', renamed: false, createdAt: 1 },
   level: 6, exp: 1200, consciousness: 100,
