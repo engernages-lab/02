@@ -55,7 +55,7 @@ export function safeExp(v: unknown): number {
 
 // ---------- 奖励账本：每次入账都有唯一标识 ----------
 
-export type LedgerKind = 'level' | 'level-repeat' | 'boss' | 'chapter' | 'difficulty';
+export type LedgerKind = 'level' | 'level-repeat' | 'boss' | 'chapter' | 'difficulty' | 'challenge';
 
 export interface RewardLedgerEntry {
   id: string;

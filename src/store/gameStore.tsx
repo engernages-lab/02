@@ -29,13 +29,36 @@ import { slotOf, skinMetaById } from '../game/cosmetics';
 import { play, setVolumes, startMusic, stopMusic, isMusicOn } from '../services/sound';
 import { clearAllDrafts } from '../services/drafts';
 import {
-  beginSession, createSession, countRun, countSubmit, countError, settle,
+  beginSession, createSession, countRun, countSubmit, countHint, countError, settle,
   buildPassedSettlement, buildFailedSettlement, normalizeSessions,
   type ChallengeSession, type ChallengeSettlement, type ChallengeKind,
 } from '../game/challengeSession';
+import {
+  createChallengeRun, normalizeChallengeRuns,
+  recordRun as runCountRun, recordSubmit as runCountSubmit, recordHint as runCountHint,
+  complete as runComplete, cancel as runCancel,
+  canRun as runCanRun, canSubmit as runCanSubmit, canHint as runCanHint,
+  remainingMs, isTimedOut, fixBug, completeStage, markHiddenTest, allStagesDone,
+  type ChallengeRunState,
+} from '../game/challengeEngine';
+import { independentChallengeById } from '../game/challengeTemplates';
+import type { ChallengeDef } from '../game/challengeTypes';
+import {
+  tryTrigger, advance as evAdvance, resolve as evResolve, cancelEvent as evCancel,
+  recoverException as evRecover, dismiss as evDismiss,
+  normalizeEventState, normalizeCooldowns, eventDefById, isBlocking as evIsBlocking,
+  type EngineSnapshot, type DynamicEventState,
+} from '../game/eventEngine';
+import {
+  registerUnknownIntrusion, UNKNOWN_INTRUSION_ID,
+  intrusionDataOf, defaultIntrusionData, INTRUSION_RECOVER_STEPS,
+} from '../game/events/unknownIntrusion';
 import { purchaseItem, useItem as applyUseItem, equipItemById, unequipSlot } from '../game/shopTx';
 import type { ShopTransaction, EquipSlot } from '../game/shop';
 import { appendLedger, safeCredits } from '../game/economy';
+import { safeExp } from '../game/economyConfig';
+
+registerUnknownIntrusion();
 
 function chapterIndexForServer(serverId: string): number {
   const map: Record<string, number> = { syntax: 1, logs: 2, storage: 3, factory: 4, diag: 5, core: 6 };
@@ -72,6 +95,61 @@ function passedBossSessionsFor(p: PlayerState, bossId: string, expGain: number, 
     creditsGained: creditsGain,
   });
   return { ...sessions, [bossId]: settle(cur, settlement) };
+}
+
+/** 独立挑战通过结算：经验 / 贡献点按奖励系数入账，会话与运行状态各只结算一次 */
+function settleChallengePass(
+  p: PlayerState,
+  challengeId: string,
+  run: ChallengeRunState,
+  def: ChallengeDef,
+  now: number,
+): { player: PlayerState; settlement: ChallengeSettlement; expGained: number; creditsGained: number } {
+  const mult = run.rewardMultiplier && isFinite(run.rewardMultiplier) ? run.rewardMultiplier : 1;
+  const expGained = Math.max(0, Math.round((def.rewardExp || 0) * mult));
+  const creditsGained = Math.max(0, Math.round((def.rewardExp || 0) * 2 * mult));
+  const expBefore = p.exp;
+  const expAfter = safeExp(p.exp + expGained);
+  const levelAfter = levelForExp(expAfter);
+  const sessionBase = beginSession(
+    p.progress.challengeSessions?.[challengeId] || null, challengeId, 'level', now, toleranceFor(p.level),
+  );
+  const settlement = buildPassedSettlement(sessionBase, {
+    now, levelBefore: p.level, levelAfter, expBefore, expAfter, creditsGained,
+  });
+  const rw = normalizeRewards(p.rewards);
+  const player: PlayerState = {
+    ...p,
+    exp: expAfter,
+    level: levelAfter,
+    rewards: {
+      ...rw,
+      credits: safeCredits(rw.credits + creditsGained),
+      ledger: appendLedger(rw.ledger, { kind: 'challenge', ref: challengeId, credits: creditsGained, exp: expGained, at: now }),
+    },
+    progress: {
+      ...p.progress,
+      challengeRuns: { ...(p.progress.challengeRuns || {}), [challengeId]: runComplete(run, now, 'passed') },
+      challengeSessions: normalizeSessions({ ...(p.progress.challengeSessions || {}), [challengeId]: settle(sessionBase, settlement) }),
+    },
+  };
+  return { player, settlement, expGained, creditsGained };
+}
+
+/** 独立挑战失败结算（超时 / 提交次数用尽 / 放弃）：只结算一次，独立挑战不惩罚意识值 */
+function settleChallengeFailed(p: PlayerState, challengeId: string, run: ChallengeRunState, reason: string, now: number): PlayerState {
+  const sessionBase = beginSession(
+    p.progress.challengeSessions?.[challengeId] || null, challengeId, 'level', now, toleranceFor(p.level),
+  );
+  const settlement = buildFailedSettlement(sessionBase, { now, reason, levelNow: p.level, expNow: p.exp, consciousnessLoss: 0 });
+  return {
+    ...p,
+    progress: {
+      ...p.progress,
+      challengeRuns: { ...(p.progress.challengeRuns || {}), [challengeId]: runComplete(run, now, 'failed') },
+      challengeSessions: normalizeSessions({ ...(p.progress.challengeSessions || {}), [challengeId]: settle(sessionBase, settlement) }),
+    },
+  };
 }
 
 export interface CompletePayload {
@@ -134,6 +212,22 @@ export interface BossAttackResult {
   toleranceTriggered?: boolean;
 }
 
+/** 独立挑战提交结果（由 store 统一执行真实判题 + 单次结算） */
+export interface ChallengeSubmitResult {
+  status: 'blocked' | 'timeout' | 'error' | 'fail' | 'pass';
+  reason?: string;
+  run?: RunOutcomeShape;
+  verdict?: JudgeVerdict;
+  settlement?: ChallengeSettlement;
+  expGained?: number;
+  creditsGained?: number;
+  /** 隐藏测试通过/总数（只暴露数量，绝不暴露表达式） */
+  hiddenPassed?: number;
+  hiddenTotal?: number;
+  /** 结算后的运行状态（供页面刷新展示） */
+  runState?: ChallengeRunState | null;
+}
+
 interface GameCtx {
   player: PlayerState;
   screen: Screen;
@@ -147,6 +241,9 @@ interface GameCtx {
   startNewGame: () => void;
   setCurrentLevel: (id: string | null) => void;
   setCurrentBoss: (id: string | null) => void;
+  /** 当前选中的独立挑战 id（导航用，不写入存档） */
+  currentChallengeId: string | null;
+  setCurrentChallenge: (id: string | null) => void;
   completeBoss: (bossId: string) => BossFirstClearPayload | null;
   beginBossBattle: (bossId: string, difficulty?: BossDifficulty) => BossBattleState | null;
   /** 难度选择界面「开始挑战」：按所选难度重置整场战斗（已首胜则为模拟再战） */
@@ -192,6 +289,36 @@ interface GameCtx {
   recordRun: (id: string) => void;
   /** 正式提交一次（只影响本会话的提交次数） */
   recordSubmit: (id: string) => void;
+  /** 独立挑战：进入/恢复运行状态（进行中保留，已终结则新开） */
+  enterChallenge: (challengeId: string) => ChallengeRunState | null;
+  /** 读取当前运行状态（只读） */
+  challengeRunOf: (challengeId: string) => ChallengeRunState | null;
+  /** 预览运行一次（诊断，不等于提交） */
+  recordChallengeRun: (challengeId: string) => boolean;
+  /** 消耗一次挑战提示 */
+  recordChallengeHint: (challengeId: string) => boolean;
+  /** 唯一提交入口：真实判题 + 单次结算 */
+  submitChallenge: (challengeId: string, code: string) => Promise<ChallengeSubmitResult>;
+  /** 放弃当前挑战（正确清理） */
+  cancelChallenge: (challengeId: string) => void;
+  /** 限时挑战到期：一次性结算失败（幂等） */
+  timeoutChallenge: (challengeId: string) => boolean;
+  /** 动态事件：触发 */
+  triggerDynamicEvent: (defId: string) => { ok: boolean; reason?: string };
+  /** 动态事件：推进生命周期（presenting→active / active→超时） */
+  advanceDynamicEvent: () => void;
+  /** 动态事件：正常完成 */
+  completeDynamicEvent: () => void;
+  /** 动态事件：玩家退出 */
+  abandonDynamicEvent: () => void;
+  /** 动态事件：异常恢复 */
+  recoverDynamicEvent: () => void;
+  /** 动态事件：清理（dismiss） */
+  dismissDynamicEvent: () => void;
+  /** 入侵：完成一次隔离确认步 */
+  confirmIntrusionStep: () => { ok: boolean; complete: boolean; missesLeft: number };
+  /** 入侵：误触一次（失误计数，耗尽则强制解除） */
+  missIntrusionStep: () => { missesLeft: number; forcedOut: boolean };
   resetAttempts: (levelId: string) => void;
   hintUsed: (levelId: string) => number;
   resolveDefense: (ok: boolean) => void;
@@ -226,6 +353,7 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   const [saveCorrupted] = useState<string | null>(boot.corrupted || null);
   const [hasSave, setHasSave] = useState<boolean>(!boot.fresh);
   const [respawnTick, setRespawnTick] = useState(0);
+  const [currentChallengeId, setCurrentChallengeId] = useState<string | null>(null);
   const playerRef = useRef(player);
   playerRef.current = player;
   const eventRef = useRef(event);
@@ -293,6 +421,8 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   const setCurrentBoss = useCallback((id: string | null) => {
     setPlayer(p => ({ ...p, progress: { ...p.progress, currentBossId: id } }));
   }, []);
+
+  const setCurrentChallenge = useCallback((id: string | null) => setCurrentChallengeId(id), []);
 
   /**
    * 同步提交：立即用最新状态计算并写入，同时更新 playerRef。
@@ -714,6 +844,344 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
 
   const recordRun = useCallback((id: string) => updateSession(id, countRun), [updateSession]);
   const recordSubmit = useCallback((id: string) => updateSession(id, countSubmit), [updateSession]);
+
+  // ---------- 独立挑战（V1.3-A）：运行状态机 + 会话结算 ----------
+  const enterChallenge = useCallback((challengeId: string): ChallengeRunState | null => {
+    const def = independentChallengeById(challengeId);
+    if (!def) return null;
+    const prev = playerRef.current;
+    const existing = prev.progress.challengeRuns?.[challengeId] || null;
+    // 进行中（active / paused）保留统计；已终结（completed/failed/cancelled）则新开一次
+    if (existing && (existing.status === 'active' || existing.status === 'paused')) return existing;
+    const run = createChallengeRun(challengeId, def.rules, {
+      now: Date.now(),
+      bugs: def.bugs,
+      stages: def.stages,
+      hiddenTests: def.hiddenTests,
+    });
+    const session = beginSession(prev.progress.challengeSessions?.[challengeId] || null, challengeId, 'level', Date.now(), toleranceFor(prev.level));
+    commitPlayer(p => ({
+      ...p,
+      progress: {
+        ...p.progress,
+        challengeRuns: { ...(p.progress.challengeRuns || {}), [challengeId]: run },
+        challengeSessions: normalizeSessions({ ...(p.progress.challengeSessions || {}), [challengeId]: session }),
+      },
+    }));
+    return run;
+  }, [commitPlayer]);
+
+  const challengeRunOf = useCallback((challengeId: string): ChallengeRunState | null =>
+    playerRef.current.progress.challengeRuns?.[challengeId] || null, []);
+
+  const recordChallengeRun = useCallback((challengeId: string): boolean => {
+    const prev = playerRef.current;
+    const run = prev.progress.challengeRuns?.[challengeId] || null;
+    if (!run || !runCanRun(run)) return false;
+    commitPlayer(p => {
+      const sessions = p.progress.challengeSessions || {};
+      const session = beginSession(sessions[challengeId] || null, challengeId, 'level', Date.now(), toleranceFor(p.level));
+      return {
+        ...p,
+        progress: {
+          ...p.progress,
+          challengeRuns: { ...(p.progress.challengeRuns || {}), [challengeId]: runCountRun((p.progress.challengeRuns || {})[challengeId] || run) },
+          challengeSessions: { ...sessions, [challengeId]: countRun(session) },
+        },
+      };
+    });
+    return true;
+  }, [commitPlayer]);
+
+  const recordChallengeHint = useCallback((challengeId: string): boolean => {
+    const prev = playerRef.current;
+    const run = prev.progress.challengeRuns?.[challengeId] || null;
+    if (!run || !runCanHint(run)) return false;
+    commitPlayer(p => {
+      const sessions = p.progress.challengeSessions || {};
+      const session = beginSession(sessions[challengeId] || null, challengeId, 'level', Date.now(), toleranceFor(p.level));
+      return {
+        ...p,
+        progress: {
+          ...p.progress,
+          challengeRuns: { ...(p.progress.challengeRuns || {}), [challengeId]: runCountHint((p.progress.challengeRuns || {})[challengeId] || run) },
+          challengeSessions: { ...sessions, [challengeId]: countHint(session) },
+        },
+      };
+    });
+    return true;
+  }, [commitPlayer]);
+
+  const cancelChallenge = useCallback((challengeId: string) => {
+    const prev = playerRef.current;
+    const run = prev.progress.challengeRuns?.[challengeId] || null;
+    if (!run || (run.status !== 'active' && run.status !== 'paused')) return;
+    commitPlayer(p => settleChallengeFailed(p, challengeId, (p.progress.challengeRuns || {})[challengeId] || run, '放弃挑战', Date.now()));
+  }, [commitPlayer]);
+
+  const timeoutChallenge = useCallback((challengeId: string): boolean => {
+    const prev = playerRef.current;
+    const run = prev.progress.challengeRuns?.[challengeId] || null;
+    if (!run || !isTimedOut(run, Date.now())) return false;
+    commitPlayer(p => settleChallengeFailed(p, challengeId, (p.progress.challengeRuns || {})[challengeId] || run, '挑战超时', Date.now()));
+    play('error');
+    return true;
+  }, [commitPlayer]);
+
+  /** 唯一提交入口：真实判题 + 单次结算。隐藏测试只回传数量，绝不回传表达式。 */
+  const submitChallenge = useCallback(async (challengeId: string, code: string): Promise<ChallengeSubmitResult> => {
+    const def = independentChallengeById(challengeId);
+    if (!def) return { status: 'blocked', reason: '未知挑战' };
+    const prev = playerRef.current;
+    const run = prev.progress.challengeRuns?.[challengeId] || null;
+    if (!run || run.status !== 'active') return { status: 'blocked', reason: '挑战未在进行中，请先进入挑战' };
+    const now = Date.now();
+    if (isTimedOut(run, now)) {
+      const next = settleChallengeFailed(prev, challengeId, run, '挑战超时', now);
+      commitPlayer(() => next);
+      play('error');
+      return { status: 'timeout', reason: '挑战超时', runState: next.progress.challengeRuns?.[challengeId] || null };
+    }
+    const ck = checkUserCode(code);
+    if (!ck.allowed) return { status: 'blocked', reason: '安全策略阻止：' + ck.reason };
+    if (!runCanSubmit(run)) {
+      const next = settleChallengeFailed(prev, challengeId, run, '提交次数用尽', now);
+      commitPlayer(() => next);
+      play('error');
+      return { status: 'fail', reason: '提交次数用尽', runState: next.progress.challengeRuns?.[challengeId] || null };
+    }
+
+    // 提交消耗 1 次提交 + 1 次运行（与普通关卡一致）
+    const counted = commitPlayer(p => {
+      const sessions = p.progress.challengeSessions || {};
+      const curRun = (p.progress.challengeRuns || {})[challengeId] || run;
+      const session = countSubmit(countRun(beginSession(sessions[challengeId] || null, challengeId, 'level', Date.now(), toleranceFor(p.level))));
+      return {
+        ...p,
+        progress: {
+          ...p.progress,
+          challengeRuns: { ...(p.progress.challengeRuns || {}), [challengeId]: runCountSubmit(runCountRun(curRun)) },
+          challengeSessions: { ...sessions, [challengeId]: session },
+        },
+      };
+    });
+    let countedRun = counted.progress.challengeRuns?.[challengeId] || run;
+
+    const publicChecks = def.judge.judgeKind === 'python' ? (def.judge.pythonChecks || []) : [];
+    const hiddenChecks = def.hiddenChecks || [];
+    const combined = def.judge.judgeKind === 'python'
+      ? combineWithHarness(code, buildHarness(publicChecks))
+      : code;
+
+    const r = await runPython(combined, { timeoutMs: 5000 });
+
+    const recordErrorAndMaybeSettle = (reason: string): PlayerState => {
+      const base = commitPlayer(p => {
+        const sessions = p.progress.challengeSessions || {};
+        const session = countError(beginSession(sessions[challengeId] || null, challengeId, 'level', Date.now(), toleranceFor(p.level)));
+        return { ...p, progress: { ...p.progress, challengeSessions: { ...sessions, [challengeId]: session } } };
+      });
+      const freshRun = base.progress.challengeRuns?.[challengeId] || countedRun;
+      if (!runCanSubmit(freshRun)) {
+        const settled = settleChallengeFailed(base, challengeId, freshRun, reason, Date.now());
+        commitPlayer(() => settled);
+        return settled;
+      }
+      return base;
+    };
+
+    if (r.timedOut) {
+      const next = recordErrorAndMaybeSettle('执行超时');
+      play('error');
+      return { status: 'timeout', run: r, reason: '执行超时', runState: next.progress.challengeRuns?.[challengeId] || null };
+    }
+    if (!r.ok) {
+      const next = recordErrorAndMaybeSettle(r.error ? r.error.type + ': ' + r.error.message : '执行出错');
+      play('error');
+      return { status: 'error', run: r, verdict: { passed: false, checks: [], error: r.error }, runState: next.progress.challengeRuns?.[challengeId] || null };
+    }
+
+    const publicVerdict = judgeRun(def.judge, r);
+    let hiddenPassed = 0;
+    const hiddenTotal = hiddenChecks.length;
+    let hiddenVerdict: JudgeVerdict | null = null;
+    if (hiddenTotal > 0) {
+      const hr = await runPython(combineWithHarness(code, buildHarness(hiddenChecks)), { timeoutMs: 5000 });
+      if (hr.ok) {
+        hiddenVerdict = judgeRun({ judgeKind: 'python', pythonChecks: hiddenChecks }, hr);
+        hiddenPassed = (hiddenVerdict.checks || []).filter(c => c.ok).length;
+      }
+    }
+    const hiddenOk = hiddenTotal === 0 || hiddenPassed === hiddenTotal;
+    const publicOk = publicVerdict.passed;
+
+    // 推进阶段 / 连锁 Bug / 隐藏测试状态（只影响本次运行状态）
+    let nextRun = countedRun;
+    if (def.stages && def.stages.length) {
+      for (const s of def.stages) {
+        const cur = nextRun.stages.find(x => x.id === s.id);
+        if (cur && cur.done) continue;
+        const done = s.id === 'stage-syntax' ? true
+          : s.id === 'stage-logic' ? publicOk
+          : s.id === 'stage-hidden' ? hiddenOk
+          : publicOk;
+        if (done) nextRun = completeStage(nextRun, s.id);
+      }
+    }
+    if (publicOk) {
+      for (const b of nextRun.bugs) if (!b.fixed) nextRun = fixBug(nextRun, b.id);
+    }
+    if (hiddenVerdict && def.hiddenTests) {
+      for (let i = 0; i < def.hiddenTests.length; i++) {
+        const ht = def.hiddenTests[i];
+        const check = hiddenVerdict.checks?.[i];
+        if (ht && check) nextRun = markHiddenTest(nextRun, ht.id, check.ok);
+      }
+    }
+
+    let overall = publicOk && hiddenOk;
+    if (def.stages && def.stages.length) overall = allStagesDone(nextRun);
+
+    if (overall) {
+      const res = settleChallengePass(counted, challengeId, nextRun, def, now);
+      commitPlayer(() => res.player);
+      play('success');
+      toast('achieve', '挑战完成：' + def.title + '（+' + res.expGained + ' 经验，+' + res.creditsGained + ' 贡献点）');
+      return {
+        status: 'pass', run: r, verdict: publicVerdict, settlement: res.settlement,
+        expGained: res.expGained, creditsGained: res.creditsGained,
+        hiddenPassed, hiddenTotal, runState: res.player.progress.challengeRuns?.[challengeId] || null,
+      };
+    }
+
+    // 失败但未终结：记录失误；提交次数用尽则结算失败
+    if (!runCanSubmit(nextRun)) {
+      const next = settleChallengeFailed(counted, challengeId, nextRun, '提交次数用尽', now);
+      commitPlayer(() => next);
+      play('error');
+      return { status: 'fail', reason: '提交次数用尽', run: r, verdict: publicVerdict, hiddenPassed, hiddenTotal, runState: next.progress.challengeRuns?.[challengeId] || null };
+    }
+    const nextPlayer = commitPlayer(p => {
+      const sessions = p.progress.challengeSessions || {};
+      const session = countError(beginSession(sessions[challengeId] || null, challengeId, 'level', now, toleranceFor(p.level)));
+      return {
+        ...p,
+        progress: {
+          ...p.progress,
+          challengeRuns: { ...(p.progress.challengeRuns || {}), [challengeId]: nextRun },
+          challengeSessions: { ...sessions, [challengeId]: session },
+        },
+      };
+    });
+    play('error');
+    return { status: 'fail', run: r, verdict: publicVerdict, hiddenPassed, hiddenTotal, runState: nextPlayer.progress.challengeRuns?.[challengeId] || nextRun };
+  }, [commitPlayer, toast]);
+
+  // ---------- 动态事件引擎（V1.3-A A3/A4） ----------
+  const snapshotOf = useCallback((): EngineSnapshot => {
+    const p = playerRef.current;
+    return { current: p.progress.dynamicEvent ?? null, cooldowns: p.progress.eventCooldowns ?? {} };
+  }, []);
+
+  const commitSnapshot = useCallback((snap: EngineSnapshot) => {
+    commitPlayer(p => ({
+      ...p,
+      progress: { ...p.progress, dynamicEvent: snap.current, eventCooldowns: normalizeCooldowns(snap.cooldowns) },
+    }));
+  }, [commitPlayer]);
+
+  const advanceDynamicEvent = useCallback(() => {
+    const snap = snapshotOf();
+    const next = evAdvance(snap, Date.now());
+    if (next.current !== snap.current) commitSnapshot(next);
+  }, [snapshotOf, commitSnapshot]);
+
+  const completeDynamicEvent = useCallback(() => {
+    const snap = snapshotOf();
+    if (!evIsBlocking(snap.current)) return;
+    commitSnapshot(evResolve(snap, Date.now()));
+    play('success');
+  }, [snapshotOf, commitSnapshot]);
+
+  const abandonDynamicEvent = useCallback(() => {
+    const snap = snapshotOf();
+    if (!evIsBlocking(snap.current)) return;
+    commitSnapshot(evCancel(snap, Date.now()));
+    play('deny');
+  }, [snapshotOf, commitSnapshot]);
+
+  const recoverDynamicEvent = useCallback(() => {
+    const snap = snapshotOf();
+    commitSnapshot(evRecover(snap, Date.now()));
+  }, [snapshotOf, commitSnapshot]);
+
+  const dismissDynamicEvent = useCallback(() => {
+    const snap = snapshotOf();
+    if (!snap.current) return;
+    commitSnapshot(evDismiss(snap));
+  }, [snapshotOf, commitSnapshot]);
+
+  const confirmIntrusionStep = useCallback((): { ok: boolean; complete: boolean; missesLeft: number } => {
+    const p = playerRef.current;
+    const cur = p.progress.dynamicEvent;
+    if (!cur || cur.defId !== UNKNOWN_INTRUSION_ID || cur.status !== 'active') {
+      return { ok: false, complete: false, missesLeft: 0 };
+    }
+    const d = intrusionDataOf(cur.data);
+    const step = d.step + 1;
+    if (step >= INTRUSION_RECOVER_STEPS) {
+      completeDynamicEvent();
+      return { ok: true, complete: true, missesLeft: d.missesLeft };
+    }
+    commitPlayer(pp => ({
+      ...pp,
+      progress: {
+        ...pp.progress,
+        dynamicEvent: pp.progress.dynamicEvent ? { ...pp.progress.dynamicEvent, data: { step, missesLeft: d.missesLeft } } : null,
+      },
+    }));
+    play('click');
+    return { ok: true, complete: false, missesLeft: d.missesLeft };
+  }, [commitPlayer, completeDynamicEvent]);
+
+  const missIntrusionStep = useCallback((): { missesLeft: number; forcedOut: boolean } => {
+    const p = playerRef.current;
+    const cur = p.progress.dynamicEvent;
+    if (!cur || cur.defId !== UNKNOWN_INTRUSION_ID || cur.status !== 'active') {
+      return { missesLeft: 0, forcedOut: false };
+    }
+    const d = intrusionDataOf(cur.data);
+    const missesLeft = Math.max(0, d.missesLeft - 1);
+    if (missesLeft <= 0) {
+      abandonDynamicEvent();
+      return { missesLeft: 0, forcedOut: true };
+    }
+    commitPlayer(pp => ({
+      ...pp,
+      progress: {
+        ...pp.progress,
+        dynamicEvent: pp.progress.dynamicEvent ? { ...pp.progress.dynamicEvent, data: { step: d.step, missesLeft } } : null,
+      },
+    }));
+    play('deny');
+    return { missesLeft, forcedOut: false };
+  }, [commitPlayer, abandonDynamicEvent]);
+
+  const triggerDynamicEvent = useCallback((defId: string): { ok: boolean; reason?: string } => {
+    try {
+      const snap = snapshotOf();
+      const out = tryTrigger(snap, defId, Date.now(), { data: { ...defaultIntrusionData() } });
+      if (!out.ok) return { ok: false, reason: out.reason };
+      commitSnapshot(out.snapshot);
+      toast('warn', '未知入侵警报：检测到外部渗透，请立即隔离。');
+      play('threat');
+      return { ok: true };
+    } catch {
+      // 异常恢复：触发异常绝不锁死操作
+      recoverDynamicEvent();
+      return { ok: false, reason: '事件触发异常，已安全恢复' };
+    }
+  }, [snapshotOf, commitSnapshot, recoverDynamicEvent, toast]);
 
   /** 通关：经验、星级、知识卡片、关卡/服务器解锁、成就、升级 */
   const completeLevel = useCallback((levelId: string): CompletePayload | null => {
@@ -1318,11 +1786,14 @@ export function GameProvider({ children }: { children: React.ReactNode }) {
   const value: GameCtx = {
     player, screen, event, toasts, saveCorrupted, hasSave,
     tolerance: toleranceFor(player.level),
-    nav, toast, startNewGame, setCurrentLevel, setCurrentBoss, completeBoss,
+    nav, toast, startNewGame, setCurrentLevel, setCurrentBoss, currentChallengeId, setCurrentChallenge, completeBoss,
     beginBossBattle, startBossBattle, abandonBossBattle, bossRecord, submitBossAttack,
     chapterGateOf, serverGate, bossEntryGate, originCoreGateNow,
     recordBug, recordEnding, markVaultRead, markVaultFinalSeen, setVaultLastOpened,
     completeLevel, recordFail, beginChallenge, recordRun, recordSubmit,
+    enterChallenge, challengeRunOf, recordChallengeRun, recordChallengeHint, submitChallenge, cancelChallenge, timeoutChallenge,
+    triggerDynamicEvent, advanceDynamicEvent, completeDynamicEvent, abandonDynamicEvent, recoverDynamicEvent, dismissDynamicEvent,
+    confirmIntrusionStep, missIntrusionStep,
     buyShopItem, purchaseShopItem, useShopItem, equipItem, unequipItem, consumeHintTicket, consumeItem, restoreConsciousness, markArchiveRead,
     resetAttempts, hintUsed, resolveDefense, finishRebirth, startDeath,
     decrementAttackAttempt, triggerPendingDeath, wipeSave,

@@ -51,6 +51,7 @@ export default function MainMenu() {
   const grow: NavItem[] = [
     { id: 'knowledge', label: 'Python 知识库', icon: '◈', onClick: () => { play('click'); g.nav('knowledge'); } },
     { id: 'lab', label: '编程实验室', icon: '⌬', locked: !tutDone, onClick: () => { play('click'); if (tutDone) g.nav('lab'); else g.toast('warn', '编程实验室将在你完成新人训练终端后开放。'); } },
+    { id: 'challenges', label: '独立挑战', icon: '⚔', onClick: () => { play('click'); g.nav('challengehub'); } },
     { id: 'shop', label: '奖励兑换中心', icon: '◈', onClick: () => { play('click'); g.nav('shop'); } },
     { id: 'achievements', label: '成就系统', icon: '✧', onClick: () => { play('click'); g.nav('achievements'); } },
     { id: 'profile', label: '玩家档案', icon: '◉', onClick: () => { play('click'); g.nav('profile'); } },

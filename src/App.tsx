@@ -16,8 +16,11 @@ import EndingsPage from './pages/EndingsPage';
 import LabPage from './pages/LabPage';
 import BossPage from './pages/BossPage';
 import RewardCenterPage from './pages/RewardCenterPage';
+import ChallengeHubPage from './pages/ChallengeHubPage';
+import ChallengePlayPage from './pages/ChallengePlayPage';
 import AttackOverlay from './components/AttackOverlay';
 import RebirthOverlay from './components/RebirthOverlay';
+import IntrusionOverlay from './components/IntrusionOverlay';
 import { initAudio, startMusic, isMusicOn } from './services/sound';
 import { warmUp, onPyStatus, resetEngine, type PyState } from './services/pythonRunner';
 
@@ -85,6 +88,8 @@ function Shell() {
       {screen === 'lab' && <LabPage />}
       {screen === 'boss' && <BossPage />}
       {screen === 'shop' && <RewardCenterPage />}
+      {screen === 'challengehub' && <ChallengeHubPage />}
+      {screen === 'challengeplay' && <ChallengePlayPage />}
       {(py.status === 'loading' || py.status === 'error') && (
         <div
           className={'engine-badge ' + py.status}
@@ -103,6 +108,7 @@ function Shell() {
       </div>
       {event.kind === 'attack' && <AttackOverlay />}
       {event.kind === 'death' && <RebirthOverlay />}
+      <IntrusionOverlay />
     </div>
   );
 }

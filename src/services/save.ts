@@ -10,6 +10,9 @@ import { DEFAULT_VOICE, normalizeVoice } from './voice';
 import { CURRENT_SAVE_VERSION, migrateSave } from './migrations';
 import { normalizeChapterProgress } from '../game/chapterFlow';
 import { normalizeSessions } from '../game/challengeSession';
+import { normalizeChallengeRuns } from '../game/challengeEngine';
+import { normalizeEventState, normalizeCooldowns } from '../game/eventEngine';
+import { registerUnknownIntrusion } from '../game/events/unknownIntrusion';
 import { LEVELS, SERVERS } from '../game/levels';
 import { ACHIEVEMENTS } from '../game/achievements';
 import { KNOWLEDGE } from '../game/knowledge';
@@ -60,6 +63,9 @@ function cleanStars(raw: unknown): Record<string, number> {
   return out;
 }
 
+/** 事件定义注册（幂等）；必须在 loadGame 前执行，确保动态事件可被规范化/恢复 */
+registerUnknownIntrusion();
+
 /** 存储键保持不变，确保旧存档仍能被读取（改名会导致所有玩家进度丢失） */
 export const SAVE_KEY = 'nexus_code_repair_save_v1';
 export const SAVE_VERSION = CURRENT_SAVE_VERSION;
@@ -94,6 +100,9 @@ export function defaultState(): PlayerState {
       story: defaultStoryReadState(),
       vault: { read: [], finalSeen: false, lastOpened: null },
       challengeSessions: {},
+      challengeRuns: {},
+      dynamicEvent: null,
+      eventCooldowns: {},
       endings: [],
       ending: null,
       flags: {},
@@ -182,6 +191,9 @@ export function normalizePlayerState(raw: PlayerState, fromVersion?: number): Pl
       },
       flags: normalizeStoryVars(progress.flags),
       challengeSessions: normalizeSessions(progress.challengeSessions),
+      challengeRuns: normalizeChallengeRuns(progress.challengeRuns),
+      dynamicEvent: normalizeEventState(progress.dynamicEvent, Date.now()),
+      eventCooldowns: normalizeCooldowns(progress.eventCooldowns),
     },
     rewards: normalizeRewards((raw as Partial<PlayerState>).rewards),
     settings: {

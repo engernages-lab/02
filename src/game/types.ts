@@ -6,9 +6,12 @@ import type { StoryReadState } from './lore/events';
 import type { BossBattleState } from './battle';
 import type { BossDifficulty } from './difficulty';
 import type { ChallengeSession } from './challengeSession';
+import type { ChallengeRunState } from './challengeEngine';
+import type { DynamicEventState } from './eventEngine';
 
 export type Screen =
   | 'boot' | 'menu' | 'story' | 'map' | 'challenge'
+  | 'challengehub' | 'challengeplay'
   | 'profile' | 'settings' | 'knowledge' | 'achievements' | 'archive' | 'vault' | 'journal' | 'endings' | 'lab' | 'boss' | 'shop';
 
 export interface GameSettings {
@@ -139,6 +142,12 @@ export interface Progress {
   vault?: VaultState;
   /** 挑战会话（v8 起）：按关卡 id 记录运行/提交/失误/容错与结算，旧存档由迁移补齐 */
   challengeSessions?: Record<string, ChallengeSession>;
+  /** 独立挑战运行状态（V1.3-A 起）：challengeId → 运行状态机，刷新/重进可安全恢复 */
+  challengeRuns?: Record<string, ChallengeRunState>;
+  /** 当前进行中的动态事件（未知入侵等）；null = 无事件 */
+  dynamicEvent?: DynamicEventState | null;
+  /** 动态事件冷却表：defId → 最近触发时间（毫秒） */
+  eventCooldowns?: Record<string, number>;
   /** 已解锁的结局 id（第九阶段） */
   endings?: string[];
   /** 玩家最终选择的结局 */
