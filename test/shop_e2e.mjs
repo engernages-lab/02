@@ -328,7 +328,7 @@ const rwOf = async () => (await evalJS(`${readSave}`)).player.rewards;
   const afterReload = await evalJS(`${readSave}`);
   ok(afterReload.player.rewards.credits === beforeReload.player.rewards.credits, '刷新后余额一致');
   ok(afterReload.player.rewards.transactions.length === beforeReload.player.rewards.transactions.length, '刷新后交易记录不重复不丢失');
-  ok(afterReload.player.rewards.items['nano-restore'] === 0, '刷新后道具使用状态保持');
+  ok((afterReload.player.rewards.items['nano-restore'] || 0) === 0, '刷新后道具使用状态保持');
 
   console.log('=== H. 经验增幅接入结算 ===');
   await seedAndOpen(seedSave({ credits: 1000, exp: 0, consciousness: 100 }));

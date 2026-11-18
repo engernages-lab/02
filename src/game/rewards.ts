@@ -76,8 +76,8 @@ export function normalizeRewards(raw: unknown): NormalizedRewards {
   return {
     credits: safeCredits(r.credits),
     trust: typeof r.trust === 'number' && isFinite(r.trust) ? Math.min(100, Math.max(0, Math.round(r.trust))) : d.trust,
-    items: r.items && typeof r.items === 'object' ? { ...r.items } : {},
-    skins: Array.isArray(r.skins) ? r.skins.slice() : [],
+    items: normalizeItemCounts(r.items),
+    skins: [...new Set(Array.isArray(r.skins) ? r.skins.filter((x): x is string => typeof x === 'string' && x.length > 0) : [])],
     equipped: r.equipped && typeof r.equipped === 'object' ? { ...r.equipped } : {},
     chapterRewards: Array.isArray(r.chapterRewards) ? r.chapterRewards.slice() : [],
     cleared: r.cleared && typeof r.cleared === 'object' ? { ...r.cleared } : {},
@@ -196,6 +196,18 @@ export function trustTier(trust: number): { name: string; desc: string; at: numb
 
 // ---------- A5：交易记录 / 限购计数 / 增益状态 ----------
 
+/** 库存：非负整数，去掉非法与 0 */
+function normalizeItemCounts(raw: unknown): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (!raw || typeof raw !== 'object') return out;
+  for (const [id, value] of Object.entries(raw as Record<string, unknown>)) {
+    const n = Math.floor(Number(value));
+    if (!id || !Number.isFinite(n) || n <= 0) continue;
+    out[id.slice(0, 64)] = Math.min(9999, n);
+  }
+  return out;
+}
+
 function normalizeTransactions(raw: unknown): ShopTransaction[] {
   if (!Array.isArray(raw)) return [];
   const out: ShopTransaction[] = [];
@@ -203,7 +215,8 @@ function normalizeTransactions(raw: unknown): ShopTransaction[] {
     if (!t || typeof t !== 'object') continue;
     const x = t as Partial<ShopTransaction>;
     if (typeof x.itemId !== 'string' || !x.itemId) continue;
-    const status = x.status === 'failed' ? 'failed' : 'ok';
+    if (x.status !== 'ok' && x.status !== 'failed') continue;
+    const status = x.status;
     out.push({
       id: typeof x.id === 'string' ? x.id : 'tx-' + Math.max(0, Number(x.at) || 0),
       requestId: typeof x.requestId === 'string' ? x.requestId : '',

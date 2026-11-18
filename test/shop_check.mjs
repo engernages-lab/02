@@ -192,7 +192,7 @@ console.log('=== F. 记录与存档字段 ===');
     buffs: { shield: 9, guard: -1, barrier: 'x', hintTicket: 1, expBoost: { uses: 9, mult: 0 } },
   });
   ok(dirty.credits === 0, '非法余额归零');
-  ok(dirty.transactions.length === 1 && dirty.transactions[0].qty === 1 && dirty.transactions[0].total === 0, '非法交易记录被清洗');
+  ok(dirty.transactions.length === 0, '状态非法的交易记录被丢弃（不再猜成成功）');
   ok(dirty.purchases.scan === undefined && dirty.purchases.rollback === 2, '非法限购计数被清洗');
   ok(dirty.buffs.shield === 3 && dirty.buffs.guard === 0 && dirty.buffs.barrier === 0, '增益层数被限制在 0..3');
   ok(dirty.buffs.expBoost === null, '非法增幅被丢弃');

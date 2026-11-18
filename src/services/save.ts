@@ -10,6 +10,53 @@ import { DEFAULT_VOICE, normalizeVoice } from './voice';
 import { CURRENT_SAVE_VERSION, migrateSave } from './migrations';
 import { normalizeChapterProgress } from '../game/chapterFlow';
 import { normalizeSessions } from '../game/challengeSession';
+import { LEVELS, SERVERS } from '../game/levels';
+import { ACHIEVEMENTS } from '../game/achievements';
+import { KNOWLEDGE } from '../game/knowledge';
+import { MEMORY_FRAGMENTS } from '../game/story';
+import { CREATOR_FRAGMENTS } from '../game/lore/fragments';
+import { BOSSES } from '../game/bosses';
+
+/** 合法 id 白名单：脏存档里的无效关卡/碎片/成就不会流入核心逻辑 */
+const LEVEL_ID_SET = new Set(LEVELS.map(l => l.id));
+const SERVER_ID_SET = new Set(SERVERS.map(s => s.id));
+const ACH_ID_SET = new Set(ACHIEVEMENTS.map(a => a.id));
+const KNOW_ID_SET = new Set(KNOWLEDGE.map(k => k.id));
+const BOSS_ID_SET = new Set(BOSSES.map(b => b.id));
+const FRAGMENT_ID_SET = new Set<string>([
+  ...MEMORY_FRAGMENTS.map(f => f.id),
+  ...CREATOR_FRAGMENTS.map(f => f.id),
+]);
+
+function cleanStringList(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  return [...new Set(raw.filter((x): x is string => typeof x === 'string' && x.length > 0 && x.length <= 64))];
+}
+
+/** 计数表：只保留有限非负整数，并夹到上限 */
+function cleanCounts(raw: unknown, allowed: Set<string> | null, max: number): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (!raw || typeof raw !== 'object') return out;
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (allowed && !allowed.has(key)) continue;
+    const n = Math.floor(Number(value));
+    if (!Number.isFinite(n) || n <= 0) continue;
+    out[key] = Math.min(max, n);
+  }
+  return out;
+}
+
+function cleanStars(raw: unknown): Record<string, number> {
+  const out: Record<string, number> = {};
+  if (!raw || typeof raw !== 'object') return out;
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!LEVEL_ID_SET.has(key)) continue;
+    const n = Math.floor(Number(value));
+    if (!Number.isFinite(n) || n <= 0) continue;
+    out[key] = Math.min(3, n);
+  }
+  return out;
+}
 
 /** 存储键保持不变，确保旧存档仍能被读取（改名会导致所有玩家进度丢失） */
 export const SAVE_KEY = 'nexus_code_repair_save_v1';
@@ -89,7 +136,7 @@ function isValidSave(x: unknown): x is PlayerState {
  */
 export function normalizePlayerState(raw: PlayerState, fromVersion?: number): PlayerState {
   const identity = normalizeIdentity((raw as Partial<PlayerState>).identity, raw.name);
-  const progress = raw.progress;
+  const progress = (raw.progress && typeof raw.progress === 'object' ? raw.progress : {}) as PlayerState['progress'];
   const storySeen = progress.storySeen && typeof progress.storySeen === 'object' ? progress.storySeen : {};
   const normalized: PlayerState = {
     ...raw,
@@ -97,10 +144,14 @@ export function normalizePlayerState(raw: PlayerState, fromVersion?: number): Pl
     identity,
     exp: safeExp(raw.exp),
     level: levelForExp(safeExp(raw.exp)),
-    consciousness: Math.max(0, Math.min(100, Math.floor(Number(raw.consciousness) || 0))),
+    consciousness: Number.isFinite(Number(raw.consciousness))
+      ? Math.max(0, Math.min(100, Math.floor(Number(raw.consciousness))))
+      : 100,
     meta: {
       ...raw.meta,
-      memoryFragments: Array.isArray(raw.meta?.memoryFragments) ? raw.meta.memoryFragments : [],
+      deaths: Math.max(0, Math.floor(Number(raw.meta?.deaths) || 0)),
+      rebirths: Math.max(0, Math.floor(Number(raw.meta?.rebirths) || 0)),
+      memoryFragments: cleanStringList(raw.meta?.memoryFragments).filter(id => FRAGMENT_ID_SET.has(id)),
       memoryLogs: Array.isArray(raw.meta?.memoryLogs) ? raw.meta.memoryLogs : [],
       fragmentLog: raw.meta?.fragmentLog && typeof raw.meta.fragmentLog === 'object' ? raw.meta.fragmentLog : {},
       bugCodex: raw.meta?.bugCodex && typeof raw.meta.bugCodex === 'object' ? raw.meta.bugCodex : {},
@@ -108,8 +159,19 @@ export function normalizePlayerState(raw: PlayerState, fromVersion?: number): Pl
     progress: {
       ...progress,
       storySeen,
+      completedLevels: cleanStringList(progress.completedLevels).filter(id => LEVEL_ID_SET.has(id)),
+      stars: cleanStars(progress.stars),
+      failedAttempts: cleanCounts(progress.failedAttempts, LEVEL_ID_SET, 999),
+      hintLevels: cleanCounts(progress.hintLevels, LEVEL_ID_SET, 99),
+      unlockedServers: (() => {
+        const list = cleanStringList(progress.unlockedServers).filter(id => SERVER_ID_SET.has(id));
+        return list.includes('training') ? list : ['training', ...list];
+      })(),
+      knowledge: cleanStringList(progress.knowledge).filter(id => KNOW_ID_SET.has(id)),
+      achievements: cleanStringList(progress.achievements).filter(id => ACH_ID_SET.has(id)),
+      bossesDone: cleanStringList(progress.bossesDone).filter(id => BOSS_ID_SET.has(id)),
+      endings: cleanStringList(progress.endings),
       story: normalizeStoryReadState(progress.story, storySeen),
-      endings: Array.isArray(progress.endings) ? progress.endings : [],
       ending: typeof progress.ending === 'string' ? progress.ending : null,
       vault: {
         read: Array.isArray(progress.vault?.read) ? progress.vault.read : [],
