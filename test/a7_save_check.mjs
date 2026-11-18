@@ -95,7 +95,7 @@ console.log('=== C. 异常存档自愈 ===');
       ...basePlayer().progress,
       completedLevels: ['1-1', '1-1', 7, 'no-such-level', 'tut-1'],
       stars: { '1-1': 99, '1-2': -3, 'bad': 2 },
-      failedAttempts: { '1-1': -5, '1-2': NaN, '1-3': 2.6, 'bad': 9 },
+      failedAttempts: { '1-1': -5, '1-2': NaN, '1-3': 2.6, 'bad': 9, 'gate-01': 2 },
       hintLevels: { '1-1': -1, '1-2': 999 },
       unlockedServers: ['training', 'hack'],
       knowledge: ['print', 'print', 'nope', 5],
@@ -131,6 +131,7 @@ console.log('=== C. 异常存档自愈 ===');
   ok(!n.progress.completedLevels.includes('no-such-level'), '不存在的关卡 ID 被过滤');
   ok(n.progress.stars['1-1'] === 3 && n.progress.stars['1-2'] === undefined, '星级夹到 0..3 且过滤未知关卡');
   ok(n.progress.failedAttempts['1-1'] === undefined && n.progress.failedAttempts['1-3'] === 2, '失败计数非负且过滤未知关卡');
+  ok(n.progress.failedAttempts['gate-01'] === 2 && n.progress.failedAttempts['bad'] === undefined, 'Boss 失败计数保留（不是关卡 id 也要保留）', JSON.stringify(n.progress.failedAttempts));
   ok(n.progress.hintLevels['1-2'] === 99 && n.progress.hintLevels['1-1'] === undefined, '提示层数夹取且过滤非法值');
   ok(!n.progress.unlockedServers.includes('hack') && n.progress.unlockedServers.includes('training'), '非法服务器被过滤');
   ok(n.progress.knowledge.length === 1 && n.progress.achievements.length === 1, '知识点与成就去重/过滤');

@@ -27,6 +27,8 @@ const FRAGMENT_ID_SET = new Set<string>([
   ...MEMORY_FRAGMENTS.map(f => f.id),
   ...CREATOR_FRAGMENTS.map(f => f.id),
 ]);
+/** 失败计数同时用于普通关卡与 Boss（bossId），两者都要保留 */
+const FAIL_ID_SET = new Set<string>([...LEVEL_ID_SET, ...BOSS_ID_SET]);
 
 function cleanStringList(raw: unknown): string[] {
   if (!Array.isArray(raw)) return [];
@@ -161,7 +163,7 @@ export function normalizePlayerState(raw: PlayerState, fromVersion?: number): Pl
       storySeen,
       completedLevels: cleanStringList(progress.completedLevels).filter(id => LEVEL_ID_SET.has(id)),
       stars: cleanStars(progress.stars),
-      failedAttempts: cleanCounts(progress.failedAttempts, LEVEL_ID_SET, 999),
+      failedAttempts: cleanCounts(progress.failedAttempts, FAIL_ID_SET, 999),
       hintLevels: cleanCounts(progress.hintLevels, LEVEL_ID_SET, 99),
       unlockedServers: (() => {
         const list = cleanStringList(progress.unlockedServers).filter(id => SERVER_ID_SET.has(id));
