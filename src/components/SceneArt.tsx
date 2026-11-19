@@ -1208,6 +1208,252 @@ function Dataport({ uid }: { uid: string }) {
   );
 }
 
+/* ═════ 第二章 · 破碎的记忆花园（镜面天花板 · 数据枯树 · 记忆花田 · 碎玻璃地） ═════ */
+
+function Garden({ uid }: { uid: string }) {
+  const HZ = 430; // 花田地平线（整体上移后落到可见区）
+  return (
+    <g>
+      <defs>
+        <linearGradient id={`${uid}-ceil`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#0A0A1E" />
+          <stop offset="55%" stopColor="#0B1230" />
+          <stop offset="100%" stopColor="#071021" />
+        </linearGradient>
+        <radialGradient id={`${uid}-orb`}>
+          <stop offset="0%" stopColor={T.mint} stopOpacity="0.3" />
+          <stop offset="55%" stopColor={T.violet} stopOpacity="0.12" />
+          <stop offset="100%" stopColor={T.violet} stopOpacity="0" />
+        </radialGradient>
+        <radialGradient id={`${uid}-void`}>
+          <stop offset="0%" stopColor="#050A16" />
+          <stop offset="100%" stopColor="#01040A" />
+        </radialGradient>
+        {/* 记忆碎花点阵：远/近两种密度 */}
+        <pattern id={`${uid}-flora`} width="24" height="20" patternUnits="userSpaceOnUse">
+          <circle cx="3" cy="5" r="1.2" fill={T.mint} opacity="0.5" />
+          <circle cx="12" cy="12" r="1.5" fill={T.violet} opacity="0.45" />
+          <circle cx="19" cy="4" r="1" fill={T.pale} opacity="0.35" />
+          <circle cx="7" cy="16" r="1.1" fill={T.sky} opacity="0.4" />
+          <circle cx="21" cy="15" r="0.9" fill={T.mint} opacity="0.3" />
+        </pattern>
+        <pattern id={`${uid}-flora-far`} width="16" height="13" patternUnits="userSpaceOnUse">
+          <circle cx="2" cy="3" r="0.8" fill={T.pale} opacity="0.3" />
+          <circle cx="9" cy="8" r="0.7" fill={T.violet} opacity="0.25" />
+          <circle cx="13" cy="3" r="0.6" fill={T.mint} opacity="0.2" />
+        </pattern>
+      </defs>
+
+      <g transform="translate(0,-110)">
+        {/* 镜面天花板 */}
+        <rect x="0" y={-130} width="1600" height={HZ + 130} fill={`url(#${uid}-ceil)`} />
+        <Wash uid={uid} cx={420} cy={170} rx={520} ry={270} color={T.violet} opacity={0.16} />
+        <Wash uid={uid} cx={1180} cy={230} rx={460} ry={240} color={T.teal} opacity={0.1} />
+        {/* 镜像里的枯树轮廓（雾中倒影） */}
+        <path d="M834 120 C860 220 806 260 826 360 C842 430 812 460 820 520 L872 520 C880 450 852 410 868 340 C882 270 846 220 872 120 Z"
+          fill="#0A0D20" opacity="0.5" filter={`url(#${uid}-blur)`} />
+        {/* 横向拉丝反射（镜面感的来源） */}
+        {Array.from({ length: 46 }, (_, i) => {
+          const y = 10 + i * 9 + rnd(i, 3) * 6;
+          const w = 120 + rnd(i, 5) * 620;
+          const x = rnd(i, 7) * 1500;
+          return <rect key={i} x={x} y={y} width={w} height={1 + rnd(i, 9) * 2.4}
+            fill={rnd(i, 11) > 0.5 ? T.pale : T.violet} opacity={0.05 + rnd(i, 13) * 0.14} />;
+        })}
+        {/* 竖向玻璃分格 */}
+        {[120, 340, 560, 780, 1000, 1220, 1440].map((x, i) => (
+          <line key={i} x1={x} y1={-130} x2={x} y2={820} stroke={T.pale} strokeWidth="1.2" strokeOpacity={0.08 + rnd(i, 17) * 0.06} />
+        ))}
+
+        {/* 远处全息光球（内含模糊人影） */}
+        {[{ x: 300, y: 330, r: 46 }, { x: 1246, y: 296, r: 38 }, { x: 640, y: 302, r: 27 }].map((o, i) => (
+          <g key={i}>
+            <circle cx={o.x} cy={o.y} r={o.r * 1.8} fill={`url(#${uid}-orb)`} opacity="0.6" />
+            <circle cx={o.x} cy={o.y} r={o.r} fill="none" stroke={T.pale} strokeOpacity="0.16" strokeWidth="1.2" />
+            <ellipse cx={o.x} cy={o.y + o.r * 0.1} rx={o.r * 0.34} ry={o.r * 0.72} fill="#05091A" opacity="0.72" filter={`url(#${uid}-soft)`} />
+          </g>
+        ))}
+
+        <FogBand uid={uid} y={HZ - 70} h={160} opacity={0.85} />
+
+        {/* 发光记忆花田：远 → 近（点阵密度与亮度递增） */}
+        <rect x="0" y={HZ - 26} width="1600" height="60" fill={`url(#${uid}-flora-far)`} opacity="0.7" />
+        <rect x="0" y={HZ} width="1600" height="120" fill={`url(#${uid}-flora-far)`} opacity="0.9" />
+        <rect x="0" y={HZ + 90} width="1600" height="150" fill={`url(#${uid}-flora)`} opacity="0.4" />
+        <rect x="0" y={HZ + 200} width="1600" height="200" fill={`url(#${uid}-flora)`} opacity="0.5" />
+        <Wash uid={uid} cx={620} cy={HZ + 160} rx={420} ry={140} color={T.violet} opacity={0.18} />
+        <Wash uid={uid} cx={1120} cy={HZ + 220} rx={380} ry={150} color={T.teal} opacity={0.12} />
+        <Wash uid={uid} cx={540} cy={HZ + 120} rx={420} ry={130} color={T.mint} opacity={0.1} />
+
+        {/* 花簇：近处更大更亮，读作「花」而不是噪点 */}
+        {Array.from({ length: 130 }, (_, i) => {
+          const t = rnd(i, 111); // 0 远 → 1 近
+          const y = HZ + 16 + t * 300;
+          const x = 20 + rnd(i, 113) * 1560;
+          const s = 1.2 + t * 4.4;
+          const cluster = 3 + Math.floor(rnd(i, 115) * 4);
+          const hue = rnd(i, 117);
+          return (
+            <g key={i} opacity={0.35 + t * 0.5}>
+              {Array.from({ length: cluster }, (_, k) => (
+                <circle key={k}
+                  cx={x + (rnd(i * 7 + k, 119) - 0.5) * s * 7}
+                  cy={y + (rnd(i * 7 + k, 121) - 0.5) * s * 5}
+                  r={s * (0.5 + rnd(i * 7 + k, 123) * 0.9)}
+                  fill={hue > 0.72 ? T.pale : hue > 0.42 ? T.violet : T.mint} />
+              ))}
+              {t > 0.5 && (
+                <line x1={x} y1={y} x2={x + (rnd(i, 125) - 0.5) * 6} y2={y + s * 6}
+                  stroke={T.teal} strokeWidth="0.7" opacity="0.3" />
+              )}
+            </g>
+          );
+        })}
+        {/* 近景冷白高光花 */}
+        {Array.from({ length: 18 }, (_, i) => (
+          <circle key={i} cx={40 + rnd(i, 131) * 1520} cy={HZ + 190 + rnd(i, 133) * 190}
+            r={1.6 + rnd(i, 135) * 2.4} fill="#EFFBF7" opacity={0.5 + rnd(i, 137) * 0.4} filter={`url(#${uid}-glow)`} />
+        ))}
+        {/* 被 SOMNIA 吃掉的一角：枯斑 + 灰白碎片 + 故障条 */}
+        <path d="M980 470 Q1060 500 1010 560 Q950 600 880 570 Q840 520 900 480 Z" fill="#0A0B12" opacity="0.78" filter={`url(#${uid}-paint)`} />
+        {Array.from({ length: 40 }, (_, i) => (
+          <circle key={i} cx={860 + rnd(i, 21) * 190} cy={480 + rnd(i, 23) * 90} r={0.8 + rnd(i, 25) * 1.4}
+            fill="#9BA6B8" opacity={0.14 + rnd(i, 27) * 0.3} />
+        ))}
+        {Array.from({ length: 7 }, (_, i) => (
+          <rect key={i} x={880 + rnd(i, 31) * 160} y={492 + rnd(i, 33) * 70} width={12 + rnd(i, 35) * 40} height="2"
+            fill={T.pale} opacity="0.3" />
+        ))}
+
+        {/* 中央：数据枯树（主干 = 缠绕光纤/脉络，枝条断裂） */}
+        <g>
+          <path d="M796 700 C800 610 780 560 792 500 C802 442 786 402 800 352 C812 306 806 250 818 196 L846 200 C836 258 844 306 832 352 C820 400 838 444 828 500 C818 556 840 606 834 700 Z"
+            fill="#02060C" />
+          <path d="M796 700 C800 610 780 560 792 500 C802 442 786 402 800 352 C812 306 806 250 818 196"
+            stroke={T.pale} strokeWidth="2.6" strokeOpacity="0.3" fill="none" filter={`url(#${uid}-glow)`} />
+          <path d="M846 200 C836 258 844 306 832 352 C820 400 838 444 828 500 C818 556 840 606 834 700"
+            stroke={T.violet} strokeWidth="2" strokeOpacity="0.28" fill="none" />
+          {[
+            { d: 'M812 300 C740 250 668 214 590 196', w: 22 },
+            { d: 'M824 356 C920 320 1000 268 1078 246', w: 19 },
+            { d: 'M800 452 C716 452 646 486 578 500', w: 15 },
+            { d: 'M830 500 C918 508 986 540 1060 560', w: 13 },
+            { d: 'M816 250 C860 196 900 152 946 118', w: 11 },
+            { d: 'M806 404 C766 344 730 300 690 262', w: 9 },
+            { d: 'M590 196 C552 186 520 168 486 164', w: 5 },
+            { d: 'M590 196 C560 216 540 242 512 258', w: 4.4 },
+            { d: 'M1078 246 C1122 236 1152 214 1190 206', w: 5 },
+            { d: 'M1078 246 C1112 266 1130 292 1158 308', w: 4.4 },
+            { d: 'M578 500 C540 512 508 532 474 540', w: 4 },
+            { d: 'M1060 560 C1100 566 1130 584 1168 592', w: 3.6 },
+            { d: 'M946 118 C968 104 986 96 1012 90', w: 4 },
+            { d: 'M690 262 C664 240 648 214 630 196', w: 4 },
+          ].map((b, i) => (
+            <g key={i} fill="none">
+              <path d={b.d} stroke="#02060C" strokeWidth={b.w} strokeLinecap="round" />
+              <path d={b.d} stroke={i % 3 === 0 ? T.violet : T.teal} strokeWidth={b.w * 0.2} strokeOpacity={0.34 + (i > 6 ? 0.12 : 0)} filter={`url(#${uid}-glow)`} />
+            </g>
+          ))}
+          {/* 枝端分叉：从各大枝末端长出来的碎杈（不是散落的划线） */}
+          {[
+            { x: 590, y: 196, dx: -1, dy: -1 }, { x: 590, y: 196, dx: -0.2, dy: -1 },
+            { x: 1078, y: 246, dx: 1, dy: -1 }, { x: 1078, y: 246, dx: 0.4, dy: -1 },
+            { x: 578, y: 500, dx: -1, dy: -0.3 }, { x: 1060, y: 560, dx: 1, dy: -0.4 },
+            { x: 946, y: 118, dx: 0.8, dy: -1 }, { x: 690, y: 262, dx: -0.8, dy: -0.8 },
+            { x: 486, y: 164, dx: -0.6, dy: -1 }, { x: 512, y: 258, dx: -0.9, dy: -0.2 },
+            { x: 1190, y: 206, dx: 0.7, dy: -1 }, { x: 1158, y: 308, dx: 1, dy: -0.3 },
+            { x: 474, y: 540, dx: -0.8, dy: -0.5 }, { x: 1168, y: 592, dx: 0.9, dy: -0.5 },
+            { x: 1012, y: 90, dx: 0.3, dy: -1 }, { x: 630, y: 196, dx: -0.5, dy: -1 },
+          ].map((t, i) => {
+            const len = 26 + rnd(i, 105) * 54;
+            const len2 = len * (0.5 + rnd(i, 107) * 0.4);
+            return (
+              <g key={i} fill="none">
+                <path d={`M${t.x} ${t.y} l${t.dx * len} ${t.dy * len * 0.7}`}
+                  stroke="#02060C" strokeWidth={2.4 + rnd(i, 109) * 2.6} strokeLinecap="round" />
+                <path d={`M${t.x + t.dx * len * 0.6} ${t.y + t.dy * len * 0.42} l${t.dx * len2} ${(1 - t.dy) * len2 * 0.5}`}
+                  stroke="#02060C" strokeWidth={1.6 + rnd(i, 111) * 1.8} strokeLinecap="round" />
+                <path d={`M${t.x} ${t.y} l${t.dx * len} ${t.dy * len * 0.7}`}
+                  stroke={i % 2 ? T.teal : T.violet} strokeWidth="1" strokeOpacity="0.3" />
+              </g>
+            );
+          })}
+          {/* 垂下的光纤丝：像枯枝上的藤蔓 */}
+          {Array.from({ length: 34 }, (_, i) => {
+            const x = 470 + rnd(i, 41) * 700;
+            const y0 = 170 + rnd(i, 43) * 320;
+            const drop = 90 + rnd(i, 49) * 140;
+            return (
+              <path key={i}
+                d={`M${x} ${y0} Q${x + (rnd(i, 45) - 0.5) * 50} ${y0 + drop * 0.5} ${x + (rnd(i, 47) - 0.5) * 30} ${y0 + drop}`}
+                stroke={rnd(i, 53) > 0.7 ? T.violet : T.pale} strokeWidth={0.8 + rnd(i, 55) * 1.2}
+                strokeOpacity={0.12 + rnd(i, 51) * 0.24} fill="none" />
+            );
+          })}
+          {/* 根部：从主干张开探入花田 */}
+          {[-1, 1].map(s => (
+            <g key={s}>
+              <path d={`M${s < 0 ? 798 : 834} 660 C${s < 0 ? 768 : 866} 690 ${s < 0 ? 706 : 900} 700 ${s < 0 ? 640 : 968} 726 L${s < 0 ? 664 : 940} 742 C${s < 0 ? 730 : 880} 716 ${s < 0 ? 780 : 850} 706 ${s < 0 ? 806 : 828} 692 Z`}
+                fill="#02060C" />
+              <path d={`M${s < 0 ? 798 : 834} 660 C${s < 0 ? 768 : 866} 690 ${s < 0 ? 706 : 900} 700 ${s < 0 ? 640 : 968} 726`}
+                stroke={T.teal} strokeWidth="1.6" strokeOpacity="0.26" fill="none" />
+            </g>
+          ))}
+        </g>
+
+        {/* 漂浮的记忆碎片 */}
+        {Array.from({ length: 22 }, (_, i) => {
+          const x = 90 + rnd(i, 61) * 1420;
+          const y = 150 + rnd(i, 63) * 330;
+          const s = 3 + rnd(i, 65) * 9;
+          return (
+            <g key={i} transform={`rotate(${rnd(i, 67) * 90} ${x} ${y})`} opacity={0.4 + rnd(i, 69) * 0.45}>
+              <path d={`M${x} ${y} l${s} ${-s * 0.4} l${s * 0.5} ${s * 0.7} l${-s * 0.8} ${s * 0.3} Z`}
+                fill={rnd(i, 71) > 0.6 ? T.violet : T.mint} opacity="0.5" />
+              <circle cx={x} cy={y} r="1.2" fill="#F2FBF7" filter={`url(#${uid}-glow)`} />
+            </g>
+          );
+        })}
+
+        {/* 体积光：冷白光柱穿过青紫雾 */}
+        {[[430, 0.5], [780, 0.85], [1120, 0.45]].map(([x, o], i) => (
+          <path key={i} d={`M${x - 30} -130 L${x + 30} -130 L${x + 260} 760 L${x - 260} 760 Z`}
+            fill={T.mint} opacity={0.035 * (o as number)} filter={`url(#${uid}-blur)`} />
+        ))}
+
+        {/* 破碎的透明玻璃地面：碎片 + 裂纹 + 下方虚空（抬高到可见区下缘） */}
+        <g>
+          <rect x="0" y={604} width="1600" height={320} fill={`url(#${uid}-void)`} opacity="0.85" />
+          {Array.from({ length: 14 }, (_, i) => {
+            const x = -40 + rnd(i, 81) * 1700;
+            const y = 616 + rnd(i, 83) * 130;
+            const s = 90 + rnd(i, 85) * 190;
+            return (
+              <g key={i}>
+                <path d={`M${x} ${y} l${s} ${-s * 0.2} l${s * 0.44} ${s * 0.46} l${-s * 0.92} ${s * 0.3} Z`}
+                  fill="#050A14" opacity="0.6" stroke={T.pale} strokeOpacity={0.14 + rnd(i, 87) * 0.12} strokeWidth="1" />
+                {/* 玻璃上缘的高光 */}
+                <path d={`M${x} ${y} l${s} ${-s * 0.2}`} stroke={T.pale} strokeWidth="1.6"
+                  strokeOpacity={0.24 + rnd(i, 89) * 0.2} fill="none" filter={`url(#${uid}-glow)`} />
+              </g>
+            );
+          })}
+          {Array.from({ length: 7 }, (_, i) => {
+            const x = rnd(i, 91) * 1600;
+            return <path key={i} d={`M${x} 622 L${x + 58} 656 L${x + 14} 694 L${x + 96} 742`}
+              stroke={T.pale} strokeOpacity="0.2" strokeWidth="1.3" fill="none" />;
+          })}
+        </g>
+
+        <FogBand uid={uid} y={700} h={160} opacity={0.6} />
+        <Motes uid={uid} n={90} seed={11} color={T.violet} yMax={600} />
+      </g>
+
+      <rect x="0" y="700" width="1600" height="200" fill={`url(#${uid}-bottom)`} />
+    </g>
+  );
+}
+
 /* ───────────────────────── 其余场景：轻量变体 ───────────────────────── */
 
 function Variant({ uid, kind }: { uid: string; kind: 'dataport' | 'memory' | 'core' | 'terminal' }) {
@@ -1280,6 +1526,7 @@ export default function SceneArt({ bg }: { bg: SceneBg }) {
           {bg === 'void' && <Void uid={uid} />}
           {bg === 'dataport' && <Dataport uid={uid} />}
           {(bg === 'memory' || bg === 'core') && <Variant uid={uid} kind={bg} />}
+          {bg === 'garden' && <Garden uid={uid} />}
           {bg === 'terminal' && <Terminal uid={uid} />}
 
           {/* 暗角（电影感影调） */}

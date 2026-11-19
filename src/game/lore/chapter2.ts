@@ -11,7 +11,7 @@ export const CHAPTER2_ARRIVAL_SCENES: StoryScene[] = [
     id: 'ch2-arrive',
     title: '第二章 · 破碎的记忆花园',
     subtitle: '数据日志中心 · 记忆花园',
-    bg: 'memory',
+    bg: 'garden',
     fx: 'particles',
     lines: [
       L({ id: 'ch2-arrive-01', speaker: 'MIRA', kind: 'mira', text: '这里是数据日志中心。NEXUS 的记忆花园。' }),
@@ -33,7 +33,7 @@ export const CHAPTER2_RESTORED_SCENES: StoryScene[] = [
     id: 'ch2-restored',
     title: '第二章 · 破碎的记忆花园',
     subtitle: '记忆花园 · 重建',
-    bg: 'memory',
+    bg: 'garden',
     fx: 'scan',
     lines: [
       L({ id: 'ch2-restored-01', speaker: 'NEXUS 系统', kind: 'system', text: '记忆节点 5 / 5：在线。\n花园重建中……', sfx: 'unlock' }),
@@ -62,7 +62,7 @@ export const CHAPTER2_RESTORED_SCENES: StoryScene[] = [
     id: 'ch2-somnia',
     title: '第二章 · 破碎的记忆花园',
     subtitle: 'SOMNIA · 记忆吞噬体',
-    bg: 'memory',
+    bg: 'garden',
     fx: 'alarm',
     lines: [
       L({ id: 'ch2-somnia-01', speaker: 'NEXUS 系统', kind: 'system', text: '警告：记忆花园核心出现高密度吞噬反应。', sfx: 'alarm' }),
@@ -84,7 +84,7 @@ export const CHAPTER2_BOSS_INTRO_SCENES: StoryScene[] = [
     id: 'ch2-boss-intro',
     title: '第二章 · 破碎的记忆花园',
     subtitle: 'SOMNIA · 记忆迷宫',
-    bg: 'memory',
+    bg: 'garden',
     fx: 'glitch',
     lines: [
       L({ id: 'ch2-boss-01', speaker: 'NEXUS 系统', kind: 'system', text: 'SOMNIA：记忆迷宫展开。', sfx: 'threat' }),
@@ -101,7 +101,7 @@ export const CHAPTER2_VICTORY_SCENES: StoryScene[] = [
     id: 'ch2-victory',
     title: '第二章 · 破碎的记忆花园',
     subtitle: '花园深处 · 封存单元',
-    bg: 'memory',
+    bg: 'garden',
     fx: 'particles',
     lines: [
       L({ id: 'ch2-win-01', speaker: 'NEXUS 系统', kind: 'system', text: 'SOMNIA 核心解体。\n记忆花园：稳定。', sfx: 'success' }),
