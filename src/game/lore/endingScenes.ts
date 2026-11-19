@@ -37,7 +37,7 @@ const ORDER: StoryScene = {
 };
 
 const BEYOND: StoryScene = {
-  id: 'ending-beyond', title: '超越起源', subtitle: 'ENDING · 起源之外没有答案，只有下一个问题', bg: 'memory', fx: 'particles',
+  id: 'ending-beyond', title: '超越起源', subtitle: 'ENDING · 起源之外没有答案，只有下一个问题', bg: 'beyond', fx: 'particles',
   lines: [
     L('eb-01', '旁白', 'system', '六枚碎片同时亮起，档案馆最深处那道不属于任何章节的光，第一次睁开。'),
     L('eb-02', '恩格尔', 'engel', '（最后的记录）我把世界修到一半就停下了。剩下的，不该由我来修。'),
