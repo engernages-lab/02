@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { SERVERS, serverById, levelsOfServer, levelUnlockState, levelById, type LevelDef } from '../game/levels';
-import { CHAPTER3_COMPLETE, CHAPTER4_COMPLETE, CHAPTER5_COMPLETE, CHAPTER6_COMPLETE, TUTORIAL_DONE } from '../game/story';
+import { CHAPTER3_COMPLETE, CHAPTER4_COMPLETE, CHAPTER5_COMPLETE, CHAPTER6_COMPLETE } from '../game/story';
+import { TUTORIAL_DONE_SCENES } from '../game/lore/tutorial';
 import { CHAPTER2_ARRIVAL_SCENES, CHAPTER2_RESTORED_SCENES } from '../game/lore/chapter2';
 import { CHAPTER3_ARRIVAL_SCENES, CHAPTER3_VICTORY_SCENES } from '../game/lore/chapter3';
 import { CHAPTER4_ARRIVAL_SCENES, CHAPTER4_VICTORY_SCENES } from '../game/lore/chapter4';
@@ -639,13 +640,10 @@ export default function WorldMap() {
 
       {/* 剧情过场：训练完成 / 第一章完成 */}
       {cinema === 'tut' && (
-        <DialogSystem
-          nodes={TUTORIAL_DONE}
-          speedMs={g.player.settings.typewriterMs}
-          animEnabled={g.player.settings.animations}
+        <CinematicStage
+          scenes={TUTORIAL_DONE_SCENES}
           eventId="tutorial-done"
-          frameTitle="训练终端 · 任务完成"
-          onSeen={id => g.markStory(id)}
+          frameTitle="训练终端 · 接驳完成"
           onDone={() => { g.setFlag('tutorialCinematicShown', true); setCinema(null); play('unlock'); }}
         />
       )}

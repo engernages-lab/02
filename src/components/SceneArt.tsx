@@ -784,6 +784,195 @@ function Corridor({ uid }: { uid: string }) {
   );
 }
 
+/* ═════ 教学章节 · 训练终端（圆形数据平台 · 维修终端 · U 形全息弧屏） ═════ */
+
+function Terminal({ uid }: { uid: string }) {
+  const VPX = 800;
+  /** U 形全息屏：两端高、中间低的两条二次曲线夹出的弧带 */
+  const top = (t: number): [number, number] => {
+    const mt = 1 - t;
+    return [mt * mt * 250 + 2 * mt * t * VPX + t * t * 1350, mt * mt * 148 + 2 * mt * t * 372 + t * t * 148];
+  };
+  const bot = (t: number): [number, number] => {
+    const mt = 1 - t;
+    return [mt * mt * 250 + 2 * mt * t * VPX + t * t * 1350, mt * mt * 372 + 2 * mt * t * 596 + t * t * 372];
+  };
+  const N = 28;
+  const tp = Array.from({ length: N + 1 }, (_, i) => top(i / N));
+  const bp = Array.from({ length: N + 1 }, (_, i) => bot(i / N)).reverse();
+  const fmt = (p: [number, number]) => p.map(v => v.toFixed(1)).join(' ');
+  const bandPath = `M${tp.map(fmt).join(' L')} L${bp.map(fmt).join(' L')} Z`;
+  const topEdge = `M${tp.map(fmt).join(' L')}`;
+  const botEdge = `M${bp.slice().reverse().map(fmt).join(' L')}`;
+  const PANELS = 9;
+
+  return (
+    <g>
+      <defs>
+        <linearGradient id={`${uid}-holo`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={T.pale} stopOpacity="0.3" />
+          <stop offset="45%" stopColor={T.teal} stopOpacity="0.15" />
+          <stop offset="100%" stopColor={T.blue} stopOpacity="0.06" />
+        </linearGradient>
+        <radialGradient id={`${uid}-plat`}>
+          <stop offset="0%" stopColor="#0E2334" />
+          <stop offset="68%" stopColor="#071521" />
+          <stop offset="100%" stopColor="#040C14" />
+        </radialGradient>
+        <radialGradient id={`${uid}-lamp`}>
+          <stop offset="0%" stopColor="#EEFCF8" stopOpacity="0.95" />
+          <stop offset="34%" stopColor={T.mint} stopOpacity="0.5" />
+          <stop offset="100%" stopColor={T.teal} stopOpacity="0" />
+        </radialGradient>
+        <pattern id={`${uid}-grate`} width="26" height="14" patternUnits="userSpaceOnUse">
+          <rect width="26" height="14" fill="none" />
+          <line x1="0" y1="0" x2="26" y2="0" stroke={T.pale} strokeOpacity="0.07" strokeWidth="1" />
+          <line x1="0" y1="7" x2="26" y2="7" stroke={T.pale} strokeOpacity="0.05" strokeWidth="1" />
+          <line x1="13" y1="0" x2="13" y2="14" stroke={T.pale} strokeOpacity="0.05" strokeWidth="1" />
+        </pattern>
+      </defs>
+
+      {/* 环境：深空 + 远处主架构剪影 */}
+      <Wash uid={uid} cx={VPX} cy={430} rx={620} ry={420} color={T.teal} opacity={0.14} />
+      <Wash uid={uid} cx={1280} cy={620} rx={360} ry={300} color={T.amber} opacity={0.07} />
+      <Skyline uid={uid} seed={97} count={10} baseY={648} hMin={150} hMax={420} tone="far" opacity={0.16} from={-80} to={1680} dense={0.5} />
+      {/* 受损浮空数据节点 */}
+      {Array.from({ length: 9 }, (_, i) => {
+        const x = 110 + rnd(i, 21) * 1380;
+        const y = 140 + rnd(i, 23) * 360;
+        const s = 18 + rnd(i, 25) * 42;
+        return (
+          <g key={i} opacity={0.45}>
+            <path d={`M${x} ${y} l${s} ${-s * 0.22} l${s * 0.28} ${s * 0.62} l${-s * 0.78} ${s * 0.3} Z`}
+              fill="#050E18" stroke={T.teal} strokeOpacity="0.32" strokeWidth="1.2" />
+            <circle cx={x + s * 0.5} cy={y + s * 0.3} r="1.8" fill={i % 4 === 0 ? T.amber : T.mint} opacity="0.8" />
+          </g>
+        );
+      })}
+
+      {/* 顶部丁达尔体积光 */}
+      {[[520, 0.5], [VPX, 0.9], [1090, 0.45]].map(([x, o], i) => (
+        <path key={i} d={`M${x - 26} -40 L${x + 26} -40 L${x + 210} 720 L${x - 210} 720 Z`}
+          fill={T.mint} opacity={0.05 * (o as number)} filter={`url(#${uid}-blur)`} />
+      ))}
+
+      <g transform="translate(0,-196)">
+      {/* 圆形数据平台 */}
+      <ellipse cx={VPX} cy={700} rx={660} ry={172} fill={`url(#${uid}-plat)`} />
+      <ellipse cx={VPX} cy={700} rx={660} ry={172} fill={`url(#${uid}-grate)`} opacity="0.9" />
+      {[560, 448, 336, 224].map((rx, i) => (
+        <ellipse key={i} cx={VPX} cy={700} rx={rx} ry={rx * 0.26} fill="none"
+          stroke={T.teal} strokeOpacity={0.16 - i * 0.03} strokeWidth="1.4" />
+      ))}
+      {Array.from({ length: 24 }, (_, i) => {
+        const a = (i / 24) * Math.PI * 2;
+        return (
+          <line key={i} x1={VPX + Math.cos(a) * 120} y1={700 + Math.sin(a) * 31}
+            x2={VPX + Math.cos(a) * 660} y2={700 + Math.sin(a) * 172}
+            stroke={T.pale} strokeOpacity="0.06" strokeWidth="1.2" />
+        );
+      })}
+      {/* 平台边缘棱光与地面反光 */}
+      <ellipse cx={VPX} cy={700} rx={660} ry={172} fill="none" stroke={T.mint} strokeOpacity="0.4" strokeWidth="2.4" filter={`url(#${uid}-glow)`} />
+      <ellipse cx={VPX} cy={706} rx={330} ry={86} fill={T.teal} opacity="0.14" filter={`url(#${uid}-blur)`} />
+      <ellipse cx={VPX} cy={712} rx={150} ry={40} fill={T.mint} opacity="0.16" filter={`url(#${uid}-blur)`} />
+
+      {/* 从远处黑暗伸来的光纤数据线 */}
+      {Array.from({ length: 11 }, (_, i) => {
+        const left = i % 2 === 0;
+        const sx = left ? -50 - rnd(i, 3) * 140 : 1650 + rnd(i, 3) * 140;
+        const sy = 280 + rnd(i, 5) * 440;
+        const ex = 690 + rnd(i, 7) * 220;
+        const ey = 656 + rnd(i, 9) * 46;
+        const d = `M${sx} ${sy} Q${(sx + ex) / 2} ${Math.min(sy, ey) - 70} ${ex} ${ey}`;
+        return <path key={i} d={d} stroke={T.teal} strokeWidth={1 + rnd(i, 11) * 2.2}
+          fill="none" opacity={0.22 + rnd(i, 13) * 0.3} filter={`url(#${uid}-glow)`} />;
+      })}
+
+      {/* 维修终端：基座 + 倾斜面板 + 顶部发射器 */}
+      <g>
+        <path d="M754 702 L846 702 L837 664 L763 664 Z" fill="#050D16" stroke={T.teal} strokeOpacity="0.3" strokeWidth="1.2" />
+        <path d="M771 664 L829 664 L838 590 L762 590 Z" fill="#081521" stroke={T.pale} strokeOpacity="0.4" strokeWidth="1.6" />
+        <path d="M779 602 L821 602 L826 656 L774 656 Z" fill={T.teal} opacity="0.16" />
+        <path d="M779 602 L821 602 L826 656 L774 656 Z" fill="none" stroke={T.mint} strokeOpacity="0.72" strokeWidth="1.4" filter={`url(#${uid}-glow)`} />
+        {Array.from({ length: 6 }, (_, i) => (
+          <rect key={i} x={784 + rnd(i, 3) * 8} y={610 + i * 7.4} width={12 + rnd(i, 5) * 20} height="2.4"
+            fill={T.mint} opacity={0.26 + rnd(i, 7) * 0.4} />
+        ))}
+        <circle cx={VPX} cy={584} r="12" fill={`url(#${uid}-lamp)`} />
+        <circle cx={VPX} cy={584} r="3.6" fill="#F2FFFB" filter={`url(#${uid}-glow)`} />
+        <circle cx={847} cy={676} r="3" fill={T.amber} opacity="0.8" filter={`url(#${uid}-glow)`} />
+        {/* 终端向上投出的光柱，接进弧屏 */}
+        <path d="M772 588 L786 476 L814 476 L828 588 Z" fill={T.mint} opacity="0.09" filter={`url(#${uid}-blur)`} />
+      </g>
+
+      </g>
+
+      {/* U 形全息弧屏 */}
+      <g transform="translate(0,-34)">
+        <path d={bandPath} fill={`url(#${uid}-holo)`} />
+        <path d={bandPath} fill={T.teal} opacity="0.08" filter={`url(#${uid}-blur)`} />
+        {/* 面板分隔与抽象数据（无文字） */}
+        {Array.from({ length: PANELS }, (_, i) => {
+          const t0 = i / PANELS;
+          const A = top(t0);
+          const B = bot(t0);
+          return (
+            <g key={i}>
+              <line x1={A[0]} y1={A[1]} x2={B[0]} y2={B[1]} stroke={T.pale} strokeOpacity="0.3" strokeWidth="1.3" />
+              {Array.from({ length: 4 }, (_, k) => {
+                const tx = t0 + (0.2 + rnd(i * 5 + k, 7) * 0.55) / PANELS;
+                const P1 = top(tx);
+                const P2 = bot(tx);
+                const yy = P1[1] + (P2[1] - P1[1]) * (0.14 + rnd(i * 5 + k, 11) * 0.66);
+                const w = 9 + rnd(i * 5 + k, 13) * 30;
+                const h2 = 2 + rnd(i * 5 + k, 17) * 8;
+                return (
+                  <rect key={k} x={P1[0] - 3} y={yy} width={w} height={h2}
+                    fill={k % 3 === 0 ? T.mint : T.pale} opacity={0.16 + rnd(i * 5 + k, 19) * 0.38} />
+                );
+              })}
+            </g>
+          );
+        })}
+        {/* 弧屏上下边缘的发光轮廓 */}
+        <path d={topEdge} fill="none" stroke={T.mint} strokeWidth="3.4" opacity="0.85" filter={`url(#${uid}-glow)`} />
+        <path d={botEdge} fill="none" stroke={T.teal} strokeWidth="2.2" opacity="0.6" filter={`url(#${uid}-glow)`} />
+        {/* 弧屏两端的端头高光 */}
+        {[0, 1].map(k => {
+          const A = top(k);
+          const B = bot(k);
+          return <line key={k} x1={A[0]} y1={A[1]} x2={B[0]} y2={B[1]} stroke={T.hot} strokeWidth="2.6" opacity="0.7" filter={`url(#${uid}-glow)`} />;
+        })}
+      </g>
+
+      {/* 悬浮半透明全息面板 */}
+      {[
+        { x: 232, y: 508, w: 154, h: 92, rot: -8 },
+        { x: 1218, y: 486, w: 172, h: 100, rot: 7 },
+        { x: 392, y: 742, w: 126, h: 72, rot: -5 },
+        { x: 1092, y: 752, w: 132, h: 76, rot: 5 },
+      ].map((p, i) => (
+        <g key={i} transform={`rotate(${p.rot} ${p.x + p.w / 2} ${p.y + p.h / 2})`} opacity="0.55">
+          <rect x={p.x} y={p.y} width={p.w} height={p.h} fill={T.teal} opacity="0.08" />
+          <rect x={p.x} y={p.y} width={p.w} height={p.h} fill="none" stroke={T.pale} strokeOpacity="0.42" strokeWidth="1.2" />
+          {Array.from({ length: 4 }, (_, k) => (
+            <rect key={k} x={p.x + 9} y={p.y + 12 + k * 15} width={(p.w - 20) * (0.3 + rnd(i * 4 + k, 11) * 0.62)}
+              height="2.2" fill={T.mint} opacity="0.3" />
+          ))}
+        </g>
+      ))}
+
+      {/* 雾与底部 UI 安全区 */}
+      <FogBand uid={uid} y={596} h={220} opacity={0.7} />
+      <FogBand uid={uid} y={700} h={200} opacity={0.55} />
+      <rect x="0" y="690" width="1600" height="210" fill={`url(#${uid}-bottom)`} />
+
+      <Motes uid={uid} n={80} seed={6} yMax={620} />
+    </g>
+  );
+}
+
 /* ───────────────────────── 其余场景：轻量变体 ───────────────────────── */
 
 function Variant({ uid, kind }: { uid: string; kind: 'dataport' | 'memory' | 'core' | 'terminal' }) {
@@ -854,7 +1043,8 @@ export default function SceneArt({ bg }: { bg: SceneBg }) {
           {bg === 'underground' && <Underground uid={uid} />}
           {bg === 'corridor' && <Corridor uid={uid} />}
           {(bg === 'void' || bg === 'dataport') && <Void uid={uid} />}
-          {(bg === 'memory' || bg === 'core' || bg === 'terminal') && <Variant uid={uid} kind={bg} />}
+          {(bg === 'memory' || bg === 'core') && <Variant uid={uid} kind={bg} />}
+          {bg === 'terminal' && <Terminal uid={uid} />}
 
           {/* 暗角（电影感影调） */}
           <rect width="1600" height="900" fill={`url(#${uid}-vig)`} />
