@@ -6,7 +6,7 @@ const L = (id: string, speaker: string, kind: 'r07' | 'mira' | 'engel' | 'k0' | 
 
 export const CHAPTER6_ARRIVAL_SCENES: StoryScene[] = [
   {
-    id: 'ch6-arrive', title: '原初核心大厅', subtitle: '第六章 · 起源之外', bg: 'core', fx: 'particles',
+    id: 'ch6-arrive', title: '原初核心大厅', subtitle: '第六章 · 起源之外', bg: 'origin', fx: 'particles',
     lines: [
       L('ch6-01', '系统', 'system', '原初核心大厅。六座基座围成一圈，其中五座亮着微光。'),
       L('ch6-02', 'MIRA', 'mira', '这就是创世密钥的汇聚装置。恩格尔把它拆成六份，藏了五年。'),
@@ -24,7 +24,7 @@ export const CHAPTER6_ARRIVAL_SCENES: StoryScene[] = [
 
 export const CHAPTER6_ENGEL_SCENES: StoryScene[] = [
   {
-    id: 'ch6-engel', title: '最后的意识回声', subtitle: '第六枚碎片 · 起源之外', bg: 'core', fx: 'particles',
+    id: 'ch6-engel', title: '最后的意识回声', subtitle: '第六枚碎片 · 起源之外', bg: 'origin', fx: 'particles',
     lines: [
       L('ch6-20', '系统', 'system', '五枚碎片归位。第六座基座亮起。'),
       L('ch6-21', '恩格尔', 'engel', 'R-07，我不知道你现在使用什么名字。'),
@@ -43,7 +43,7 @@ export const CHAPTER6_ENGEL_SCENES: StoryScene[] = [
 
 export const CHAPTER6_BOSS_INTRO_SCENES: StoryScene[] = [
   {
-    id: 'ch6-boss', title: '零号裁决者', subtitle: 'K-0', bg: 'core', fx: 'glitch',
+    id: 'ch6-boss', title: '零号裁决者', subtitle: 'K-0', bg: 'origin', fx: 'glitch',
     lines: [
       L('ch6-40', '系统', 'system', '最终控制区开启。安全壁垒展开。'),
       L('ch6-41', 'K-0', 'k0', 'R-07，我会给你最后一次机会：离开，或者被清除。'),
@@ -56,7 +56,7 @@ export const CHAPTER6_BOSS_INTRO_SCENES: StoryScene[] = [
 
 export const CHAPTER6_VICTORY_SCENES: StoryScene[] = [
   {
-    id: 'ch6-victory', title: '核心重启', subtitle: '最终裁决结束', bg: 'core', fx: 'particles',
+    id: 'ch6-victory', title: '核心重启', subtitle: '最终裁决结束', bg: 'origin', fx: 'particles',
     lines: [
       L('ch6-50', '系统', 'system', 'K-0 安全装甲破裂。核心温度回落。'),
       L('ch6-51', 'K-0', 'k0', '为什么……你的解法不在我的预案里。'),

@@ -2086,6 +2086,236 @@ function Diagnostic({ uid }: { uid: string }) {
   );
 }
 
+/* ═════ 第六章 · 起源之外（原初核心大厅 · 六基座 · 创世光环） ═════ */
+
+function Origin({ uid }: { uid: string }) {
+  const CX = 800;
+  const HALO = 300; // 顶部光环中心
+  const CORE = 545; // 中央核心
+  return (
+    <g>
+      <g transform="translate(0,-104)">
+        <defs>
+          <radialGradient id={`${uid}-cosmic`}>
+            <stop offset="0%" stopColor="#123048" />
+            <stop offset="45%" stopColor="#0A1B2C" />
+            <stop offset="100%" stopColor="#040A12" />
+          </radialGradient>
+          <radialGradient id={`${uid}-whitecore`}>
+            <stop offset="0%" stopColor="#FFFFFF" stopOpacity="1" />
+            <stop offset="18%" stopColor="#EAF6FF" stopOpacity="0.9" />
+            <stop offset="45%" stopColor="#7FD8E8" stopOpacity="0.45" />
+            <stop offset="100%" stopColor="#0E3A50" stopOpacity="0" />
+          </radialGradient>
+          <radialGradient id={`${uid}-gold`}>
+            <stop offset="0%" stopColor="#FFE7B0" stopOpacity="0.7" />
+            <stop offset="55%" stopColor="#E0A94C" stopOpacity="0.3" />
+            <stop offset="100%" stopColor="#7A4E12" stopOpacity="0" />
+          </radialGradient>
+          <linearGradient id={`${uid}-haloring`} x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stopColor="#EAF6FF" stopOpacity="0.9" />
+            <stop offset="45%" stopColor="#7FD8E8" stopOpacity="0.5" />
+            <stop offset="75%" stopColor="#E0A94C" stopOpacity="0.55" />
+            <stop offset="100%" stopColor="#5B8FA8" stopOpacity="0.4" />
+          </linearGradient>
+        </defs>
+
+        {/* 深空底 */}
+        <rect width="1600" height="900" fill="#04090F" />
+        <Wash uid={uid} cx={CX} cy={400} rx={680} ry={460} color={T.teal} opacity={0.14} />
+        <Wash uid={uid} cx={CX} cy={HALO} rx={420} ry={330} color={T.blue} opacity={0.16} />
+        <Wash uid={uid} cx={CX} cy={CORE} rx={360} ry={240} color={T.amber} opacity={0.1} />
+
+        {/* 两侧巨大的垂直服务器墙与无边界暗空间 */}
+        {Array.from({ length: 10 }, (_, i) => {
+          const t = i / 9;
+          const s = 1 - t * 0.8;
+          const inner = 20 + t * 560;
+          const w = 240 * s + 40;
+          return (
+            <g key={i}>
+              {[{ x: inner - w, k: 0 }, { x: 1600 - inner, k: 1 }].map((b, k) => (
+                <g key={k}>
+                  <rect x={b.x} y={-160} width={w} height={1200} fill={t < 0.4 ? '#061220' : '#050D18'} />
+                  <rect x={k === 0 ? b.x : b.x + w - 6} y={-160} width="6" height="1200" fill="#01040A" opacity="0.9" />
+                  {/* 竖向凹槽与楼层灯 */}
+                  {Array.from({ length: 8 }, (_, r) => (
+                    <line key={r} x1={b.x + 10 + r * (w / 9)} y1={-160} x2={b.x + 10 + r * (w / 9)} y2={1040}
+                      stroke="#01050C" strokeWidth={5 + (1 - t) * 4} opacity="0.8" />
+                  ))}
+                  {Array.from({ length: 18 }, (_, r) => {
+                    const dot = rnd(r, i * 7 + k);
+                    return (
+                      <rect key={r} x={b.x + 10 + rnd(r + i, 63) * Math.max(10, w - 22)}
+                        y={-120 + rnd(r + i, 65) * 940} width={2.4 + dot * 3} height={2.4}
+                        fill={dot > 0.72 ? T.amber : T.mint} opacity={0.14 + dot * 0.4} />
+                    );
+                  })}
+                  <line x1={k === 0 ? b.x + w - 2 : b.x + 2} y1={-150} x2={k === 0 ? b.x + w - 2 : b.x + 2} y2={900}
+                    stroke={T.pale} strokeWidth={2 - t} strokeOpacity={0.18 - t * 0.1} />
+                </g>
+              ))}
+            </g>
+          );
+        })}
+
+        {/* 顶部巨大光环：内部是宇宙般的数字空间 */}
+        <g>
+          <circle cx={CX} cy={HALO} r="300" fill={`url(#${uid}-cosmic)`} opacity="0.95" />
+          <circle cx={CX} cy={HALO} r="300" fill="none" stroke={`url(#${uid}-haloring)`} strokeWidth="26" filter={`url(#${uid}-glow)`} />
+          <circle cx={CX} cy={HALO} r="264" fill="none" stroke={T.pale} strokeOpacity="0.35" strokeWidth="2.4" />
+          <circle cx={CX} cy={HALO} r="330" fill="none" stroke={T.amber} strokeOpacity="0.18" strokeWidth="3" />
+          {/* 光环内圈的肋与星点 */}
+          {Array.from({ length: 36 }, (_, i) => {
+            const a = (i / 36) * Math.PI * 2;
+            return (
+              <line key={i} x1={CX + Math.cos(a) * 262} y1={HALO + Math.sin(a) * 262}
+                x2={CX + Math.cos(a) * 300} y2={HALO + Math.sin(a) * 300}
+                stroke={T.pale} strokeOpacity="0.28" strokeWidth="1.4" />
+            );
+          })}
+          {Array.from({ length: 90 }, (_, i) => {
+            const a = rnd(i, 71) * Math.PI * 2;
+            const rr = rnd(i, 73) * 250;
+            return <circle key={i} cx={CX + Math.cos(a) * rr} cy={HALO + Math.sin(a) * rr * 0.98}
+              r={0.6 + rnd(i, 75) * 1.6} fill="#EAF6FF" opacity={0.15 + rnd(i, 77) * 0.55} />;
+          })}
+          {/* 从核心升向光环的光柱 */}
+          <path d={`M${CX - 60} ${CORE} L${CX - 150} ${HALO + 180} L${CX + 150} ${HALO + 180} L${CX + 60} ${CORE} Z`}
+            fill="#CFEFFF" opacity="0.08" filter={`url(#${uid}-blur)`} />
+        </g>
+
+        {/* 六座创世主碎片基座：五座已恢复，第六座仍黑暗 */}
+        {Array.from({ length: 6 }, (_, i) => {
+          const a = -Math.PI / 2 + (i / 6) * Math.PI * 2; // 从正上方开始顺时针
+          const px = CX + Math.cos(a) * 420;
+          const py = CORE + 30 + Math.sin(a) * 150;
+          const depth = (Math.sin(a) + 1) / 2; // 0 远 → 1 近
+          const h = 120 + depth * 90;
+          const lit = i !== 1; // 右上那座仍为黑暗（可见位置，避免被台词框挡住）
+          const tone = i % 3 === 0 ? T.amber : i % 3 === 1 ? T.mint : '#EAF6FF';
+          const w = 26 + depth * 16;
+          return (
+            <g key={i} opacity={0.55 + depth * 0.45}>
+              {/* 基座柱体 */}
+              <path d={`M${px - w} ${py + 40} L${px - w * 0.6} ${py - h} L${px + w * 0.6} ${py - h} L${px + w} ${py + 40} Z`}
+                fill={lit ? '#0C1E2E' : '#04090F'} stroke={lit ? T.teal : '#16202A'} strokeOpacity={lit ? 0.42 : 0.2} strokeWidth="1.6" />
+              {/* 柱身分隔棱 */}
+              <line x1={px - w * 0.34} y1={py + 40} x2={px - w * 0.2} y2={py - h} stroke="#02070C" strokeWidth="3" opacity="0.9" />
+              <line x1={px + w * 0.34} y1={py + 40} x2={px + w * 0.2} y2={py - h} stroke="#02070C" strokeWidth="3" opacity="0.9" />
+              <line x1={px - w} y1={py + 40} x2={px - w * 0.6} y2={py - h} stroke={T.pale} strokeWidth="1.6" strokeOpacity={lit ? 0.3 : 0.1} />
+              {/* 顶部托盘 */}
+              <ellipse cx={px} cy={py - h} rx={w * 0.9} ry={w * 0.22} fill={lit ? '#0E2233' : '#060C14'}
+                stroke={lit ? tone : '#1A2430'} strokeOpacity={lit ? 0.5 : 0.25} strokeWidth="1.6" />
+              {/* 碎片光：五座已亮，一座黑 */}
+              {lit ? (
+                <g>
+                  <circle cx={px} cy={py - h - 16} r={26 + depth * 10} fill={tone} opacity="0.2" filter={`url(#${uid}-blur)`} />
+                  <path d={`M${px} ${py - h - 44} l${12} ${16} l${-12} ${22} l${-12} ${-22} Z`}
+                    fill={tone} opacity="0.85" filter={`url(#${uid}-glow)`} />
+                </g>
+              ) : (
+                <g>
+                  <path d={`M${px} ${py - h - 40} l${10} ${16} l${-10} ${20} l${-10} ${-20} Z`} fill="#02060C" stroke="#16202A" strokeOpacity="0.5" />
+                  <circle cx={px} cy={py - h - 18} r="3" fill="#2A3A48" opacity="0.6" />
+                </g>
+              )}
+            </g>
+          );
+        })}
+
+        {/* 基座之间悬浮的数据线路，交织成创世密钥 */}
+        {Array.from({ length: 6 }, (_, i) => {
+          const a0 = -Math.PI / 2 + (i / 6) * Math.PI * 2;
+          const a1 = a0 + Math.PI / 3;
+          const p0 = [CX + Math.cos(a0) * 420, CORE + 30 + Math.sin(a0) * 150];
+          const p1 = [CX + Math.cos(a1) * 420, CORE + 30 + Math.sin(a1) * 150];
+          return (
+            <path key={i}
+              d={`M${p0[0]} ${p0[1]} Q${CX} ${CORE - 120 - i * 6} ${p1[0]} ${p1[1]}`}
+              stroke={i % 2 ? T.mint : T.amber} strokeWidth="1.6" strokeOpacity="0.3" fill="none"
+              filter={`url(#${uid}-glow)`} />
+          );
+        })}
+        {/* 密钥核心：中心上方的几何符号 */}
+        <g transform={`rotate(0 ${CX} ${CORE - 150})`}>
+          <circle cx={CX} cy={CORE - 150} r="34" fill="none" stroke={T.pale} strokeOpacity="0.35" strokeWidth="1.6" />
+          <circle cx={CX} cy={CORE - 150} r="22" fill="none" stroke={T.amber} strokeOpacity="0.45" strokeWidth="1.4" />
+          {Array.from({ length: 6 }, (_, i) => {
+            const a = (i / 6) * Math.PI * 2;
+            return <line key={i} x1={CX} y1={CORE - 150} x2={CX + Math.cos(a) * 34} y2={CORE - 150 + Math.sin(a) * 34}
+              stroke={T.mint} strokeOpacity="0.4" strokeWidth="1.2" />;
+          })}
+        </g>
+
+        {/* 中央圆形核心平台：多层悬浮环 + 透明能量环 + 冷白核心 */}
+        <g>
+          <ellipse cx={CX} cy={CORE + 20} rx={330} ry={96} fill="#08141F" opacity="0.9" />
+          <ellipse cx={CX} cy={CORE + 20} rx={330} ry={96} fill="none" stroke={T.pale} strokeOpacity="0.3" strokeWidth="2" />
+          {/* 透明能量环（青 + 金） */}
+          {[
+            { rx: 290, ry: 84, c: T.mint, o: 0.4, rot: 0 },
+            { rx: 240, ry: 70, c: '#EAF6FF', o: 0.32, rot: 0 },
+            { rx: 200, ry: 58, c: '#E0A94C', o: 0.36, rot: 18 },
+            { rx: 150, ry: 44, c: T.mint, o: 0.42, rot: -24 },
+          ].map((r, i) => (
+            <ellipse key={i} cx={CX} cy={CORE + 10} rx={r.rx} ry={r.ry} fill="none" stroke={r.c}
+              strokeWidth="2.6" strokeOpacity={r.o} transform={`rotate(${r.rot} ${CX} ${CORE + 10})`} filter={`url(#${uid}-glow)`} />
+          ))}
+          {/* 悬浮机械块 */}
+          {Array.from({ length: 14 }, (_, i) => {
+            const a = (i / 14) * Math.PI * 2;
+            const rr = 170 + rnd(i, 79) * 130;
+            const x = CX + Math.cos(a) * rr;
+            const y = CORE + 10 + Math.sin(a) * rr * 0.29;
+            const s = 8 + rnd(i, 81) * 18;
+            return <rect key={i} x={x} y={y} width={s} height={s * 0.5} fill="#0B1A28"
+              stroke={i % 4 === 0 ? T.amber : T.teal} strokeOpacity="0.35" transform={`rotate(${rnd(i, 83) * 40} ${x} ${y})`} />;
+          })}
+          {/* 冷白核心光 */}
+          <circle cx={CX} cy={CORE + 10} r="150" fill={`url(#${uid}-whitecore)`} opacity="0.5" />
+          <circle cx={CX} cy={CORE + 10} r="58" fill={`url(#${uid}-whitecore)`} opacity="0.9" />
+          <circle cx={CX} cy={CORE + 10} r="14" fill="#FFFFFF" opacity="0.95" filter={`url(#${uid}-glow)`} />
+          <circle cx={CX} cy={CORE + 10} r="26" fill="#FFFFFF" opacity="0.5" filter={`url(#${uid}-blur)`} />
+          {/* 核心周围的冷白与金色环 */}
+          <ellipse cx={CX} cy={CORE + 10} rx="96" ry="26" fill="none" stroke="#EAF6FF" strokeOpacity="0.6" strokeWidth="3" filter={`url(#${uid}-glow)`} />
+          <ellipse cx={CX} cy={CORE + 10} rx="126" ry="34" fill="none" stroke="#E0A94C" strokeOpacity="0.4" strokeWidth="2" />
+        </g>
+
+        {/* 平台下方的环阶基座：把平台"坐"在结构上，并填补下方空间 */}
+        {[
+          { rx: 400, ry: 118, y: CORE + 74, o: 0.55 },
+          { rx: 476, ry: 140, y: CORE + 102, o: 0.34 },
+          { rx: 552, ry: 162, y: CORE + 132, o: 0.2 },
+        ].map((r, i) => (
+          <g key={i}>
+            <ellipse cx={CX} cy={r.y} rx={r.rx} ry={r.ry} fill="#050D16" opacity={r.o} />
+            <ellipse cx={CX} cy={r.y} rx={r.rx} ry={r.ry} fill="none" stroke={T.teal} strokeOpacity={r.o * 0.5} strokeWidth="1.6" />
+          </g>
+        ))}
+
+        {/* 平台下方的暗空间与远景结构 */}
+        <rect x="0" y={CORE + 110} width="1600" height="400" fill="#03080F" opacity="0.85" />
+        {Array.from({ length: 8 }, (_, i) => {
+          const x = 120 + i * 190 + rnd(i, 85) * 60;
+          return <rect key={i} x={x} y={CORE + 120 + rnd(i, 87) * 60} width={40 + rnd(i, 89) * 70} height={40 + rnd(i, 91) * 80}
+            fill="#050C14" stroke={T.teal} strokeOpacity="0.1" />;
+        })}
+        <FogBand uid={uid} y={CORE + 80} h={200} opacity={0.7} />
+
+        {/* 星空般的尘埃 */}
+        {Array.from({ length: 110 }, (_, i) => (
+          <circle key={i} cx={40 + rnd(i, 93) * 1520} cy={80 + rnd(i, 95) * 560}
+            r={0.6 + rnd(i, 97) * 1.8} fill={rnd(i, 99) > 0.85 ? T.amber : '#EAF6FF'}
+            opacity={0.15 + rnd(i, 101) * 0.5} />
+        ))}
+      </g>
+
+      <rect x="0" y="700" width="1600" height="200" fill={`url(#${uid}-bottom)`} />
+    </g>
+  );
+}
+
 /* ───────────────────────── 其余场景：轻量变体 ───────────────────────── */
 
 function Variant({ uid, kind }: { uid: string; kind: 'dataport' | 'memory' | 'core' | 'terminal' }) {
@@ -2162,6 +2392,7 @@ export default function SceneArt({ bg }: { bg: SceneBg }) {
           {bg === 'archive' && <Archive uid={uid} />}
           {bg === 'workshop' && <Workshop uid={uid} />}
           {bg === 'diagnostic' && <Diagnostic uid={uid} />}
+          {bg === 'origin' && <Origin uid={uid} />}
           {bg === 'terminal' && <Terminal uid={uid} />}
 
           {/* 暗角（电影感影调） */}
