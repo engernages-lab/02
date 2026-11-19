@@ -7,7 +7,7 @@ const L = (id: string, speaker: string, kind: 'r07' | 'mira' | 'engel' | 'k0' | 
 
 export const CHAPTER3_ARRIVAL_SCENES: StoryScene[] = [
   {
-    id: 'ch3-arrive', title: '旧数据档案城', subtitle: '第三章 · 被遗忘的实验档案', bg: 'memory', fx: 'particles',
+    id: 'ch3-arrive', title: '旧数据档案城', subtitle: '第三章 · 被遗忘的实验档案', bg: 'archive', fx: 'particles',
     lines: [
       L('ch3-01', '系统', 'system', '存储数据仓 · 旧数据管理中心。灰尘一样的坏块在走廊里缓慢漂浮。'),
       L('ch3-02', 'MIRA', 'mira', '这里保存着所有数字生命的身份资料——包括你。'),
@@ -23,7 +23,7 @@ export const CHAPTER3_ARRIVAL_SCENES: StoryScene[] = [
 
 export const CHAPTER3_RESTORED_SCENES: StoryScene[] = [
   {
-    id: 'ch3-restored', title: '被删除的实验记录', subtitle: 'R-01 ~ R-07', bg: 'memory', fx: 'particles',
+    id: 'ch3-restored', title: '被删除的实验记录', subtitle: 'R-01 ~ R-07', bg: 'archive', fx: 'particles',
     lines: [
       L('ch3-10', '系统', 'system', '档案服务器已修复。正在重建实验索引……'),
       L('ch3-11', 'MIRA', 'mira', 'R-01。第一次尝试。意识在 3 分 12 秒后崩塌。'),
@@ -46,7 +46,7 @@ export const CHAPTER3_RESTORED_SCENES: StoryScene[] = [
 
 export const CHAPTER3_BOSS_INTRO_SCENES: StoryScene[] = [
   {
-    id: 'ch3-boss', title: '数据索引吞噬者', subtitle: 'INDEX-0', bg: 'memory', fx: 'glitch',
+    id: 'ch3-boss', title: '数据索引吞噬者', subtitle: 'INDEX-0', bg: 'archive', fx: 'glitch',
     lines: [
       L('ch3-30', '系统', 'system', '索引核心已污染。实体自检：INDEX-0。'),
       L('ch3-31', 'INDEX-0', 'k0', '身份记录……无法归属……全部并入索引……'),
@@ -58,7 +58,7 @@ export const CHAPTER3_BOSS_INTRO_SCENES: StoryScene[] = [
 
 export const CHAPTER3_VICTORY_SCENES: StoryScene[] = [
   {
-    id: 'ch3-victory', title: '第七个实验体', subtitle: '创世主碎片 · 第三枚', bg: 'memory', fx: 'particles',
+    id: 'ch3-victory', title: '第七个实验体', subtitle: '创世主碎片 · 第三枚', bg: 'archive', fx: 'particles',
     lines: [
       L('ch3-40', '系统', 'system', 'INDEX-0 已停止吞噬。实验档案恢复 41%。'),
       L('ch3-41', '恩格尔', 'engel', '（实验记录）如果你能够看见这段记录，说明实验已经成功了一部分。'),

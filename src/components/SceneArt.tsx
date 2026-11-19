@@ -1454,6 +1454,203 @@ function Garden({ uid }: { uid: string }) {
   );
 }
 
+/* ═════ 第三章 · 被遗忘的实验档案（双壁档案塔 · 旋转索引核 · 删除痕迹） ═════ */
+
+function Archive({ uid }: { uid: string }) {
+  const VPX = 800;
+  const VPY = 420;
+  return (
+    <g>
+      <g transform="translate(0,-104)">
+        <defs>
+          {/* 档案货架的索引灯网格：平铺出密集灯光，避免大量独立图元 */}
+          <pattern id={`${uid}-shelf`} width="30" height="34" patternUnits="userSpaceOnUse">
+            <rect x="4" y="6" width="7" height="2.4" fill={T.mint} opacity="0.55" />
+            <rect x="16" y="6" width="4" height="2.2" fill={T.pale} opacity="0.35" />
+            <rect x="7" y="17" width="5" height="2.2" fill={T.pale} opacity="0.4" />
+            <rect x="18" y="17" width="8" height="2.4" fill={T.mint} opacity="0.45" />
+            <rect x="4" y="27" width="10" height="2" fill={T.violet} opacity="0.22" />
+            <rect x="0" y="31" width="30" height="2" fill="#0B1A2A" />
+          </pattern>
+        </defs>
+
+        {/* 深空底 */}
+        <Wash uid={uid} cx={VPX} cy={VPY} rx={620} ry={430} color={T.teal} opacity={0.14} />
+        <Wash uid={uid} cx={300} cy={300} rx={420} ry={380} color={T.blue} opacity={0.12} />
+        <Wash uid={uid} cx={1300} cy={320} rx={420} ry={380} color={T.blue} opacity={0.12} />
+
+        {/* 两侧档案塔：一层层向灭点收束的货架 */}
+        {Array.from({ length: 15 }, (_, i) => {
+          const t = i / 14;
+          const s = 1 - t * 0.84;
+          const inner = 60 + t * 620;         // 内缘向中间收
+          const w = 168 * s + 26;
+          const top = -170;                   // 塔体上下都超出画面，避免露出阶梯状断口
+          const bot = 1200;
+          const hollow = rnd(i, 5) > 0.62;    // 部分档案柱已被清空
+          return (
+            <g key={i}>
+              {[
+                { x: inner - w, tilt: (rnd(i, 7) - 0.5) * 1.6 },              // 左
+                { x: 1600 - inner, tilt: (rnd(i, 9) - 0.5) * 1.6 },           // 右
+              ].map((side, k) => (
+                <g key={k} transform={`rotate(${side.tilt} ${side.x + w / 2} ${bot})`}>
+                  <rect x={side.x} y={top} width={w} height={bot - top} fill={side.x < VPX ? '#071322' : '#061020'} />
+                  {/* 塔与塔之间的竖向暗缝：让货架读成独立塔体 */}
+                  <rect x={k === 0 ? side.x : side.x + w - 7} y={top} width="7" height={bot - top} fill="#010409" opacity="0.92" />
+                  {/* 朝通道的内侧面压亮，让墙体成型 */}
+                  <rect x={k === 0 ? side.x + w - w * 0.22 : side.x} y={top} width={w * 0.22} height={bot - top}
+                    fill={T.pale} opacity="0.045" />
+                  {/* 货架横梁 */}
+                  {Array.from({ length: Math.max(6, Math.floor((bot - top) / (34 + t * 46))) }, (_, r) => {
+                    const y = top + 16 + r * (34 + t * 46);
+                    return (
+                      <g key={r}>
+                        <line x1={side.x + 2} y1={y} x2={side.x + w - 2} y2={y} stroke="#0B1A2A" strokeWidth="3.4" />
+                        <line x1={side.x + 2} y1={y} x2={side.x + w - 2} y2={y} stroke={T.teal} strokeOpacity="0.16" strokeWidth="1" />
+                      </g>
+                    );
+                  })}
+                  {/* 索引灯网格：被清空的档案只剩很淡的残光 */}
+                  <rect x={side.x} y={top} width={w} height={bot - top}
+                    fill={`url(#${uid}-shelf)`} opacity={hollow ? 0.14 : 0.62} />
+                  {/* 少量故障红点 */}
+                  {Array.from({ length: hollow ? 2 : 5 }, (_, r) => (
+                    <rect key={r}
+                      x={side.x + 6 + rnd(r + i, 11) * Math.max(6, w - 14)}
+                      y={top + 30 + rnd(r + i, 13) * (bot - top - 60)}
+                      width={2.4} height={2.4} fill={T.ember} opacity={0.5 + rnd(r + i, 15) * 0.4} />
+                  ))}
+                  {/* 断裂 / 倾斜造成的黑色损坏区 */}
+                  {rnd(i * 2 + k, 19) > 0.6 && (
+                    <path d={`M${side.x + w * 0.2} ${bot - (bot - top) * 0.28} l${w * 0.5} ${-(bot - top) * 0.08} l${w * 0.1} ${(bot - top) * 0.2} l${-w * 0.55} ${(bot - top) * 0.06} Z`}
+                      fill="#01040A" opacity="0.9" />
+                  )}
+                  {/* 朝通道一侧的冷光边 */}
+                  <line x1={k === 0 ? side.x + w - 2 : side.x + 2} y1={top + 8}
+                    x2={k === 0 ? side.x + w - 2 : side.x + 2} y2={bot - 8}
+                    stroke={T.pale} strokeWidth={1.6 - t} strokeOpacity={0.2 - t * 0.12} />
+                </g>
+              ))}
+            </g>
+          );
+        })}
+
+        {/* 中央索引核：多层垂直旋转的储存环 */}
+        <g>
+          <ellipse cx={VPX} cy={VPY} rx={190} ry={54} fill={T.teal} opacity="0.1" filter={`url(#${uid}-blur)`} />
+          {/* 竖轴 */}
+          <path d={`M${VPX - 16} 560 L${VPX - 9} 150 L${VPX + 9} 150 L${VPX + 16} 560 Z`} fill="#03080F" />
+          <line x1={VPX - 16} y1={560} x2={VPX - 9} y2={150} stroke={T.pale} strokeWidth="1.6" strokeOpacity="0.24" />
+          <line x1={VPX + 16} y1={560} x2={VPX + 9} y2={150} stroke={T.teal} strokeWidth="1.4" strokeOpacity="0.18" />
+          {/* 六个储存环：错位旋转、逐层变小 */}
+          {[
+            { cy: 540, rx: 230, ry: 58, rot: -7 },
+            { cy: 480, rx: 208, ry: 52, rot: 6 },
+            { cy: 420, rx: 182, ry: 46, rot: -5 },
+            { cy: 360, rx: 152, ry: 39, rot: 8 },
+            { cy: 300, rx: 120, ry: 31, rot: -6 },
+            { cy: 244, rx: 88, ry: 23, rot: 5 },
+          ].map((r, i) => (
+            <g key={i} transform={`rotate(${r.rot} ${VPX} ${r.cy})`}>
+              <ellipse cx={VPX} cy={r.cy} rx={r.rx} ry={r.ry} fill="none"
+                stroke={i % 2 ? T.pale : T.mint} strokeWidth="6" strokeOpacity={0.34 - i * 0.03} filter={`url(#${uid}-glow)`} />
+              <ellipse cx={VPX} cy={r.cy} rx={r.rx} ry={r.ry} fill="none"
+                stroke="#02070C" strokeWidth="2.2" strokeOpacity="0.9" />
+              {/* 环上的刻度与配重 */}
+              {Array.from({ length: 10 }, (_, k) => {
+                const a = (k / 10) * Math.PI * 2;
+                return <rect key={k} x={VPX + Math.cos(a) * r.rx - 2} y={r.cy + Math.sin(a) * r.ry - 2}
+                  width="4" height="4" fill={T.mint} opacity={0.35} />;
+              })}
+            </g>
+          ))}
+          {/* 核心炽光 */}
+          <circle cx={VPX} cy={VPY} r="34" fill={T.mint} opacity="0.22" filter={`url(#${uid}-blur)`} />
+          <circle cx={VPX} cy={VPY} r="9" fill="#EAFBF7" opacity="0.9" filter={`url(#${uid}-glow)`} />
+        </g>
+
+        {/* 被删除档案形成的黑色数据旋涡 */}
+        {[0, 1, 2, 3].map(i => (
+          <ellipse key={i} cx={VPX} cy={VPY - 10 + i * 8} rx={286 - i * 30} ry={76 - i * 9}
+            fill="none" stroke="#01040A" strokeWidth={7 - i * 1.2} strokeOpacity="0.7"
+            strokeDasharray={`${70 + i * 22} ${30 + i * 9}`} transform={`rotate(${-14 + i * 7} ${VPX} ${VPY})`} />
+        ))}
+        {Array.from({ length: 26 }, (_, i) => {
+          const a = rnd(i, 21) * Math.PI * 2;
+          const rr = 120 + rnd(i, 23) * 190;
+          const x = VPX + Math.cos(a) * rr;
+          const y = VPY - 10 + Math.sin(a) * rr * 0.3;
+          const s = 4 + rnd(i, 25) * 12;
+          return (
+            <g key={i} transform={`rotate(${rnd(i, 27) * 120} ${x} ${y})`} opacity={0.5 + rnd(i, 29) * 0.4}>
+              <path d={`M${x} ${y} l${s} ${-s * 0.3} l${s * 0.4} ${s * 0.6} l${-s * 0.7} ${s * 0.3} Z`}
+                fill="#050B14" stroke={T.pale} strokeOpacity="0.3" strokeWidth="1" />
+            </g>
+          );
+        })}
+
+        {/* 远处漫长的档案通道与尽头冷光（窄口，避免形成大三角光斑） */}
+        <g>
+          <path d={`M${VPX - 96} 600 L${VPX - 40} ${VPY + 22} L${VPX + 40} ${VPY + 22} L${VPX + 96} 600 Z`} fill="#02070C" opacity="0.92" />
+          <rect x={VPX - 30} y={VPY - 18} width="60" height="42" fill={T.mint} opacity="0.4" filter={`url(#${uid}-blur)`} />
+          <rect x={VPX - 12} y={VPY - 6} width="24" height="20" fill="#D8FFF6" opacity="0.8" />
+          <rect x={VPX - 12} y={VPY - 6} width="24" height="20" fill="none" stroke={T.mint} strokeOpacity="0.5" />
+        </g>
+
+        {/* 地面：暗色反光地砖 + 少量地灯 */}
+        <rect x="0" y="600" width="1600" height="300" fill="#030810" />
+        {Array.from({ length: 9 }, (_, i) => {
+          const t = i / 8;
+          const y = 606 + t * t * 300;
+          const hw = 120 + t * 760;
+          return <line key={i} x1={VPX - hw} y1={y} x2={VPX + hw} y2={y} stroke={T.pale} strokeOpacity={0.08 - t * 0.03} strokeWidth="1.2" />;
+        })}
+        {[-1, 1].map(s => [0.3, 0.55, 0.8].map((f, k) => (
+          <line key={`${s}-${k}`} x1={VPX + s * 60} y1={620} x2={VPX + s * 900} y2={940}
+            stroke={T.pale} strokeOpacity="0.06" strokeWidth="1.2" />
+        )))}
+        {/* 地上的发光地灯（参考图里的亮砖） */}
+        {[
+          { x: 300, y: 700, r: 26 }, { x: 620, y: 760, r: 22 }, { x: 1180, y: 736, r: 24 }, { x: 1420, y: 690, r: 20 },
+        ].map((p, i) => (
+          <ellipse key={i} cx={p.x} cy={p.y} rx={p.r} ry={p.r * 0.32} fill="#DFFFF8" opacity="0.22" filter={`url(#${uid}-blur)`} />
+        ))}
+        <ellipse cx={VPX} cy={700} rx={420} ry={110} fill={T.teal} opacity="0.1" filter={`url(#${uid}-blur)`} />
+
+        {/* 灰白数据碎片（数字灰尘） */}
+        {Array.from({ length: 70 }, (_, i) => (
+          <circle key={i} cx={60 + rnd(i, 31) * 1480} cy={180 + rnd(i, 33) * 620}
+            r={0.7 + rnd(i, 35) * 2.2} fill="#C9D6E4" opacity={0.12 + rnd(i, 37) * 0.4} />
+        ))}
+        {Array.from({ length: 16 }, (_, i) => {
+          const x = 120 + rnd(i, 41) * 1360;
+          const y = 420 + rnd(i, 43) * 380;
+          const s = 5 + rnd(i, 45) * 14;
+          return <path key={i} d={`M${x} ${y} l${s} ${-s * 0.3} l${s * 0.4} ${s * 0.5} l${-s * 0.8} ${s * 0.2} Z`}
+            fill="#8FA2B6" opacity={0.1 + rnd(i, 47) * 0.24} />;
+        })}
+
+        {/* 少量红色高权限删除警告灯（藏色） */}
+        {[
+          { x: 470, y: 300 }, { x: 1180, y: 268 }, { x: 330, y: 470 }, { x: 1300, y: 452 }, { x: 700, y: 214 },
+        ].map((p, i) => (
+          <g key={i}>
+            <circle cx={p.x} cy={p.y} r="2.6" fill={T.ember} opacity="0.85" filter={`url(#${uid}-glow)`} />
+            <circle cx={p.x} cy={p.y} r="10" fill={T.ember} opacity="0.1" filter={`url(#${uid}-blur)`} />
+          </g>
+        ))}
+
+        <FogBand uid={uid} y={500} h={200} opacity={0.8} />
+        <FogBand uid={uid} y={660} h={200} opacity={0.6} />
+        <Motes uid={uid} n={70} seed={13} color={T.pale} yMax={560} />
+      </g>
+
+      <rect x="0" y="700" width="1600" height="200" fill={`url(#${uid}-bottom)`} />
+    </g>
+  );
+}
+
 /* ───────────────────────── 其余场景：轻量变体 ───────────────────────── */
 
 function Variant({ uid, kind }: { uid: string; kind: 'dataport' | 'memory' | 'core' | 'terminal' }) {
@@ -1527,6 +1724,7 @@ export default function SceneArt({ bg }: { bg: SceneBg }) {
           {bg === 'dataport' && <Dataport uid={uid} />}
           {(bg === 'memory' || bg === 'core') && <Variant uid={uid} kind={bg} />}
           {bg === 'garden' && <Garden uid={uid} />}
+          {bg === 'archive' && <Archive uid={uid} />}
           {bg === 'terminal' && <Terminal uid={uid} />}
 
           {/* 暗角（电影感影调） */}
