@@ -73,7 +73,7 @@ export interface EndingDef {
 }
 
 /** 演出背景 */
-export type SceneBg = 'underground' | 'corridor' | 'dataport' | 'core' | 'void' | 'memory' | 'terminal' | 'garden' | 'archive' | 'workshop' | 'diagnostic' | 'origin' | 'beyond';
+export type SceneBg = 'underground' | 'corridor' | 'dataport' | 'core' | 'void' | 'memory' | 'terminal' | 'garden' | 'archive' | 'workshop' | 'diagnostic' | 'origin' | 'beyond' | 'dawn';
 /** 演出特效 */
 export type SceneFx = 'none' | 'glitch' | 'alarm' | 'scan' | 'flicker' | 'particles';
 

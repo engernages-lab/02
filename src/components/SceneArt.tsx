@@ -2480,6 +2480,189 @@ function Beyond({ uid }: { uid: string }) {
   );
 }
 
+/* ═════ 结局一 · 新的黎明（复苏中的数字城市 · 分散共治的核心） ═════ */
+
+function Dawn({ uid }: { uid: string }) {
+  const HZ = 520; // 地平线
+  const CORE = [800, 452];
+  return (
+    <g>
+      <g transform="translate(0,-104)">
+        <defs>
+          <linearGradient id={`${uid}-dawnsky`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#050B18" />
+            <stop offset="42%" stopColor="#0B2140" />
+            <stop offset="72%" stopColor="#2A4A6E" />
+            <stop offset="92%" stopColor="#C9A46A" />
+            <stop offset="100%" stopColor="#F0D3A0" />
+          </linearGradient>
+          <radialGradient id={`${uid}-sun`}>
+            <stop offset="0%" stopColor="#FFF6E2" stopOpacity="0.95" />
+            <stop offset="28%" stopColor="#FFDDA8" stopOpacity="0.6" />
+            <stop offset="62%" stopColor="#E0A94C" stopOpacity="0.22" />
+            <stop offset="100%" stopColor="#C9A46A" stopOpacity="0" />
+          </radialGradient>
+          <radialGradient id={`${uid}-daycore`}>
+            <stop offset="0%" stopColor="#F2FFFF" stopOpacity="0.9" />
+            <stop offset="40%" stopColor="#9FE8F0" stopOpacity="0.4" />
+            <stop offset="100%" stopColor="#3A7E9A" stopOpacity="0" />
+          </radialGradient>
+          {/* 复苏的窗前灯：青蓝色为主，少量金色 */}
+          <pattern id={`${uid}-winlit`} width="22" height="26" patternUnits="userSpaceOnUse">
+            <rect x="4" y="5" width="5" height="2.4" fill={T.mint} opacity="0.75" />
+            <rect x="13" y="5" width="3" height="2.2" fill={T.pale} opacity="0.5" />
+            <rect x="7" y="14" width="4" height="2.2" fill="#CDEFFF" opacity="0.6" />
+            <rect x="15" y="14" width="6" height="2.4" fill={T.mint} opacity="0.55" />
+            <rect x="4" y="22" width="6" height="2" fill={T.amber} opacity="0.35" />
+          </pattern>
+        </defs>
+
+        {/* 黎明天空 */}
+        <rect width="1600" height="900" fill={`url(#${uid}-dawnsky)`} />
+        {/* 地平线上的黎明光 */}
+        <ellipse cx={CORE[0]} cy={HZ + 10} rx={520} ry={230} fill={`url(#${uid}-sun)`} />
+        {/* 天空全息环（重建中的系统结构） */}
+        {[
+          { x: 800, y: 250, r: 120 },
+          { x: 380, y: 190, r: 62 },
+          { x: 1230, y: 170, r: 74 },
+        ].map((h, i) => (
+          <g key={i} opacity="0.35">
+            <circle cx={h.x} cy={h.y} r={h.r} fill="none" stroke={T.mint} strokeOpacity="0.5" strokeWidth="1.4" />
+            <circle cx={h.x} cy={h.y} r={h.r * 0.62} fill="none" stroke="#CDEFFF" strokeOpacity="0.35" strokeWidth="1" />
+            {Array.from({ length: 12 }, (_, k) => {
+              const a = (k / 12) * Math.PI * 2;
+              return <line key={k} x1={h.x + Math.cos(a) * h.r * 0.62} y1={h.y + Math.sin(a) * h.r * 0.62}
+                x2={h.x + Math.cos(a) * h.r} y2={h.y + Math.sin(a) * h.r}
+                stroke={T.mint} strokeOpacity="0.22" strokeWidth="1" />;
+            })}
+          </g>
+        ))}
+        {/* 柔和光带：像真正的黎明照过来 */}
+        {Array.from({ length: 6 }, (_, i) => {
+          const x = 340 + i * 190;
+          return (
+            <path key={i} d={`M${x} -120 L${x + 70} -120 L${x + 210} ${HZ + 40} L${x + 130} ${HZ + 40} Z`}
+              fill="#FFEFD2" opacity={0.02 + rnd(i, 3) * 0.03} filter={`url(#${uid}-blur)`} />
+          );
+        })}
+
+        {/* 远景城市：三层收束的塔群 */}
+        {[
+          { count: 18, base: 300, spread: 1500, hMin: 180, hMax: 380, o: 0.5, lit: 0.35 },
+          { count: 14, base: 700, spread: 1300, hMin: 240, hMax: 460, o: 0.75, lit: 0.6 },
+          { count: 10, base: 900, spread: 1600, hMin: 300, hMax: 520, o: 0.95, lit: 0.8 },
+        ].map((layer, li) => (
+          <g key={li}>
+            {Array.from({ length: layer.count }, (_, i) => {
+              const x = layer.base + (i / layer.count) * layer.spread - 120 + rnd(i, li * 5 + 3) * 40;
+              const w = 40 + rnd(i, li * 7 + 5) * 70;
+              const h = layer.hMin + rnd(i, li * 9 + 7) * (layer.hMax - layer.hMin);
+              const y = HZ - h * 0.55;
+              return (
+                <g key={i} opacity={layer.o}>
+                  <rect x={x} y={y} width={w} height={h} fill={li === 2 ? '#081726' : '#061120'} />
+                  <rect x={x} y={y} width={w} height={h} fill={`url(#${uid}-winlit)`} opacity={layer.lit * (0.55 + rnd(i, li * 11 + 9) * 0.75)} />
+                  {/* 楼顶航标与竖向光带 */}
+                  <rect x={x + w * 0.42} y={y - 8} width="2" height="10" fill={T.ember} opacity="0.7" />
+                  <rect x={x + w * 0.2} y={y} width={w * 0.16} height={h} fill={T.mint} opacity="0.05" />
+                </g>
+              );
+            })}
+          </g>
+        ))}
+
+        {/* 雾层：让远景柔和地融进黎明 */}
+        <FogBand uid={uid} y={HZ - 90} h={210} opacity={0.75} />
+        {/* 黎明的暖光落在城市上（画在塔群之前，透出来） */}
+        <ellipse cx={CORE[0]} cy={HZ + 20} rx={560} ry={190} fill={`url(#${uid}-sun)`} opacity="0.55" />
+
+        {/* 中景：悬浮平台 + 平台间的稳定数据流 */}
+        {[
+          { x: 300, y: 520, rx: 130, ry: 30 },
+          { x: 1240, y: 500, rx: 150, ry: 34 },
+          { x: 560, y: 566, rx: 100, ry: 24 },
+          { x: 1010, y: 578, rx: 110, ry: 26 },
+        ].map((p, i) => (
+          <g key={i}>
+            {/* 平台本体 */}
+            <ellipse cx={p.x} cy={p.y} rx={p.rx} ry={p.ry} fill="#071624" opacity="0.9" />
+            <ellipse cx={p.x} cy={p.y} rx={p.rx} ry={p.ry} fill="none" stroke={T.mint} strokeOpacity="0.45" strokeWidth="1.6" />
+            <ellipse cx={p.x} cy={p.y + p.ry * 0.8} rx={p.rx * 0.8} ry={p.ry * 0.5} fill={T.mint} opacity="0.12" filter={`url(#${uid}-blur)`} />
+            {/* 平台上的生命光点 */}
+            {Array.from({ length: 6 }, (_, k) => (
+              <circle key={k} cx={p.x - p.rx * 0.6 + k * (p.rx * 0.24)} cy={p.y - 4 - rnd(k + i, 11) * 10}
+                r={1 + rnd(k + i, 13) * 1.8} fill="#DFFFF8" opacity={0.4 + rnd(k + i, 15) * 0.4} filter={`url(#${uid}-glow)`} />
+            ))}
+          </g>
+        ))}
+        {/* 平台之间的数据流：断线重新接上 */}
+        {[
+          'M430 520 Q610 470 800 470', 'M800 470 Q1020 462 1090 500', 'M1240 500 Q1180 540 1120 578',
+          'M300 520 Q420 560 460 566', 'M660 566 Q830 610 900 578',
+        ].map((d, i) => (
+          <path key={i} d={d} stroke={T.mint} strokeWidth="1.8" strokeOpacity="0.4" fill="none"
+            strokeDasharray="6 8" filter={`url(#${uid}-glow)`} />
+        ))}
+
+        {/* 中央能源核心：不再是单一权限，而是无数分散光点共同构成 */}
+        <g>
+          <circle cx={CORE[0]} cy={CORE[1]} r="150" fill={`url(#${uid}-daycore)`} opacity="0.55" />
+          <circle cx={CORE[0]} cy={CORE[1]} r="96" fill="none" stroke={T.mint} strokeOpacity="0.35" strokeWidth="2"
+            strokeDasharray="10 12" />
+          <circle cx={CORE[0]} cy={CORE[1]} r="140" fill="none" stroke="#CDEFFF" strokeOpacity="0.18" strokeWidth="1.4" />
+          {/* 共同构成的光点团：越靠中心越密 */}
+          {Array.from({ length: 88 }, (_, i) => {
+            const a = rnd(i, 21) * Math.PI * 2;
+            const rr = Math.pow(rnd(i, 23), 0.6) * 118;
+            return (
+              <circle key={i} cx={CORE[0] + Math.cos(a) * rr} cy={CORE[1] + Math.sin(a) * rr * 0.94}
+                r={0.9 + rnd(i, 25) * 2.4}
+                fill={rnd(i, 27) > 0.82 ? T.amber : rnd(i, 29) > 0.5 ? '#DFFFF8' : T.mint}
+                opacity={0.35 + rnd(i, 31) * 0.6} filter={`url(#${uid}-glow)`} />
+            );
+          })}
+          {/* 核心不下压：留一点柔光而不是强光点 */}
+          <circle cx={CORE[0]} cy={CORE[1]} r="26" fill="#F2FFFF" opacity="0.28" filter={`url(#${uid}-blur)`} />
+        </g>
+
+        {/* 城市中大量微弱的数字生命光点 */}
+        {Array.from({ length: 150 }, (_, i) => (
+          <circle key={i} cx={20 + rnd(i, 41) * 1560} cy={330 + rnd(i, 43) * 330}
+            r={0.7 + rnd(i, 45) * 1.6} fill={rnd(i, 47) > 0.85 ? T.amber : '#DFFFF8'}
+            opacity={0.2 + rnd(i, 49) * 0.55} />
+        ))}
+
+        {/* 城市地面：反射晨光的屋顶与街区 */}
+        <rect x="0" y={HZ + 120} width="1600" height="280" fill="#050C14" />
+        {Array.from({ length: 9 }, (_, i) => {
+          const y = HZ + 130 + i * i * 5;
+          return <line key={i} x1={0} y1={y} x2={1600} y2={y} stroke={T.amber} strokeOpacity={0.05 + i * 0.008} strokeWidth="1.2" />;
+        })}
+        {/* 前景屋顶剪影与节点灯 */}
+        {[
+          { x: -20, y: HZ + 210, w: 300, h: 130 },
+          { x: 360, y: HZ + 240, w: 250, h: 110 },
+          { x: 1180, y: HZ + 230, w: 280, h: 120 },
+          { x: 1470, y: HZ + 200, w: 200, h: 150 },
+        ].map((b, i) => (
+          <g key={i}>
+            <rect x={b.x} y={b.y} width={b.w} height={b.h} fill="#03080F" />
+            <rect x={b.x} y={b.y} width={b.w} height="3" fill={T.mint} opacity="0.3" />
+            {Array.from({ length: 4 }, (_, k) => (
+              <circle key={k} cx={b.x + 20 + k * (b.w / 4.6)} cy={b.y + 12} r="1.8" fill={T.mint}
+                opacity={0.5} filter={`url(#${uid}-glow)`} />
+            ))}
+          </g>
+        ))}
+        <FogBand uid={uid} y={HZ + 60} h={200} opacity={0.45} />
+      </g>
+
+      <rect x="0" y="700" width="1600" height="200" fill={`url(#${uid}-bottom)`} />
+    </g>
+  );
+}
+
 /* ───────────────────────── 其余场景：轻量变体 ───────────────────────── */
 
 function Variant({ uid, kind }: { uid: string; kind: 'dataport' | 'memory' | 'core' | 'terminal' }) {
@@ -2558,6 +2741,7 @@ export default function SceneArt({ bg }: { bg: SceneBg }) {
           {bg === 'diagnostic' && <Diagnostic uid={uid} />}
           {bg === 'origin' && <Origin uid={uid} />}
           {bg === 'beyond' && <Beyond uid={uid} />}
+          {bg === 'dawn' && <Dawn uid={uid} />}
           {bg === 'terminal' && <Terminal uid={uid} />}
 
           {/* 暗角（电影感影调） */}

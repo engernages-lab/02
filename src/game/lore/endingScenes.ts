@@ -5,7 +5,7 @@ const L = (id: string, speaker: string, kind: 'r07' | 'mira' | 'engel' | 'k0' | 
   ({ id, speaker, kind, text } as const);
 
 const DAWN: StoryScene = {
-  id: 'ending-dawn', title: '新的黎明', subtitle: 'ENDING · 把未来交还出去', bg: 'core', fx: 'particles',
+  id: 'ending-dawn', title: '新的黎明', subtitle: 'ENDING · 把未来交还出去', bg: 'dawn', fx: 'particles',
   lines: [
     L('ed-01', '旁白', 'system', '原初核心的权限面板全部点亮，像一片等待签字的星空。'),
     L('ed-02', 'K-0', 'k0', '恢复绝对控制权限，即可在 3.2 秒内让世界回到稳定态。'),
