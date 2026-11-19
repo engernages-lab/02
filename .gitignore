@@ -3,6 +3,7 @@ dist/
 .npm-cache/
 .nx-home/
 .npmrc
+.tmp/
 *.log
 
 # 测试运行产物（由 test/prep.mjs 等生成）

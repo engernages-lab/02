@@ -4,6 +4,7 @@ import { useGame } from '../store/gameStore';
 import { applyPlayerName, displayNameOf, DISPLAY_NAME_MAX } from '../game/identity';
 import { normalizeVoice, speech, speakLine, type VoiceState } from '../services/voice';
 import VoiceBar from './VoiceBar';
+import SceneArt from './SceneArt';
 import { play, type SfxName } from '../services/sound';
 
 export interface CinematicStageProps {
@@ -189,6 +190,7 @@ export default function CinematicStage({ scenes, eventId, frameTitle = 'NEXUS å‰
   return (
     <div className={'dlg-root cine-root cine-bg-' + scene.bg} onClick={advance}>
       <div className={'cine-bg bg-' + scene.bg} />
+      <SceneArt bg={scene.bg} />
       <div className={'cine-fx fx-' + (scene.fx || 'none')} />
       <div
         className="cine-stage"

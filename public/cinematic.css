@@ -44,7 +44,26 @@
 }
 .cine-bg.bg-terminal { background: linear-gradient(180deg, #04120C 0%, #061A12 60%, #030A07 100%); }
 
-.cine-fx { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+/* 插画层（SceneArt）：视觉小说式画面，位于底色之上、特效之下
+   —— 这就是「台词上方的画面区」，不参与点击，只负责演出。 */
+.cine-art { position: absolute; inset: 0; z-index: 1; pointer-events: none; overflow: hidden; }
+.cine-art-inner { position: absolute; inset: -2.5%; animation: cineArtBreath 18s ease-in-out infinite; }
+.cine-art-svg { width: 100%; height: 100%; display: block; }
+.cine-art-photo img { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* 上下压暗：保证标题卡与台词框压得住画面，但不吃掉画面主体 */
+.cine-art::after {
+  content: ''; position: absolute; inset: 0;
+  background:
+    linear-gradient(180deg, rgba(4,9,15,.46) 0%, rgba(4,9,15,.06) 17%, transparent 40%),
+    linear-gradient(180deg, transparent 60%, rgba(4,9,15,.44) 80%, rgba(4,9,15,.86) 100%);
+}
+.anim-off .cine-art-inner { animation: none; }
+@keyframes cineArtBreath {
+  0%, 100% { transform: scale(1) translate3d(0, 0, 0); }
+  50% { transform: scale(1.035) translate3d(-0.6%, -0.5%, 0); }
+}
+
+.cine-fx { position: absolute; inset: 0; z-index: 1; pointer-events: none; overflow: hidden; }
 .cine-fx.fx-scan::after {
   content: ''; position: absolute; left: 0; right: 0; height: 22%;
   background: linear-gradient(180deg, transparent, rgba(66,214,208,.12), transparent);
@@ -96,7 +115,7 @@
 .cine-portrait.speaking { animation: corePulse 1.5s ease-in-out infinite; }
 
 .cine-body {
-  flex: 1; min-width: 0; align-self: stretch;
+  flex: 1; min-width: 0; align-self: flex-end; max-height: 58%;
   background: linear-gradient(180deg, rgba(9,20,30,.72), rgba(6,14,22,.92));
   border: 1px solid rgba(66,214,208,.22); border-radius: 14px; padding: 15px 18px;
   backdrop-filter: blur(6px); box-shadow: 0 18px 50px rgba(0,0,0,.45);
@@ -143,9 +162,17 @@
 
 @media (max-width: 820px) {
   .cine-stage { padding: 12px 14px 14px; }
-  .cine-main { flex-direction: column; align-items: stretch; gap: 10px; }
-  .cine-portrait { width: 72px; height: 72px; flex: 0 0 72px; }
+  /* 竖屏时插画退为上半部横幅，避免 16:9 画面被裁成一团模糊 */
+  .cine-art { bottom: auto; height: 46%; }
+  .cine-art::after {
+    background:
+      linear-gradient(180deg, rgba(4,9,15,.55) 0%, transparent 32%),
+      linear-gradient(180deg, transparent 52%, rgba(4,9,15,.82) 100%);
+  }
+  .cine-main { flex-direction: column; align-items: stretch; justify-content: flex-end; gap: 10px; }
+  .cine-portrait { width: 72px; height: 72px; flex: 0 0 72px; align-self: flex-start; }
   .cine-portrait .cp-glyph { font-size: 30px; }
+  .cine-body { flex: 0 0 auto; align-self: stretch; max-height: none; }
   .cine-text { font-size: 15px; min-height: 72px; }
   .cine-titlecard .ct-main { font-size: 16px; letter-spacing: 2px; }
 }
