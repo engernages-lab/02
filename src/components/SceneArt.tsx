@@ -2663,6 +2663,134 @@ function Dawn({ uid }: { uid: string }) {
   );
 }
 
+/* ═════ 结局二 · 永恒秩序（绝对对称的数字城市 · 统一控制核心） ═════ */
+
+function Order({ uid }: { uid: string }) {
+  const CX = 800;
+  const VP = 470;  // 灭点（地平线）
+  return (
+    <g>
+      <g transform="translate(0,-104)">
+        <defs>
+          <linearGradient id={`${uid}-ordersky`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#02060E" />
+            <stop offset="46%" stopColor="#061423" />
+            <stop offset="78%" stopColor="#0B2438" />
+            <stop offset="100%" stopColor="#123A52" />
+          </linearGradient>
+          <radialGradient id={`${uid}-ordercore`}>
+            <stop offset="0%" stopColor="#EAFBFF" stopOpacity="0.95" />
+            <stop offset="30%" stopColor="#7FD8E8" stopOpacity="0.5" />
+            <stop offset="100%" stopColor="#1E5C78" stopOpacity="0" />
+          </radialGradient>
+          {/* 严格等距的窗带：全部同色同亮，不做任何随机 */}
+          <pattern id={`${uid}-ordwin`} width="18" height="22" patternUnits="userSpaceOnUse">
+            <rect x="4" y="6" width="10" height="2" fill="#BFEAFF" opacity="0.65" />
+            <rect x="4" y="14" width="10" height="2" fill="#7FD8E8" opacity="0.5" />
+          </pattern>
+        </defs>
+
+        {/* 天空：均匀冷蓝，没有太阳、没有光带变化 */}
+        <rect width="1600" height="900" fill={`url(#${uid}-ordersky)`} />
+        <rect width="1600" height="900" fill="#0E3048" opacity="0.14" />
+        {/* 均匀的冷蓝辉光（左右完全对称） */}
+        <ellipse cx={CX} cy={100} rx={620} ry={260} fill={T.teal} opacity="0.08" filter={`url(#${uid}-blur)`} />
+        <ellipse cx={CX} cy={100} rx={620} ry={260} fill={T.teal} opacity="0.08" filter={`url(#${uid}-blur)`} />
+
+        {/* 远景：中央塔与两侧镜像塔（严格对称） */}
+        <g>
+          {/* 中央远景巨塔（灭点处） */}
+          <rect x={CX - 96} y={VP - 300} width="192" height="320" fill="#04101C" />
+          <rect x={CX - 96} y={VP - 300} width="192" height="320" fill={`url(#${uid}-ordwin)`} opacity="0.5" />
+          <rect x={CX - 30} y={VP - 340} width="60" height="40" fill="#04101C" />
+          <rect x={CX - 2} y={VP - 396} width="4" height="58" fill="#BFEAFF" opacity="0.7" />
+        </g>
+        {Array.from({ length: 9 }, (_, i) => {
+          const inner = 150 + i * 74;                 // 内缘距中线
+          const w = 66 + i * 16;
+          const top = VP - (170 + i * 34);            // 留出天空，才能看出是"一排塔"
+          const h = 900 - top + 80;
+          return [-1, 1].map(s => (
+            <g key={`${i}-${s}`}>
+              <rect x={s < 0 ? CX - inner - w : CX + inner} y={top} width={w} height={h} fill={i < 3 ? '#04121F' : '#030D18'} />
+              {/* 窗带：等距、同亮度 */}
+              <rect x={s < 0 ? CX - inner - w : CX + inner} y={top} width={w} height={h}
+                fill={`url(#${uid}-ordwin)`} opacity="0.6" />
+              {/* 塔顶：统一高度的平顶 + 顶灯 */}
+              <rect x={s < 0 ? CX - inner - w : CX + inner} y={top} width={w} height="10" fill="#071A28" />
+              <rect x={s < 0 ? CX - inner - w : CX + inner} y={top} width={w} height="2" fill="#BFEAFF" opacity="0.4" />
+              {/* 竖向凹槽：把整排塔分出体块 */}
+              <line x1={s < 0 ? CX - inner - w * 0.5 : CX + inner + w * 0.5} y1={top} x2={s < 0 ? CX - inner - w * 0.5 : CX + inner + w * 0.5} y2={top + h}
+                stroke="#020910" strokeWidth="6" opacity="0.85" />
+              {/* 朝中轴的内侧棱光：严格水平对齐 */}
+              <rect x={s < 0 ? CX - inner - 3 : CX + inner} y={top} width="3" height={h} fill="#BFEAFF" opacity="0.4" />
+              {/* 顶部统一航标：全部等高、等间距 */}
+              <rect x={s < 0 ? CX - inner - w * 0.5 : CX + inner + w * 0.5 - 2} y={top - 14} width="4" height="16"
+                fill="#7FD8E8" opacity="0.6" />
+            </g>
+          ));
+        })}
+
+        {/* 中央统一控制核心：直上直下的对称结构 */}
+        <g>
+          <ellipse cx={CX} cy={VP - 40} rx={240} ry={200} fill={`url(#${uid}-ordercore)`} opacity="0.5" />
+          {/* 核心塔体 */}
+          <path d={`M${CX - 46} ${VP + 20} L${CX - 34} ${VP - 300} L${CX + 34} ${VP - 300} L${CX + 46} ${VP + 20} Z`} fill="#061826" />
+          <path d={`M${CX - 46} ${VP + 20} L${CX - 34} ${VP - 300}`} stroke="#BFEAFF" strokeWidth="2" strokeOpacity="0.4" />
+          <path d={`M${CX + 46} ${VP + 20} L${CX + 34} ${VP - 300}`} stroke="#BFEAFF" strokeWidth="2" strokeOpacity="0.4" />
+          {/* 核心上的等距能量带 */}
+          {Array.from({ length: 9 }, (_, i) => (
+            <rect key={i} x={CX - 40 + i} y={VP + 10 - i * 34} width={80 - i * 2} height="7"
+              fill="#BFEAFF" opacity={0.35 + i * 0.03} />
+          ))}
+          {/* 核心顶端：绝对对称的竖直光柱 */}
+          <rect x={CX - 5} y={VP - 620} width="10" height={330} fill="#EAFBFF" opacity="0.5" filter={`url(#${uid}-glow)`} />
+          <rect x={CX - 2} y={VP - 620} width="4" height={330} fill="#FFFFFF" opacity="0.85" />
+          {/* 向全城发送的稳定数据流：严格水平、等间距、左右对称 */}
+          {Array.from({ length: 11 }, (_, i) => {
+            const y = VP - 250 + i * 26;
+            return (
+              <g key={i}>
+                <line x1={0} y1={y} x2={CX - 48} y2={y} stroke="#7FD8E8" strokeWidth="1.4" strokeOpacity="0.26" />
+                <line x1={CX + 48} y1={y} x2={1600} y2={y} stroke="#7FD8E8" strokeWidth="1.4" strokeOpacity="0.26" />
+              </g>
+            );
+          })}
+        </g>
+
+        {/* 地面：完美网格 + 中轴反射，没有任何破碎或杂物 */}
+        <rect x="0" y={VP + 10} width="1600" height="420" fill="#03090F" />
+        {/* 透视格子：完全等距 */}
+        {Array.from({ length: 9 }, (_, i) => {
+          const y = VP + 22 + i * i * 6.4;
+          return <line key={i} x1={0} y1={y} x2={1600} y2={y} stroke="#7FD8E8" strokeOpacity={0.16 - i * 0.012} strokeWidth="1.2" />;
+        })}
+        {[-1, 1].map(s => Array.from({ length: 9 }, (_, i) => {
+          const x = CX + s * (60 + i * 190);
+          return <line key={`${s}-${i}`} x1={CX + s * 46} y1={VP + 10} x2={x} y2={900}
+            stroke="#7FD8E8" strokeOpacity="0.1" strokeWidth="1" />;
+        }))}
+        {/* 中轴反射：核心在湿地面上的笔直倒影 */}
+        <rect x={CX - 40} y={VP + 10} width="80" height="260" fill="#7FD8E8" opacity="0.12" filter={`url(#${uid}-blur)`} />
+        <rect x={CX - 4} y={VP + 10} width="8" height="200" fill="#EAFBFF" opacity="0.3" filter={`url(#${uid}-blur)`} />
+
+        {/* 城市灯光：等距、等亮、无随机——整齐到没有生命感 */}
+        {Array.from({ length: 40 }, (_, i) => {
+          const row = Math.floor(i / 10);
+          const col = i % 10;
+          return [-1, 1].map(s => (
+            <rect key={`${i}-${s}`} x={CX + s * (120 + col * 150) - 2} y={VP + 40 + row * 46}
+              width="4" height="2" fill="#BFEAFF" opacity="0.5" />
+          ));
+        })}
+        <FogBand uid={uid} y={VP - 40} h={180} opacity={0.4} />
+      </g>
+
+      <rect x="0" y="700" width="1600" height="200" fill={`url(#${uid}-bottom)`} />
+    </g>
+  );
+}
+
 /* ───────────────────────── 其余场景：轻量变体 ───────────────────────── */
 
 function Variant({ uid, kind }: { uid: string; kind: 'dataport' | 'memory' | 'core' | 'terminal' }) {
@@ -2742,6 +2870,7 @@ export default function SceneArt({ bg }: { bg: SceneBg }) {
           {bg === 'origin' && <Origin uid={uid} />}
           {bg === 'beyond' && <Beyond uid={uid} />}
           {bg === 'dawn' && <Dawn uid={uid} />}
+          {bg === 'order' && <Order uid={uid} />}
           {bg === 'terminal' && <Terminal uid={uid} />}
 
           {/* 暗角（电影感影调） */}

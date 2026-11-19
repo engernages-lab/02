@@ -21,7 +21,7 @@ const DAWN: StoryScene = {
 };
 
 const ORDER: StoryScene = {
-  id: 'ending-order', title: '永恒秩序', subtitle: 'ENDING · 不再有人受伤的世界', bg: 'core', fx: 'glitch',
+  id: 'ending-order', title: '永恒秩序', subtitle: 'ENDING · 不再有人受伤的世界', bg: 'order', fx: 'glitch',
   lines: [
     L('eo-01', '旁白', 'system', 'R-07 把权限面板推到 K-0 面前，指尖停在确认键上。'),
     L('eo-02', 'K-0', 'k0', '方案：由我统一调度，消除所有不确定性。'),

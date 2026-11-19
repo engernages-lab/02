@@ -80,6 +80,11 @@
     radial-gradient(ellipse at 50% 62%, rgba(255,221,168,.3) 0%, transparent 52%),
     radial-gradient(ellipse at 50% 100%, rgba(42,74,110,.9) 0%, rgba(8,18,36,.96) 58%, #04080F 100%);
 }
+.cine-bg.bg-order {
+  background:
+    linear-gradient(180deg, #02060E 0%, #061423 46%, #0B2438 78%, #123A52 100%),
+    radial-gradient(ellipse at 50% 46%, rgba(127,216,232,.14) 0%, transparent 56%);
+}
 
 /* 插画层（SceneArt）：视觉小说式画面，位于底色之上、特效之下
    —— 这就是「台词上方的画面区」，不参与点击，只负责演出。 */
