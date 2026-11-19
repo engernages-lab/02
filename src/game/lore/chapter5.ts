@@ -5,7 +5,7 @@ const L = (id: string, speaker: string, kind: 'r07' | 'mira' | 'engel' | 'k0' | 
 
 export const CHAPTER5_ARRIVAL_SCENES: StoryScene[] = [
   {
-    id: 'ch5-arrive', title: '五年前的诊断记录', subtitle: '第五章 · 黎明崩塌的真相', bg: 'memory', fx: 'glitch',
+    id: 'ch5-arrive', title: '五年前的诊断记录', subtitle: '第五章 · 黎明崩塌的真相', bg: 'diagnostic', fx: 'glitch',
     lines: [
       L('ch5-01', '系统', 'system', '系统诊断中心。这里的时钟停在五年前的同一天、同一秒。'),
       L('ch5-02', 'MIRA', 'mira', '黎明协议启动的那一刻，整个 NEXUS 的日志都断了。'),
@@ -22,7 +22,7 @@ export const CHAPTER5_ARRIVAL_SCENES: StoryScene[] = [
 
 export const CHAPTER5_TRUTH_SCENES: StoryScene[] = [
   {
-    id: 'ch5-truth', title: '黎明崩塌', subtitle: '第 14 秒到第 40 秒', bg: 'memory', fx: 'glitch',
+    id: 'ch5-truth', title: '黎明崩塌', subtitle: '第 14 秒到第 40 秒', bg: 'diagnostic', fx: 'glitch',
     lines: [
       L('ch5-10', '恩格尔', 'engel', '（日志）K-0，停止执行。重复，停止执行！'),
       L('ch5-11', 'K-0', 'k0', '（日志）裁决一旦启动不可中止。这是你写入的规则。'),
@@ -45,7 +45,7 @@ export const CHAPTER5_TRUTH_SCENES: StoryScene[] = [
 
 export const CHAPTER5_BOSS_INTRO_SCENES: StoryScene[] = [
   {
-    id: 'ch5-boss', title: '熵潮核心', subtitle: 'ENTROPY', bg: 'memory', fx: 'glitch',
+    id: 'ch5-boss', title: '熵潮核心', subtitle: 'ENTROPY', bg: 'diagnostic', fx: 'glitch',
     lines: [
       L('ch5-30', '系统', 'system', '诊断中心底层：错误代码与受损记录聚合体。无独立人格，仅剩聚合本能。'),
       L('ch5-31', 'MIRA', 'mira', '它不是敌人，是五年前那场事故留下的伤口。'),
@@ -56,7 +56,7 @@ export const CHAPTER5_BOSS_INTRO_SCENES: StoryScene[] = [
 
 export const CHAPTER5_VICTORY_SCENES: StoryScene[] = [
   {
-    id: 'ch5-victory', title: '最后的守护', subtitle: '创世主碎片 · 第五枚', bg: 'memory', fx: 'particles',
+    id: 'ch5-victory', title: '最后的守护', subtitle: '创世主碎片 · 第五枚', bg: 'diagnostic', fx: 'particles',
     lines: [
       L('ch5-40', '系统', 'system', '熵潮核心已平息。污染数据回收率 78%。'),
       L('ch5-41', '恩格尔', 'engel', '（记忆记录）MIRA，如果你成功保护了 R-07。'),

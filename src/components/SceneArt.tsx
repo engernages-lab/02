@@ -1879,6 +1879,213 @@ function Workshop({ uid }: { uid: string }) {
   );
 }
 
+/* ═════ 第五章 · 黎明崩塌的真相（诊断中心 · 时间停滞 · 灾难现场） ═════ */
+
+function Diagnostic({ uid }: { uid: string }) {
+  const CX = 800;
+  const CY = 420;
+  return (
+    <g>
+      <g transform="translate(0,-104)">
+        <defs>
+          <radialGradient id={`${uid}-redcore`}>
+            <stop offset="0%" stopColor="#FFC9A8" stopOpacity="0.95" />
+            <stop offset="22%" stopColor={T.ember} stopOpacity="0.75" />
+            <stop offset="55%" stopColor="#B3261E" stopOpacity="0.35" />
+            <stop offset="100%" stopColor="#3A0505" stopOpacity="0" />
+          </radialGradient>
+          <linearGradient id={`${uid}-beamred`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#FFD2B0" stopOpacity="0.85" />
+            <stop offset="45%" stopColor={T.ember} stopOpacity="0.42" />
+            <stop offset="100%" stopColor="#8C1A08" stopOpacity="0" />
+          </linearGradient>
+          <radialGradient id={`${uid}-array`}>
+            <stop offset="0%" stopColor="#FF8A50" stopOpacity="0.5" />
+            <stop offset="40%" stopColor="#B3261E" stopOpacity="0.24" />
+            <stop offset="100%" stopColor="#2A0505" stopOpacity="0" />
+          </radialGradient>
+          {/* 诊断塔的状态灯网格：大部分熄灭，少量红/白 */}
+          <pattern id={`${uid}-diaglights`} width="34" height="42" patternUnits="userSpaceOnUse">
+            <rect x="5" y="8" width="4" height="2.2" fill="#DCE9F2" opacity="0.5" />
+            <rect x="20" y="8" width="6" height="2.2" fill={T.ember} opacity="0.4" />
+            <rect x="12" y="24" width="3" height="2" fill="#DCE9F2" opacity="0.28" />
+            <rect x="24" y="24" width="5" height="2" fill={T.ember} opacity="0.22" />
+            <rect x="0" y="36" width="34" height="2" fill="#0B1A2A" opacity="0.9" />
+          </pattern>
+        </defs>
+
+        {/* 冷雾底：压抑的青灰，靠灾光提暖 */}
+        <rect width="1600" height="900" fill="#050B12" />
+        <Wash uid={uid} cx={CX} cy={470} rx={620} ry={420} color={T.ember} opacity={0.16} />
+        <Wash uid={uid} cx={300} cy={300} rx={480} ry={420} color={T.teal} opacity={0.1} />
+        <Wash uid={uid} cx={1320} cy={320} rx={480} ry={420} color={T.blue} opacity={0.1} />
+
+        {/* 远景：巨大的中央核心，被红色异常数据包围、部分已数字崩塌 */}
+        <g>
+          <circle cx={CX} cy={CY - 40} r={200} fill={`url(#${uid}-redcore)`} opacity="0.85" />
+          <circle cx={CX} cy={CY - 40} r="96" fill="none" stroke="#FF6B4A" strokeOpacity="0.4" strokeWidth="3" filter={`url(#${uid}-glow)`} />
+          <circle cx={CX} cy={CY - 40} r="58" fill="#2A0A08" stroke="#FF8A50" strokeOpacity="0.55" strokeWidth="2" />
+          <circle cx={CX} cy={CY - 40} r="18" fill="#FFE6D6" opacity="0.9" filter={`url(#${uid}-glow)`} />
+          {/* 核心上的异常数据块与崩塌碎片 */}
+          {Array.from({ length: 26 }, (_, i) => {
+            const a = rnd(i, 11) * Math.PI * 2;
+            const rr = 70 + rnd(i, 13) * 150;
+            const x = CX + Math.cos(a) * rr;
+            const y = CY - 40 + Math.sin(a) * rr * 0.8;
+            const s = 6 + rnd(i, 15) * 18;
+            return (
+              <rect key={i} x={x} y={y} width={s} height={s * 0.7} fill="#180404"
+                stroke={rnd(i, 17) > 0.6 ? T.ember : '#4A1010'} strokeOpacity="0.5"
+                transform={`rotate(${rnd(i, 19) * 90} ${x} ${y})`} opacity={0.5 + rnd(i, 21) * 0.4} />
+            );
+          })}
+        </g>
+
+        {/* 灾难光束：从远处核心穿透整个空间（窄束 + 核心辉光，不做大面积雾） */}
+        <path d={`M${CX - 16} ${CY - 20} L${CX + 16} ${CY - 20} L${CX + 150} 900 L${CX - 150} 900 Z`}
+          fill={`url(#${uid}-beamred)`} opacity="0.28" filter={`url(#${uid}-blur)`} />
+        <path d={`M${CX - 5} ${CY - 20} L${CX + 5} ${CY - 20} L${CX + 34} 900 L${CX - 34} 900 Z`}
+          fill="#FFE2CE" opacity="0.28" filter={`url(#${uid}-soft)`} />
+
+        {/* 两侧：高耸的诊断服务器塔（大多失联，仅少量灯仍闪） */}
+        {Array.from({ length: 9 }, (_, i) => {
+          const t = i / 8;
+          const s = 1 - t * 0.78;
+          const inner = 30 + t * 560;
+          const w = 210 * s + 40;
+          const hollow = rnd(i, 23) > 0.5;
+          return (
+            <g key={i}>
+              {[{ x: inner - w, k: 0 }, { x: 1600 - inner, k: 1 }].map((b, k) => (
+                <g key={k}>
+                  <rect x={b.x} y={-160} width={w} height={1200} fill={t < 0.4 ? '#0A1A2A' : '#08131F'} />
+                  <rect x={k === 0 ? b.x : b.x + w - 6} y={-160} width="6" height="1200" fill="#010509" opacity="0.9" />
+                  {/* 状态灯网格 */}
+                  <rect x={b.x} y={-160} width={w} height={1200} fill={`url(#${uid}-diaglights)`}
+                    opacity={hollow ? 0.22 : 0.7} />
+                  {/* 面板分割 */}
+                  {Array.from({ length: 16 }, (_, r) => (
+                    <line key={r} x1={b.x + 4} y1={-120 + r * 62} x2={b.x + w - 4} y2={-120 + r * 62}
+                      stroke={T.teal} strokeOpacity="0.1" />
+                  ))}
+                  {/* 少量仍在闪烁的红色故障灯 */}
+                  {Array.from({ length: 6 }, (_, r) => (
+                    <rect key={r}
+                      x={b.x + 8 + rnd(r + i, 27) * Math.max(8, w - 20)}
+                      y={-120 + rnd(r + i, 29) * 900}
+                      width={3} height={3}
+                      fill={T.ember} opacity={0.4 + rnd(r + i, 31) * 0.5} filter={`url(#${uid}-glow)`} />
+                  ))}
+                  {/* 朝通道一侧的冷光棱 */}
+                  <line x1={k === 0 ? b.x + w - 2 : b.x + 2} y1={-150} x2={k === 0 ? b.x + w - 2 : b.x + 2} y2={900}
+                    stroke={T.pale} strokeWidth={2 - t} strokeOpacity={0.2 - t * 0.12} />
+                </g>
+              ))}
+            </g>
+          );
+        })}
+
+        {/* 破碎的悬浮全息屏：抽象异常波形与崩溃曲线（无文字） */}
+        {[
+          { x: 250, y: 250, w: 170, h: 110, rot: -7 },
+          { x: 1180, y: 220, w: 200, h: 126, rot: 6 },
+          { x: 420, y: 180, w: 130, h: 82, rot: 4 },
+          { x: 1330, y: 372, w: 150, h: 94, rot: -5 },
+          { x: 180, y: 420, w: 120, h: 78, rot: 8 },
+        ].map((p, i) => (
+          <g key={i} transform={`rotate(${p.rot} ${p.x + p.w / 2} ${p.y + p.h / 2})`} opacity="0.6">
+            <rect x={p.x} y={p.y} width={p.w} height={p.h} fill="#0A0510" opacity="0.7" />
+            <rect x={p.x} y={p.y} width={p.w} height={p.h} fill="none" stroke="#8C2A1A" strokeOpacity="0.5" strokeWidth="1.4" />
+            {/* 异常波形 */}
+            {Array.from({ length: 3 }, (_, r) => {
+              const pts = Array.from({ length: 12 }, (_, k) => {
+                const x = p.x + 8 + (k / 11) * (p.w - 16);
+                const y = p.y + 20 + r * 26 + (rnd(k + i * 3 + r, 33) - 0.5) * 22;
+                return `${x.toFixed(1)} ${y.toFixed(1)}`;
+              }).join(' ');
+              return <polyline key={r} points={pts} fill="none" stroke={r === 1 ? '#FF8A50' : '#C1361E'}
+                strokeWidth="1.4" strokeOpacity={0.35 + r * 0.12} />;
+            })}
+            {/* 屏裂 */}
+            <path d={`M${p.x + p.w * 0.6} ${p.y} L${p.x + p.w * 0.45} ${p.y + p.h * 0.5} L${p.x + p.w * 0.7} ${p.y + p.h}`}
+              stroke="#FFD2B0" strokeOpacity="0.25" strokeWidth="1" fill="none" />
+          </g>
+        ))}
+
+        {/* 中央时间诊断装置：多层环形数据结构 + 悬浮数字光柱 */}
+        <g>
+          {[
+            { rx: 230, ry: 56, rot: -6, o: 0.35 },
+            { rx: 190, ry: 46, rot: 7, o: 0.42 },
+            { rx: 150, ry: 36, rot: -4, o: 0.5 },
+            { rx: 110, ry: 26, rot: 5, o: 0.58 },
+          ].map((r, i) => (
+            <g key={i} transform={`rotate(${r.rot} ${CX} ${CY})`}>
+              <ellipse cx={CX} cy={CY} rx={r.rx} ry={r.ry} fill="none" stroke={i % 2 ? '#FF8A50' : T.pale}
+                strokeWidth="2.4" strokeOpacity={r.o} filter={`url(#${uid}-glow)`} />
+              {/* 环上的刻度：象征被冻住的时间 */}
+              {Array.from({ length: 18 }, (_, k) => {
+                const a = (k / 18) * Math.PI * 2;
+                return <rect key={k} x={CX + Math.cos(a) * r.rx - 1.2} y={CY + Math.sin(a) * r.ry - 1.2}
+                  width="2.4" height="2.4" fill={i % 2 ? '#FFD2B0' : T.mint} opacity={0.4} />;
+              })}
+            </g>
+          ))}
+          {/* 悬浮数字光柱 */}
+          {[-56, 0, 56].map((dx, i) => (
+            <path key={i} d={`M${CX + dx - 5} ${CY + 40} L${CX + dx - 2} ${CY - 150} L${CX + dx + 2} ${CY - 150} L${CX + dx + 5} ${CY + 40} Z`}
+              fill={i === 1 ? '#FFD2B0' : T.pale} opacity={0.22 + i * 0.06} filter={`url(#${uid}-glow)`} />
+          ))}
+        </g>
+
+        {/* 地面：圆形数据阵列，向外扩散暗红/橙异常能量 */}
+        <ellipse cx={CX} cy={610} rx={520} ry={150} fill={`url(#${uid}-array)`} opacity="0.9" />
+        <ellipse cx={CX} cy={610} rx={460} ry={132} fill="none" stroke="#B3261E" strokeOpacity="0.3" strokeWidth="2" />
+        <ellipse cx={CX} cy={610} rx={340} ry={98} fill="none" stroke="#FF6B4A" strokeOpacity="0.26" strokeWidth="2" />
+        <ellipse cx={CX} cy={610} rx={210} ry={60} fill="none" stroke="#FFD2B0" strokeOpacity="0.22" strokeWidth="1.6" />
+        {/* 阵列分区与扩散脉冲 */}
+        {Array.from({ length: 12 }, (_, i) => {
+          const a = (i / 12) * Math.PI * 2;
+          return <line key={i} x1={CX + Math.cos(a) * 60} y1={610 + Math.sin(a) * 17}
+            x2={CX + Math.cos(a) * 520} y2={610 + Math.sin(a) * 150}
+            stroke="#FF6B4A" strokeOpacity={0.08 + rnd(i, 37) * 0.1} strokeWidth="1.4" />;
+        })}
+        {/* 金属地面与反光 */}
+        <rect x="0" y="620" width="1600" height="300" fill="#04090F" />
+        {Array.from({ length: 10 }, (_, i) => {
+          const t = i / 9;
+          const y = 626 + t * t * 280;
+          const hw = 200 + t * 900;
+          return <line key={i} x1={CX - hw} y1={y} x2={CX + hw} y2={y} stroke={T.pale} strokeOpacity={0.06 - t * 0.02} strokeWidth="1.2" />;
+        })}
+        <rect x={CX - 120} y={620} width={240} height={130} fill={T.ember} opacity="0.12" filter={`url(#${uid}-blur)`} />
+
+        {/* 漂浮物：黑色数据碎片 + 红色错误粒子 + 冷白记忆光点 */}
+        {Array.from({ length: 34 }, (_, i) => {
+          const x = 60 + rnd(i, 41) * 1480;
+          const y = 120 + rnd(i, 43) * 480;
+          const s = 4 + rnd(i, 45) * 16;
+          return (
+            <rect key={i} x={x} y={y} width={s} height={s * 0.66} fill="#08080A"
+              stroke={rnd(i, 47) > 0.7 ? T.ember : '#3A1010'} strokeOpacity="0.4"
+              transform={`rotate(${rnd(i, 49) * 90} ${x} ${y})`} opacity={0.5 + rnd(i, 51) * 0.4} />
+          );
+        })}
+        {Array.from({ length: 40 }, (_, i) => (
+          <circle key={i} cx={60 + rnd(i, 53) * 1480} cy={120 + rnd(i, 55) * 500}
+            r={0.8 + rnd(i, 57) * 1.8} fill={rnd(i, 59) > 0.55 ? '#FF6B4A' : '#E8F4FA'}
+            opacity={0.22 + rnd(i, 61) * 0.5} filter={`url(#${uid}-glow)`} />
+        ))}
+
+        <FogBand uid={uid} y={470} h={210} opacity={0.6} />
+        <Motes uid={uid} n={60} seed={19} color={T.pale} yMax={520} />
+      </g>
+
+      <rect x="0" y="700" width="1600" height="200" fill={`url(#${uid}-bottom)`} />
+    </g>
+  );
+}
+
 /* ───────────────────────── 其余场景：轻量变体 ───────────────────────── */
 
 function Variant({ uid, kind }: { uid: string; kind: 'dataport' | 'memory' | 'core' | 'terminal' }) {
@@ -1954,6 +2161,7 @@ export default function SceneArt({ bg }: { bg: SceneBg }) {
           {bg === 'garden' && <Garden uid={uid} />}
           {bg === 'archive' && <Archive uid={uid} />}
           {bg === 'workshop' && <Workshop uid={uid} />}
+          {bg === 'diagnostic' && <Diagnostic uid={uid} />}
           {bg === 'terminal' && <Terminal uid={uid} />}
 
           {/* 暗角（电影感影调） */}
