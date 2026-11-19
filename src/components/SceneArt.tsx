@@ -973,6 +973,241 @@ function Terminal({ uid }: { uid: string }) {
   );
 }
 
+/* ═════ 第一章 · 失落的数据港（数据海 · 沉没数据城 · 能源枢纽 · 五节点） ═════ */
+
+function Dataport({ uid }: { uid: string }) {
+  const HZ = 556; // 数据海水平线
+  /** 残破建筑：方形楼体 + 顶部塌损缺口 + 竖向窗带 + 一侧霓虹棱光 */
+  const ruin = (b: { x: number; y: number; w: number; h: number; rot: number }, i: number) => {
+    const { x, y, w, h, rot } = b;
+    const body = `M${x} ${y + h} L${x} ${y + h * 0.12} L${x + w * 0.26} ${y + h * 0.12} L${x + w * 0.34} ${y + h * 0.02} L${x + w * 0.56} ${y + h * 0.2} L${x + w * 0.7} ${y + h * 0.09} L${x + w} ${y + h * 0.24} L${x + w} ${y + h} Z`;
+    const cols = Math.max(3, Math.round(w / 22));
+    return (
+      <g key={i} transform={`rotate(${rot} ${x + w / 2} ${y + h})`}>
+        <path d={body} fill="#040B13" />
+        <path d={body} fill="none" stroke={T.teal} strokeOpacity="0.18" strokeWidth="1.4" />
+        {/* 竖向窗带：楼体感的关键 */}
+        {Array.from({ length: cols }, (_, c) => {
+          const cx2 = x + 6 + c * ((w - 12) / cols);
+          const lit = rnd(c, i + 5) > 0.55;
+          return (
+            <g key={c}>
+              <rect x={cx2} y={y + h * 0.3} width={Math.max(2, (w - 12) / cols - 5)} height={h * 0.62}
+                fill={lit ? (rnd(c, i + 9) > 0.78 ? T.amber : T.mint) : '#02070C'}
+                opacity={lit ? 0.16 + rnd(c, i + 13) * 0.24 : 0.5} />
+            </g>
+          );
+        })}
+        {/* 楼体一侧的霓虹棱光 */}
+        <line x1={x + w - 1} y1={y + h * 0.24} x2={x + w - 1} y2={y + h}
+          stroke={rnd(i, 7) > 0.6 ? T.amber : T.pale} strokeWidth="1.8" strokeOpacity="0.34" filter={`url(#${uid}-glow)`} />
+        {/* 塌损断口的冷光边 */}
+        <path d={`M${x + w * 0.34} ${y + h * 0.02} L${x + w * 0.56} ${y + h * 0.2} L${x + w * 0.7} ${y + h * 0.09}`}
+          stroke={T.pale} strokeOpacity="0.28" strokeWidth="1.6" fill="none" />
+      </g>
+    );
+  };
+
+  return (
+    <g>
+      <g transform="translate(0,-146)">
+        {/* 数字虚空底与远处暖色故障光 */}
+        <Wash uid={uid} cx={800} cy={360} rx={720} ry={430} color={T.blue} opacity={0.2} />
+        <Wash uid={uid} cx={470} cy={280} rx={430} ry={330} color={T.teal} opacity={0.13} />
+        <Wash uid={uid} cx={1200} cy={404} rx={400} ry={320} color={T.ember} opacity={0.12} />
+
+        {/* 背景：巨塔剪影两层，雾化到黑 */}
+        <Skyline uid={uid} seed={101} count={9} baseY={HZ} hMin={250} hMax={540} tone="far" opacity={0.2} from={-120} to={1720} dense={0.35} />
+        <Skyline uid={uid} seed={139} count={13} baseY={HZ - 26} hMin={150} hMax={380} tone="far" opacity={0.13} from={-140} to={1740} dense={0.3} />
+        {/* 背景里零星的琥珀故障灯与青色残流 */}
+        {Array.from({ length: 14 }, (_, i) => (
+          <rect key={i} x={60 + rnd(i, 31) * 1480} y={140 + rnd(i, 33) * 300}
+            width={2 + rnd(i, 35) * 16} height="2" fill={rnd(i, 37) > 0.62 ? T.amber : T.teal}
+            opacity={0.16 + rnd(i, 39) * 0.3} />
+        ))}
+
+        {/* 中景：沉没的残破数据城 */}
+        {[
+          { x: 168, y: 302, w: 124, h: 254, rot: -5 },
+          { x: 322, y: 382, w: 92, h: 174, rot: 4 },
+          { x: 466, y: 332, w: 112, h: 224, rot: -2 },
+          { x: 632, y: 402, w: 82, h: 154, rot: 3 },
+          { x: 972, y: 356, w: 102, h: 200, rot: -4 },
+          { x: 1114, y: 318, w: 132, h: 238, rot: 5 },
+          { x: 1284, y: 388, w: 98, h: 168, rot: -3 },
+        ].map(ruin)}
+        {/* 远处残楼上的故障起火点（暖色对比） */}
+        <g>
+          <ellipse cx={1096} cy={402} rx={96} ry={74} fill={T.ember} opacity="0.17" filter={`url(#${uid}-blur)`} />
+          <ellipse cx={1096} cy={418} rx={48} ry={30} fill={T.amber} opacity="0.3" filter={`url(#${uid}-paint)`} />
+          {Array.from({ length: 16 }, (_, i) => (
+            <circle key={i} cx={1068 + rnd(i, 111) * 62} cy={388 + rnd(i, 113) * 62} r={1 + rnd(i, 115) * 2.6}
+              fill={rnd(i, 117) > 0.5 ? T.hot : T.amber} opacity={0.3 + rnd(i, 119) * 0.5} filter={`url(#${uid}-glow)`} />
+          ))}
+          <path d="M1068 400 Q1090 328 1124 296" stroke={T.pale} strokeWidth="12" strokeOpacity="0.07" fill="none" filter={`url(#${uid}-paint)`} />
+        </g>
+
+        <FogBand uid={uid} y={430} h={170} opacity={0.9} />
+
+        {/* 枢纽正后方的一座节点（被枢纽遮住一半，制造层次） */}
+        <path d={`M792 ${HZ} L798 ${HZ - 300} L814 ${HZ - 300} L820 ${HZ} Z`} fill="#03080F" />
+        <circle cx={806} cy={HZ - 306} r="3" fill={T.mint} opacity="0.3" filter={`url(#${uid}-glow)`} />
+
+        {/* 中央：沉睡的能源枢纽（圆柱体 + 环带 + 休眠核心） */}
+        <g>
+          <ellipse cx={800} cy={HZ + 4} rx={212} ry={46} fill="#02070C" />
+          <path d={`M636 ${HZ + 30} L664 348 L936 348 L964 ${HZ + 30} Z`} fill={`url(#${uid}-metal)`} opacity="0.96" />
+          {/* 柱面竖向棱 */}
+          {[0, 1, 2, 3, 4, 5].map(i => (
+            <line key={i} x1={636 + i * 55} y1={HZ + 30} x2={664 + i * 45} y2={348} stroke="#02070C" strokeWidth="4" opacity="0.85" />
+          ))}
+          {/* 四道环带 */}
+          {[392, 436, 480, 524].map((y, i) => (
+            <g key={i}>
+              <ellipse cx={800} cy={y} rx={150 - i * 6} ry={22 - i * 1.6} fill="none" stroke={T.teal} strokeOpacity={0.26 - i * 0.03} strokeWidth="2" />
+              <ellipse cx={800} cy={y - 2} rx={150 - i * 6} ry={22 - i * 1.6} fill="none" stroke={T.pale} strokeOpacity="0.1" strokeWidth="1" />
+            </g>
+          ))}
+          {/* 顶端平台 */}
+          <ellipse cx={800} cy={348} rx={136} ry={26} fill="#071320" stroke={T.pale} strokeOpacity="0.3" strokeWidth="1.6" />
+          <ellipse cx={800} cy={348} rx={136} ry={26} fill={T.teal} opacity="0.07" />
+          {/* 休眠核心：极暗的青 + 琥珀故障点 */}
+          <ellipse cx={800} cy={470} rx={62} ry={58} fill={T.teal} opacity="0.1" filter={`url(#${uid}-blur)`} />
+          <circle cx={800} cy={470} r={23} fill="#02070C" stroke={T.teal} strokeOpacity="0.34" strokeWidth="1.6" />
+          <circle cx={800} cy={470} r={6} fill={T.mint} opacity="0.34" filter={`url(#${uid}-glow)`} />
+          <circle cx={817} cy={452} r="2.8" fill={T.amber} opacity="0.6" filter={`url(#${uid}-glow)`} />
+          <circle cx={788} cy={484} r="2" fill={T.amber} opacity="0.4" />
+          {/* 两侧棱光 */}
+          <line x1={664} y1={348} x2={636} y2={HZ + 30} stroke={T.pale} strokeWidth="3" strokeOpacity="0.36" filter={`url(#${uid}-glow)`} />
+          <line x1={936} y1={348} x2={964} y2={HZ + 30} stroke={T.teal} strokeWidth="2.2" strokeOpacity="0.28" />
+        </g>
+
+        {/* 环枢纽的 4 座能源节点（已熄灭，塔形 + 环箍 + 顶部平台） */}
+        {[
+          { x: 372, h: 232, warm: true }, { x: 540, h: 176, warm: false },
+          { x: 1058, h: 208, warm: true }, { x: 1236, h: 264, warm: false },
+        ].map((n, i) => {
+          const topY = HZ - n.h;
+          const halfB = 26 + rnd(i, 91) * 8;
+          const halfT = 11;
+          return (
+            <g key={i}>
+              <path d={`M${n.x - halfB} ${HZ} L${n.x - halfT} ${topY} L${n.x + halfT} ${topY} L${n.x + halfB} ${HZ} Z`} fill="#03090F" />
+              <line x1={n.x - halfB} y1={HZ} x2={n.x - halfT} y2={topY} stroke={T.pale} strokeWidth="1.6" strokeOpacity="0.26" />
+              <line x1={n.x + halfB} y1={HZ} x2={n.x + halfT} y2={topY} stroke={T.teal} strokeWidth="1.3" strokeOpacity="0.18" />
+              {[0.24, 0.48, 0.72].map((f, k) => {
+                const yy = topY + n.h * f;
+                const hw = halfT + (halfB - halfT) * f;
+                return <rect key={k} x={n.x - hw} y={yy} width={hw * 2} height="5" fill="#061019" stroke={T.teal} strokeOpacity="0.16" />;
+              })}
+              <rect x={n.x - 15} y={topY - 10} width="30" height="10" fill="#040B12" stroke={T.teal} strokeOpacity="0.18" />
+              <circle cx={n.x} cy={topY - 14} r="3" fill={n.warm ? T.amber : T.mint} opacity={n.warm ? 0.5 : 0.32} filter={`url(#${uid}-glow)`} />
+              {/* 塔身残余的青色数据流 */}
+              <line x1={n.x + 4} y1={HZ - 6} x2={n.x + 2} y2={topY + 22} stroke={T.mint} strokeWidth="1.2" strokeOpacity="0.24" />
+            </g>
+          );
+        })}
+
+        {/* 数据海：雾气过渡 + 水面 + 倒影 + 涟漪 */}
+        <rect x="0" y={HZ - 42} width="1600" height="74" fill={T.pale} opacity="0.05" filter={`url(#${uid}-blur)`} />
+        <rect x="0" y={HZ} width="1600" height={900 - HZ} fill="#02070C" />
+        <rect x="0" y={HZ - 8} width="1600" height="92" fill="#04101B" opacity="0.88" />
+        <rect x="520" y={HZ - 16} width="560" height="44" fill={T.teal} opacity="0.12" filter={`url(#${uid}-blur)`} />
+        {/* 枢纽与各灯的倒影（向下渐隐） */}
+        {[
+          { x: 690, w: 200, c: T.teal, o: 0.15, h: 210 },
+          { x: 1112, w: 30, c: T.amber, o: 0.2, h: 176 },
+          { x: 366, w: 26, c: T.amber, o: 0.17, h: 156 },
+          { x: 524, w: 20, c: T.mint, o: 0.13, h: 146 },
+          { x: 1052, w: 22, c: T.amber, o: 0.12, h: 138 },
+        ].map((r, i) => (
+          <g key={i}>
+            <rect x={r.x} y={HZ} width={r.w} height={r.h * 0.45} fill={r.c} opacity={r.o} filter={`url(#${uid}-blur)`} />
+            <rect x={r.x} y={HZ + r.h * 0.4} width={r.w} height={r.h * 0.6} fill={r.c} opacity={r.o * 0.45} filter={`url(#${uid}-blur)`} />
+          </g>
+        ))}
+        {/* 涟漪：越近越粗、越散 */}
+        {Array.from({ length: 30 }, (_, i) => {
+          const t = i / 29;
+          const y = HZ + 6 + t * 190;
+          const wdt = 30 + t * 260 + rnd(i, 45) * 130;
+          const x = 770 + (rnd(i, 41) - 0.5) * 920;
+          return (
+            <rect key={i} x={x} y={y} width={wdt} height={1 + t * 2.2}
+              fill={rnd(i, 47) > 0.72 ? T.amber : T.pale} opacity={0.05 + rnd(i, 49) * 0.15} />
+          );
+        })}
+        {/* 水面雾：让沉没城市的底部化进雾里，弱化硬水线 */}
+        <FogBand uid={uid} y={HZ - 54} h={110} opacity={0.85} />
+        <FogBand uid={uid} y={HZ - 6} h={70} opacity={0.55} />
+
+        {/* 前景：如海藻般缠绕的粗光纤电缆（有机绕圈，非规则排布） */}
+        {Array.from({ length: 12 }, (_, i) => {
+          const leftSide = i % 2 === 0;
+          const x0 = leftSide ? -60 + rnd(i, 51) * 300 : 1660 - rnd(i, 51) * 280;
+          const x1 = leftSide ? 280 + rnd(i, 53) * 300 : 1040 + rnd(i, 53) * 320;
+          const y0 = HZ + 20 + rnd(i, 55) * 130;
+          const y1 = HZ + 10 + rnd(i, 61) * 110;
+          const d = `M${x0} ${y0} C${x0 + (x1 - x0) * 0.28} ${HZ - 70 - rnd(i, 57) * 80} ${x0 + (x1 - x0) * 0.62} ${HZ + 150 + rnd(i, 59) * 110} ${x1} ${y1}`;
+          const wd = 6 + rnd(i, 63) * 11;
+          return (
+            <g key={i} fill="none">
+              <path d={d} stroke="#02070C" strokeWidth={wd} strokeLinecap="round" />
+              <path d={d} stroke={T.teal} strokeWidth={1 + rnd(i, 65) * 1.6} strokeOpacity="0.34" filter={`url(#${uid}-glow)`} />
+              {/* 断口处的一点微光 */}
+              {rnd(i, 67) > 0.72 && <circle cx={x1} cy={y1} r="2.2" fill={T.amber} opacity="0.6" filter={`url(#${uid}-glow)`} />}
+            </g>
+          );
+        })}
+        {/* 水面漂浮的机械残骸 */}
+        {Array.from({ length: 7 }, (_, i) => {
+          const x = 80 + rnd(i, 71) * 1440;
+          const y = HZ + 26 + rnd(i, 73) * 120;
+          const s = 18 + rnd(i, 75) * 44;
+          return (
+            <g key={i} opacity={0.82}>
+              <path d={`M${x} ${y} l${s} ${-s * 0.18} l${s * 0.3} ${s * 0.42} l${-s * 0.9} ${s * 0.24} Z`} fill="#02070C" stroke={T.teal} strokeOpacity="0.24" />
+              <circle cx={x + s * 0.5} cy={y + s * 0.16} r="1.6" fill={i % 3 === 0 ? T.amber : T.teal} opacity="0.6" />
+            </g>
+          );
+        })}
+        {/* 微型浮空平台（前景尺度参照，保持在台词框上方可见区） */}
+        {[
+          { x: 176, y: 502, w: 158, h: 22, o: 0.92 },
+          { x: 1288, y: 480, w: 184, h: 24, o: 0.96 },
+          { x: 470, y: 528, w: 126, h: 18, o: 0.75 },
+        ].map((p, i) => (
+          <g key={i} opacity={p.o}>
+            <rect x={p.x} y={p.y} width={p.w} height={p.h} fill="#02070C" />
+            <rect x={p.x} y={p.y} width={p.w} height="2.6" fill={T.mint} opacity="0.45" />
+            <rect x={p.x + p.w * 0.35} y={p.y + p.h} width="3" height={16 + i * 6} fill={T.teal} opacity="0.22" />
+            <circle cx={p.x + p.w * 0.82} cy={p.y + 1} r="1.8" fill={T.amber} opacity="0.6" />
+          </g>
+        ))}
+
+        {/* 像流星一样缓缓下落的数据粒子 */}
+        {Array.from({ length: 27 }, (_, i) => {
+          const x = 40 + rnd(i, 81) * 1520;
+          const y = 120 + rnd(i, 83) * 380;
+          const len = 12 + rnd(i, 85) * 40;
+          return (
+            <line key={i} x1={x} y1={y} x2={x - len * 0.24} y2={y + len}
+              stroke={rnd(i, 87) > 0.82 ? T.amber : T.pale}
+              strokeWidth={0.8 + rnd(i, 89) * 1.2} strokeOpacity={0.18 + rnd(i, 91) * 0.34} />
+          );
+        })}
+
+        <FogBand uid={uid} y={470} h={180} opacity={0.75} />
+      </g>
+
+      {/* 底部 UI 安全区 */}
+      <rect x="0" y="700" width="1600" height="200" fill={`url(#${uid}-bottom)`} />
+
+      <Motes uid={uid} n={80} seed={8} yMax={540} />
+    </g>
+  );
+}
+
 /* ───────────────────────── 其余场景：轻量变体 ───────────────────────── */
 
 function Variant({ uid, kind }: { uid: string; kind: 'dataport' | 'memory' | 'core' | 'terminal' }) {
@@ -1042,7 +1277,8 @@ export default function SceneArt({ bg }: { bg: SceneBg }) {
 
           {bg === 'underground' && <Underground uid={uid} />}
           {bg === 'corridor' && <Corridor uid={uid} />}
-          {(bg === 'void' || bg === 'dataport') && <Void uid={uid} />}
+          {bg === 'void' && <Void uid={uid} />}
+          {bg === 'dataport' && <Dataport uid={uid} />}
           {(bg === 'memory' || bg === 'core') && <Variant uid={uid} kind={bg} />}
           {bg === 'terminal' && <Terminal uid={uid} />}
 
