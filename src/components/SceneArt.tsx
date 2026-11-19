@@ -2316,163 +2316,116 @@ function Origin({ uid }: { uid: string }) {
   );
 }
 
-/* ═════ 终章 · 超越起源（数字宇宙 · 六碎片 · 未闭合的光环） ═════ */
+/* ═════ 结局三 · 超越起源（无人托管的数字宇宙 · 通向未知的光路） ═════ */
 
 function Beyond({ uid }: { uid: string }) {
   const CX = 800;
-  const CY = 470;
+  const VY = 452;       // 光路的灭点（远处白光的位置）
   return (
     <g>
       <g transform="translate(0,-104)">
         <defs>
-          <radialGradient id={`${uid}-space`}>
-            <stop offset="0%" stopColor="#0A1830" />
-            <stop offset="48%" stopColor="#060E1E" />
-            <stop offset="100%" stopColor="#02040A" />
+          <radialGradient id={`${uid}-deep`}>
+            <stop offset="0%" stopColor="#0A1A38" />
+            <stop offset="46%" stopColor="#061024" />
+            <stop offset="100%" stopColor="#01030A" />
           </radialGradient>
-          <radialGradient id={`${uid}-galaxy`}>
-            <stop offset="0%" stopColor="#FFE3B8" stopOpacity="0.9" />
-            <stop offset="24%" stopColor="#E0A94C" stopOpacity="0.45" />
-            <stop offset="52%" stopColor="#7C4E7A" stopOpacity="0.28" />
-            <stop offset="100%" stopColor="#1A1030" stopOpacity="0" />
+          {/* 远处未知光源：柔和的白色光，没有硬边、没有结构 */}
+          <radialGradient id={`${uid}-unknown`}>
+            <stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.92" />
+            <stop offset="18%" stopColor="#EAF6FF" stopOpacity="0.6" />
+            <stop offset="44%" stopColor="#9FD8F0" stopOpacity="0.26" />
+            <stop offset="72%" stopColor="#3A6E9A" stopOpacity="0.1" />
+            <stop offset="100%" stopColor="#0A1A38" stopOpacity="0" />
           </radialGradient>
-          <radialGradient id={`${uid}-shard`}>
-            <stop offset="0%" stopColor="#FFFFFF" stopOpacity="0.9" />
-            <stop offset="60%" stopColor="#BFEAFF" stopOpacity="0.3" />
-            <stop offset="100%" stopColor="#BFEAFF" stopOpacity="0" />
-          </radialGradient>
+          {/* 光路的边缘渐隐 */}
+          <linearGradient id={`${uid}-roadfade`} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#BFEAFF" stopOpacity="0" />
+            <stop offset="40%" stopColor="#BFEAFF" stopOpacity="0.55" />
+            <stop offset="100%" stopColor="#EAF6FF" stopOpacity="0.9" />
+          </linearGradient>
         </defs>
 
-        {/* 数字宇宙底 */}
-        <rect width="1600" height="900" fill={`url(#${uid}-space)`} />
-        <Wash uid={uid} cx={CX} cy={CY + 40} rx={640} ry={430} color={T.teal} opacity={0.1} />
+        {/* 极简深空 */}
+        <rect width="1600" height="900" fill={`url(#${uid}-deep)`} />
+        <Wash uid={uid} cx={CX} cy={VY} rx={700} ry={420} color={T.blue} opacity={0.12} />
 
-        {/* 远处的星河：旋涡星系 */}
-        <g>
-          <ellipse cx={1180} cy={250} rx={320} ry={190} fill={`url(#${uid}-galaxy)`} transform="rotate(-16 1180 250)" />
-          {Array.from({ length: 5 }, (_, i) => (
-            <ellipse key={i} cx={1180} cy={250} rx={130 + i * 46} ry={22 + i * 12}
-              fill="none" stroke={i < 2 ? '#FFE3B8' : '#9C7CC0'} strokeOpacity={0.26 - i * 0.04} strokeWidth={2.4 - i * 0.3}
-              transform={`rotate(${-16 + i * 5} 1180 250)`} filter={`url(#${uid}-blur)`} />
-          ))}
-          <ellipse cx={1180} cy={250} rx={54} ry={20} fill="#FFF2D8" opacity="0.75" filter={`url(#${uid}-soft)`} transform="rotate(-16 1180 250)" />
-        </g>
-        {/* 星云 */}
-        <Wash uid={uid} cx={420} cy={180} rx={360} ry={220} color={T.violet} opacity={0.12} />
-        <Wash uid={uid} cx={1420} cy={520} rx={300} ry={200} color={T.blue} opacity={0.12} />
+        {/* 远处未知光源（唯一的大光源，柔和、无边界） */}
+        <circle cx={CX} cy={VY} r="300" fill={`url(#${uid}-unknown)`} opacity="0.85" />
+        <circle cx={CX} cy={VY} r="120" fill={`url(#${uid}-unknown)`} opacity="0.5" />
+        {/* 光的外晕：一圈极淡的环，暗示"门"但不做成建筑 */}
+        <circle cx={CX} cy={VY} r="176" fill="none" stroke="#EAF6FF" strokeOpacity="0.12" strokeWidth="1.6" />
+        <circle cx={CX} cy={VY} r="212" fill="none" stroke="#9FD8F0" strokeOpacity="0.07" strokeWidth="1.2" />
 
-        {/* 星海 */}
-        {Array.from({ length: 190 }, (_, i) => (
-          <circle key={i} cx={20 + rnd(i, 3) * 1560} cy={40 + rnd(i, 5) * 700}
-            r={0.5 + rnd(i, 7) * 1.5} fill={rnd(i, 9) > 0.88 ? '#FFE3B8' : '#EAF6FF'}
-            opacity={0.12 + rnd(i, 11) * 0.6} />
-        ))}
-
-        {/* 远处模糊的数字建筑残影：像被遗忘的文明遗迹 */}
-        {Array.from({ length: 7 }, (_, i) => {
-          const x = 60 + i * 230 + rnd(i, 13) * 60;
-          const h = 90 + rnd(i, 15) * 160;
+        {/* 星空般的数字粒子：大量细小光点，越靠中心越密 */}
+        {Array.from({ length: 240 }, (_, i) => {
+          const a = rnd(i, 3) * Math.PI * 2;
+          const rr = Math.pow(rnd(i, 5), 0.62) * 760;
+          const x = CX + Math.cos(a) * rr;
+          const y = VY + Math.sin(a) * rr * 0.62;
+          const near = 1 - rr / 760;
           return (
-            <g key={i} opacity={0.16} filter={`url(#${uid}-soft)`}>
-              <rect x={x} y={620 - h} width={60 + rnd(i, 17) * 90} height={h + 60} fill="#0A1830" />
-              {Array.from({ length: 4 }, (_, k) => (
-                <line key={k} x1={x + 8} y1={620 - h + 16 + k * (h / 4)} x2={x + 46 + rnd(i, 19) * 80} y2={620 - h + 16 + k * (h / 4)}
-                  stroke={T.pale} strokeOpacity="0.35" />
-              ))}
-            </g>
+            <circle key={i} cx={x} cy={y} r={0.6 + rnd(i, 7) * 1.8}
+              fill={rnd(i, 9) > 0.9 ? '#FFFFFF' : rnd(i, 11) > 0.55 ? '#EAF6FF' : '#9FD8F0'}
+              opacity={(0.12 + rnd(i, 13) * 0.5) * (0.5 + near * 0.9)} />
           );
         })}
 
-        {/* 六枚创世主碎片：围绕空白的中心缓慢旋转 */}
-        {Array.from({ length: 6 }, (_, i) => {
-          const a = -Math.PI / 2 + (i / 6) * Math.PI * 2 + 0.26;
-          const px = CX + Math.cos(a) * 270;
-          const py = CY + Math.sin(a) * 156;
-          const tone = [T.mint, '#EAF6FF', T.amber, T.blue, T.mint, '#EAF6FF'][i];
-          const s = 15 + rnd(i, 21) * 10;
-          return (
-            <g key={i}>
-              <circle cx={px} cy={py} r={s * 3.4} fill={`url(#${uid}-shard)`} opacity="0.7" />
-              <path d={`M${px} ${py - s} L${px + s * 0.72} ${py} L${px} ${py + s * 0.9} L${px - s * 0.72} ${py} Z`}
-                fill={tone} opacity="0.85" filter={`url(#${uid}-glow)`} />
-              <path d={`M${px} ${py - s} L${px + s * 0.28} ${py + s * 0.2} L${px} ${py + s * 0.9} L${px - s * 0.28} ${py + s * 0.2} Z`}
-                fill="#FFFFFF" opacity="0.35" />
-            </g>
-          );
-        })}
-
-        {/* 正在汇聚、但尚未闭合的巨大光环（顶部留一道缺口） */}
+        {/* 中央的数字光线道路：从画面底部延伸向未知的远方 */}
         <g>
-          <path d={`M${CX + 170} ${CY - 178} A340 205 0 1 1 ${CX - 170} ${CY - 178}`}
-            fill="none" stroke={T.mint} strokeOpacity="0.2" strokeWidth="10"
-            strokeLinecap="round" filter={`url(#${uid}-blur)`} />
-          <path d={`M${CX + 170} ${CY - 178} A340 205 0 1 1 ${CX - 170} ${CY - 178}`}
-            fill="none" stroke="#EAF6FF" strokeOpacity="0.42" strokeWidth="3"
-            strokeLinecap="round" filter={`url(#${uid}-glow)`} />
-          <path d={`M${CX + 170} ${CY - 178} A340 205 0 1 1 ${CX - 170} ${CY - 178}`}
-            fill="none" stroke="#FFFFFF" strokeOpacity="0.18" strokeWidth="1.2" />
-          {/* 缺口两侧正在聚拢的碎光 */}
-          {Array.from({ length: 14 }, (_, i) => {
-            const s = i < 7 ? 1 : -1;
-            const d = (i % 7) / 7;
-            return (
-              <circle key={i}
-                cx={CX + s * (120 + d * 150)} cy={CY - 168 - d * 30}
-                r={0.8 + rnd(i, 23) * 2.2} fill="#EAF6FF"
-                opacity={0.3 + rnd(i, 25) * 0.5} filter={`url(#${uid}-glow)`} />
-            );
+          {/* 路面：向远处收窄的梯形，越远越亮 */}
+          <path d={`M${CX - 470} 900 L${CX - 30} ${VY + 8} L${CX + 30} ${VY + 8} L${CX + 470} 900 Z`}
+            fill="#071B30" opacity="0.55" />
+          {/* 两侧边线：发光的数字线 */}
+          <path d={`M${CX - 470} 900 L${CX - 30} ${VY + 8}`} stroke={`url(#${uid}-roadfade)`} strokeWidth="3.4" filter={`url(#${uid}-glow)`} />
+          <path d={`M${CX + 470} 900 L${CX + 30} ${VY + 8}`} stroke={`url(#${uid}-roadfade)`} strokeWidth="3.4" filter={`url(#${uid}-glow)`} />
+          {/* 横向刻度：等距透视，像数据轨道的节拍 */}
+          {Array.from({ length: 22 }, (_, i) => {
+            const t = 1 - Math.pow(1 - i / 22, 1.9); // 近疏远密
+            const y = 900 - t * (900 - VY - 8);
+            const half = 470 - t * 440;
+            return <line key={i} x1={CX - half} y1={y} x2={CX + half} y2={y}
+              stroke={T.mint} strokeWidth={2.2 - t * 1.6} strokeOpacity={0.16 + t * 0.22} />;
+          })}
+          {/* 中轴数据流：一串等距的小光点，指向远方 */}
+          {Array.from({ length: 22 }, (_, i) => {
+            const t = 1 - Math.pow(1 - i / 22, 1.9);
+            const y = 900 - t * (900 - VY - 8);
+            return <circle key={i} cx={CX} cy={y} r={1.2 + (1 - t) * 2.2}
+              fill="#FFFFFF" opacity={0.2 + t * 0.5} filter={`url(#${uid}-glow)`} />;
           })}
         </g>
 
-        {/* 中央空白：什么都没有，只有一道极微弱的白色光线 */}
-        <g>
-          <line x1={CX} y1={CY - 74} x2={CX} y2={CY + 74} stroke="#FFFFFF" strokeOpacity="0.34" strokeWidth="1.2" />
-          <line x1={CX - 34} y1={CY} x2={CX + 34} y2={CY} stroke="#FFFFFF" strokeOpacity="0.12" strokeWidth="0.8" />
-          <circle cx={CX} cy={CY} r="2.6" fill="#FFFFFF" opacity="0.7" filter={`url(#${uid}-glow)`} />
-          <circle cx={CX} cy={CY} r="16" fill="#BFEAFF" opacity="0.07" filter={`url(#${uid}-blur)`} />
-        </g>
+        {/* 六枚碎片已经消失：中央完全空白，只留极淡的一圈位置痕迹 */}
+        <circle cx={CX} cy={VY + 40} r="40" fill="none" stroke="#EAF6FF" strokeOpacity="0.06" strokeWidth="1.2" strokeDasharray="3 9" />
 
-        {/* 漂浮的记忆数据面板（半透明，无文字） */}
-        {[
-          { x: 90, y: 300, w: 150, h: 96, rot: -6, o: 0.5 },
-          { x: 250, y: 470, w: 120, h: 78, rot: 5, o: 0.36 },
-          { x: 430, y: 250, w: 96, h: 62, rot: 8, o: 0.3 },
-          { x: 520, y: 560, w: 140, h: 88, rot: -4, o: 0.28 },
-          { x: 1120, y: 560, w: 170, h: 108, rot: 5, o: 0.42 },
-          { x: 1300, y: 400, w: 120, h: 76, rot: -7, o: 0.36 },
-          { x: 1390, y: 220, w: 100, h: 64, rot: 9, o: 0.26 },
-          { x: 640, y: 190, w: 78, h: 50, rot: -9, o: 0.22 },
-          { x: 980, y: 200, w: 88, h: 56, rot: 6, o: 0.24 },
-          { x: 120, y: 600, w: 130, h: 82, rot: 4, o: 0.2 },
-        ].map((p, i) => (
-          <g key={i} transform={`rotate(${p.rot} ${p.x + p.w / 2} ${p.y + p.h / 2})`} opacity={p.o}>
-            <rect x={p.x} y={p.y} width={p.w} height={p.h} fill="#0B1A2E" opacity="0.5" />
-            <rect x={p.x} y={p.y} width={p.w} height={p.h} fill="none" stroke="#BFEAFF" strokeOpacity="0.5" strokeWidth="1.2" />
-            {/* 面板内的抽象数据：点阵与连线 */}
-            {Array.from({ length: 7 }, (_, k) => (
-              <circle key={k} cx={p.x + 10 + rnd(k + i, 31) * (p.w - 20)} cy={p.y + 12 + rnd(k + i, 33) * (p.h - 24)}
-                r={1 + rnd(k + i, 35) * 1.6} fill="#EAF6FF" opacity="0.5" />
-            ))}
-            <path d={`M${p.x + 10} ${p.y + p.h - 14} L${p.x + p.w * 0.4} ${p.y + 14} L${p.x + p.w - 12} ${p.y + p.h - 20}`}
-              stroke={T.mint} strokeOpacity="0.4" strokeWidth="1" fill="none" />
-          </g>
-        ))}
-
-        {/* 记忆与代码粒子：像星河里的尘埃 */}
-        {Array.from({ length: 60 }, (_, i) => (
-          <circle key={i} cx={40 + rnd(i, 41) * 1520} cy={150 + rnd(i, 43) * 480}
-            r={0.7 + rnd(i, 45) * 1.6} fill={rnd(i, 47) > 0.75 ? '#FFE3B8' : '#BFEAFF'}
-            opacity={0.2 + rnd(i, 49) * 0.5} />
-        ))}
-        {Array.from({ length: 18 }, (_, i) => {
-          const x = 80 + rnd(i, 51) * 1440;
-          const y = 180 + rnd(i, 53) * 420;
-          const s = 6 + rnd(i, 55) * 12;
-          return <rect key={i} x={x} y={y} width={s} height={s * 0.45} fill="#BFEAFF" opacity={0.1 + rnd(i, 57) * 0.22}
-            transform={`rotate(${rnd(i, 59) * 60} ${x} ${y})`} />;
+        {/* 两侧极少量漂浮残块：只有体量，没有结构，衬托空旷 */}
+        {Array.from({ length: 10 }, (_, i) => {
+          const s = i < 5 ? -1 : 1;
+          const x = CX + s * (330 + rnd(i, 21) * 470);
+          const y = 240 + rnd(i, 23) * 520;
+          const w = 16 + rnd(i, 25) * 54;
+          return (
+            <rect key={i} x={x} y={y} width={w} height={w * 0.5} fill="#08182B"
+              stroke="#9FD8F0" strokeOpacity="0.14" transform={`rotate(${(rnd(i, 27) - 0.5) * 26} ${x} ${y})`} />
+          );
         })}
 
-        <FogBand uid={uid} y={620} h={200} opacity={0.5} />
+        {/* 漂浮的数据光点：像星星一样缓慢游动 */}
+        {Array.from({ length: 60 }, (_, i) => (
+          <circle key={i} cx={40 + rnd(i, 31) * 1520} cy={120 + rnd(i, 33) * 620}
+            r={0.7 + rnd(i, 35) * 1.6} fill={rnd(i, 37) > 0.8 ? '#FFFFFF' : '#BFEAFF'}
+            opacity={0.2 + rnd(i, 39) * 0.5} />
+        ))}
+        {Array.from({ length: 14 }, (_, i) => {
+          const x = 80 + rnd(i, 41) * 1440;
+          const y = 160 + rnd(i, 43) * 520;
+          const h = 8 + rnd(i, 45) * 26;
+          return <line key={i} x1={x} y1={y} x2={x} y2={y + h} stroke="#BFEAFF" strokeWidth="1.2"
+            strokeOpacity={0.1 + rnd(i, 47) * 0.2} />;
+        })}
+
+        <FogBand uid={uid} y={VY + 120} h={220} opacity={0.4} />
       </g>
 
       <rect x="0" y="700" width="1600" height="200" fill={`url(#${uid}-bottom)`} />
