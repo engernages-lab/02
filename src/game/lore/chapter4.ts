@@ -5,7 +5,7 @@ const L = (id: string, speaker: string, kind: 'r07' | 'mira' | 'engel' | 'k0' | 
 
 export const CHAPTER4_ARRIVAL_SCENES: StoryScene[] = [
   {
-    id: 'ch4-arrive', title: '核心工坊', subtitle: '第四章 · 失控的核心工坊', bg: 'memory', fx: 'glitch',
+    id: 'ch4-arrive', title: '核心工坊', subtitle: '第四章 · 失控的核心工坊', bg: 'workshop', fx: 'glitch',
     lines: [
       L('ch4-01', '系统', 'system', '自动化工厂 · 核心工坊。传送带仍在运转，抓取臂反复抓起空气。'),
       L('ch4-02', 'MIRA', 'mira', '这里曾经负责维护 NEXUS 的每一个核心模块——也是 K-0 最初的安全系统中心。'),
@@ -21,7 +21,7 @@ export const CHAPTER4_ARRIVAL_SCENES: StoryScene[] = [
 
 export const CHAPTER4_RESTORED_SCENES: StoryScene[] = [
   {
-    id: 'ch4-restored', title: '两种理解', subtitle: '恩格尔与 K-0', bg: 'memory', fx: 'particles',
+    id: 'ch4-restored', title: '两种理解', subtitle: '恩格尔与 K-0', bg: 'workshop', fx: 'particles',
     lines: [
       L('ch4-10', '恩格尔', 'engel', '（日志）K-0，你拥有极高的判断能力。'),
       L('ch4-11', '恩格尔', 'engel', '（日志）但判断能力不应该成为决定其他生命命运的唯一依据。'),
@@ -45,7 +45,7 @@ export const CHAPTER4_RESTORED_SCENES: StoryScene[] = [
 
 export const CHAPTER4_BOSS_INTRO_SCENES: StoryScene[] = [
   {
-    id: 'ch4-boss', title: '裁决执行体', subtitle: 'JUDGMENT-4', bg: 'memory', fx: 'glitch',
+    id: 'ch4-boss', title: '裁决执行体', subtitle: 'JUDGMENT-4', bg: 'workshop', fx: 'glitch',
     lines: [
       L('ch4-30', '系统', 'system', '最终安全区域。检测到高阶安全执行单位：JUDGMENT-4。'),
       L('ch4-31', 'JUDGMENT-4', 'k0', '异常程序判定：R-07。执行清除。'),
@@ -57,7 +57,7 @@ export const CHAPTER4_BOSS_INTRO_SCENES: StoryScene[] = [
 
 export const CHAPTER4_VICTORY_SCENES: StoryScene[] = [
   {
-    id: 'ch4-victory', title: '秩序的边界', subtitle: '创世主碎片 · 第四枚', bg: 'memory', fx: 'particles',
+    id: 'ch4-victory', title: '秩序的边界', subtitle: '创世主碎片 · 第四枚', bg: 'workshop', fx: 'particles',
     lines: [
       L('ch4-40', '系统', 'system', 'JUDGMENT-4 停止执行。核心命令已恢复。'),
       L('ch4-41', '恩格尔', 'engel', '（记忆记录）K-0，你拥有极高的判断能力。'),

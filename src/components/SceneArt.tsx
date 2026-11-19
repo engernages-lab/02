@@ -1651,6 +1651,234 @@ function Archive({ uid }: { uid: string }) {
   );
 }
 
+/* ═════ 第四章 · 失控的核心工坊（自动化工厂 · 机械臂 · 熔融能源塔） ═════ */
+
+function Workshop({ uid }: { uid: string }) {
+  /** 机械臂：分段粗臂 + 关节圆 + 液压管 */
+  const drawArm = (pts: [number, number][], w0 = 30, hot = false) => (
+    <g>
+      {pts.slice(0, -1).map((p, i) => {
+        const q = pts[i + 1];
+        const w = w0 * (1 - i * 0.2);
+        return (
+          <g key={i}>
+            <line x1={p[0]} y1={p[1]} x2={q[0]} y2={q[1]} stroke="#0A1622" strokeWidth={w} strokeLinecap="round" />
+            <line x1={p[0]} y1={p[1]} x2={q[0]} y2={q[1]} stroke="#16283A" strokeWidth={w * 0.62} strokeLinecap="round" />
+            {/* 面板分割线 */}
+            <line x1={p[0]} y1={p[1]} x2={q[0]} y2={q[1]} stroke="#02070C" strokeWidth="1.6" strokeOpacity="0.7" />
+            {/* 上缘棱光：靠近熔池的一侧更暖 */}
+            <line x1={p[0]} y1={p[1] - w * 0.34} x2={q[0]} y2={q[1] - w * 0.34}
+              stroke={hot && i > 1 ? T.ember : T.pale} strokeWidth="2.4" strokeOpacity={hot ? 0.42 : 0.2} />
+            <circle cx={q[0]} cy={q[1]} r={w * 0.52} fill="#0A1620" stroke={T.teal} strokeOpacity="0.22" strokeWidth="1.6" />
+            <circle cx={q[0]} cy={q[1]} r={w * 0.18} fill="#02070C" />
+          </g>
+        );
+      })}
+    </g>
+  );
+
+  return (
+    <g>
+      <g transform="translate(0,-104)">
+        {/* 环境：冷青底 + 熔池暖光（压低整体亮度，靠熔池做唯一强光源） */}
+        <Wash uid={uid} cx={820} cy={470} rx={380} ry={260} color={T.ember} opacity={0.15} />
+        <Wash uid={uid} cx={300} cy={260} rx={460} ry={380} color={T.teal} opacity={0.08} />
+        <Wash uid={uid} cx={1320} cy={300} rx={420} ry={360} color={T.blue} opacity={0.08} />
+
+        {/* 远景：工业塔架与巨大机门剪影 */}
+        {Array.from({ length: 12 }, (_, i) => {
+          const x = -40 + i * 150 + rnd(i, 3) * 40;
+          const w = 60 + rnd(i, 5) * 90;
+          const h = 220 + rnd(i, 7) * 320;
+          return (
+            <g key={i} opacity={0.5}>
+              <rect x={x} y={470 - h} width={w} height={h} fill="#040B12" />
+              {Array.from({ length: 4 }, (_, k) => (
+                <line key={k} x1={x + 6} y1={470 - h + 20 + k * (h / 4.4)} x2={x + w - 6} y2={470 - h + 20 + k * (h / 4.4)}
+                  stroke={T.teal} strokeOpacity="0.07" />
+              ))}
+              {/* 少量橙色能源灯 */}
+              {rnd(i, 9) > 0.55 && (
+                <rect x={x + w * 0.4} y={470 - h * 0.7} width="4" height={h * 0.4} fill={T.amber} opacity="0.12" />
+              )}
+            </g>
+          );
+        })}
+        {/* 远处巨大机门 */}
+        <rect x={700} y={200} width="200" height="270" fill="#02070C" />
+        <rect x={712} y={214} width="176" height="246" fill="none" stroke={T.teal} strokeOpacity="0.14" strokeWidth="2" />
+        <line x1={800} y1={214} x2={800} y2={460} stroke={T.teal} strokeOpacity="0.1" />
+
+        {/* 把远景压暗：让前景机械与熔池拉开层次 */}
+        <rect x="0" y="0" width="1600" height="900" fill="#01050B" opacity="0.5" />
+
+        {/* 顶部桁架与吊架 */}
+        {[60, 200, 340, 480, 620].map((y, i) => (
+          <g key={i}>
+            <rect x="-40" y={y} width="1680" height="14" fill="#050D14" />
+            <rect x="-40" y={y} width="1680" height="2" fill={T.pale} opacity="0.1" />
+          </g>
+        ))}
+        {Array.from({ length: 8 }, (_, i) => {
+          const x = 110 + i * 200;
+          return (
+            <g key={i}>
+              <line x1={x} y1={0} x2={x} y2={120} stroke="#050D14" strokeWidth="5" />
+              {/* 悬挂的橙色工灯 */}
+              <circle cx={x} cy={124} r="5" fill={T.amber} opacity="0.7" filter={`url(#${uid}-glow)`} />
+              <circle cx={x} cy={124} r="16" fill={T.amber} opacity="0.12" filter={`url(#${uid}-blur)`} />
+            </g>
+          );
+        })}
+
+        {/* 中央能源塔：旋转机械环 + 服务器结构 + 不稳定橙光 */}
+        <g>
+          <path d="M966 520 L986 170 L1120 170 L1140 520 Z" fill="#0E1C28" />
+          <path d="M966 520 L986 170 L1120 170 L1140 520 Z" fill="none" stroke={T.pale} strokeOpacity="0.22" strokeWidth="2" />
+          <line x1={986} y1={170} x2={966} y2={520} stroke={T.pale} strokeWidth="2.6" strokeOpacity="0.32" filter={`url(#${uid}-glow)`} />
+          {/* 塔身分段 */}
+          {[210, 270, 330, 390, 450].map((y, i) => (
+            <g key={i}>
+              <ellipse cx={1053} cy={y} rx={72 - i * 3} ry={17} fill="none" stroke={T.teal} strokeOpacity="0.2" strokeWidth="2" />
+              <rect x={982 + i} y={y - 6} width={142 - i * 2} height="12" fill="#061019" stroke="#0B1A24" />
+              {/* 不稳定橙光带 */}
+              {i % 2 === 0 && (
+                <rect x={986 + i} y={y - 5} width={130 - i * 2} height="10" fill={T.ember} opacity="0.5" filter={`url(#${uid}-blur)`} />
+              )}
+            </g>
+          ))}
+          {/* 旋转机械环 */}
+          {[
+            { cy: 300, rx: 128, rot: -8 },
+            { cy: 360, rx: 146, rot: 6 },
+            { cy: 420, rx: 156, rot: -4 },
+          ].map((r, i) => (
+            <g key={i} transform={`rotate(${r.rot} 1053 ${r.cy})`}>
+              <ellipse cx={1053} cy={r.cy} rx={r.rx} ry={30} fill="none" stroke={i === 1 ? T.ember : T.pale}
+                strokeWidth="7" strokeOpacity={i === 1 ? 0.45 : 0.26} filter={`url(#${uid}-glow)`} />
+              <ellipse cx={1053} cy={r.cy} rx={r.rx} ry={30} fill="none" stroke="#02070C" strokeWidth="2" strokeOpacity="0.9" />
+            </g>
+          ))}
+          {/* 控制模块与指示灯 */}
+          {Array.from({ length: 14 }, (_, i) => (
+            <rect key={i} x={1000 + rnd(i, 11) * 110} y={186 + rnd(i, 13) * 320}
+              width={5 + rnd(i, 15) * 9} height="3.4"
+              fill={rnd(i, 17) > 0.6 ? T.ember : T.mint} opacity={0.3 + rnd(i, 19) * 0.45} />
+          ))}
+          {/* 塔基与管线 */}
+          <rect x={962} y={506} width="182" height="18" fill="#040C14" />
+          {[-1, 1].map(s => (
+            <path key={s} d={`M${1053 + s * 40} 520 C${1053 + s * 120} 520 ${1053 + s * 190} 500 ${1053 + s * 240} 520`}
+              stroke={s < 0 ? T.ember : T.teal} strokeWidth="5" strokeOpacity="0.3" fill="none" filter={`url(#${uid}-glow)`} />
+          ))}
+        </g>
+
+        {/* 机械臂：左侧抓取空气、右侧对准熔池、上方倾倒 */}
+        {drawArm([[90, 470], [250, 300], [470, 330], [600, 296]], 44, true)}
+        {drawArm([[1520, 470], [1330, 300], [1180, 280], [1108, 300]], 40, true)}
+        {drawArm([[560, 120], [660, 250], [745, 330], [812, 392]], 30, true)}
+
+        {/* 熔融倾注与坩埚 */}
+        <g>
+          {/* 浇注流 */}
+          <path d="M816 394 C824 430 830 462 838 492 L862 492 C852 458 844 428 836 394 Z"
+            fill={`url(#${uid}-beam)`} opacity="0.95" filter={`url(#${uid}-soft)`} />
+          <path d="M822 396 C828 434 834 464 840 490 L852 490 C846 462 840 430 834 396 Z"
+            fill={T.hot} opacity="0.6" filter={`url(#${uid}-blur)`} />
+          {/* 飞溅火花 */}
+          {Array.from({ length: 22 }, (_, i) => {
+            const x = 826 + (rnd(i, 21) - 0.5) * 90;
+            const y = 430 + rnd(i, 23) * 66;
+            return <circle key={i} cx={x} cy={y} r={0.8 + rnd(i, 25) * 1.8}
+              fill={rnd(i, 27) > 0.4 ? T.hot : T.amber} opacity={0.4 + rnd(i, 29) * 0.5} filter={`url(#${uid}-glow)`} />;
+          })}
+          {/* 坩埚与熔池 */}
+          <path d="M760 520 L900 520 L878 552 L782 552 Z" fill="#050D14" stroke="#0B1A24" strokeWidth="2" />
+          <ellipse cx={830} cy={518} rx={66} ry={16} fill={T.ember} opacity="0.85" filter={`url(#${uid}-soft)`} />
+          <ellipse cx={830} cy={516} rx={44} ry={10} fill={T.hot} opacity="0.9" filter={`url(#${uid}-blur)`} />
+          <ellipse cx={830} cy={500} rx={150} ry={54} fill={T.ember} opacity="0.2" filter={`url(#${uid}-blur)`} />
+        </g>
+
+        {/* 传送带与生产线 */}
+        {[
+          { y: 556, x0: -40, x1: 660 },
+          { y: 604, x0: 940, x1: 1680 },
+        ].map((b, i) => (
+          <g key={i}>
+            <rect x={b.x0} y={b.y} width={b.x1 - b.x0} height="16" fill="#050D14" />
+            <rect x={b.x0} y={b.y} width={b.x1 - b.x0} height="2.4" fill={T.teal} opacity="0.2" />
+            {Array.from({ length: Math.floor((b.x1 - b.x0) / 46) }, (_, k) => {
+              const x = b.x0 + k * 46;
+              return (
+                <g key={k}>
+                  <line x1={x} y1={b.y + 16} x2={x} y2={b.y + 30} stroke="#050D14" strokeWidth="4" />
+                  {/* 传送带上的零件：部分是破碎数据块 */}
+                  {rnd(k + i, 31) > 0.42 && (
+                    <rect x={x + 8} y={b.y - 10} width={6 + rnd(k + i, 33) * 14} height={8 + rnd(k + i, 35) * 6}
+                      fill="#0A1620" stroke={rnd(k + i, 37) > 0.6 ? T.ember : T.teal} strokeOpacity="0.4" />
+                  )}
+                </g>
+              );
+            })}
+          </g>
+        ))}
+
+        {/* 密集光纤与能源管道（橙 / 青对比，只保留几条主脉，避免雾化） */}
+        {Array.from({ length: 6 }, (_, i) => {
+          const y = 160 + i * 52;
+          const warm = i % 3 === 0;
+          return (
+            <path key={i}
+              d={`M-40 ${y} C${240} ${y - 40} ${420} ${y + 50} ${640} ${y + 10} M${980} ${y + 18} C${1200} ${y - 20} ${1400} ${y + 40} 1680 ${y}`}
+              stroke={warm ? T.ember : T.teal} strokeWidth={1.4 + rnd(i, 41) * 2}
+              strokeOpacity={warm ? 0.26 : 0.14} fill="none" filter={warm ? `url(#${uid}-glow)` : undefined} />
+          );
+        })}
+
+        {/* 前景剪影：检修台与货箱，压出最前层次 */}
+        <rect x={30} y={556} width={200} height={96} fill="#01050A" />
+        <rect x={30} y={556} width={200} height="3" fill={T.pale} opacity="0.16" />
+        <rect x={62} y={514} width={126} height={44} fill="#01050A" />
+        <rect x={62} y={514} width={126} height="2.4" fill={T.amber} opacity="0.2" />
+        <rect x={1376} y={572} width={240} height={82} fill="#01050A" />
+        <rect x={1376} y={572} width={240} height="3" fill={T.teal} opacity="0.16" />
+
+        {/* 地面：深色金属平台 + 轨道 + 熔光反射 */}
+        <rect x="0" y="660" width="1600" height="240" fill="#040A10" />
+        {Array.from({ length: 10 }, (_, i) => {
+          const t = i / 9;
+          const y = 664 + t * t * 236;
+          const hw = 180 + t * 900;
+          return <line key={i} x1={800 - hw} y1={y} x2={800 + hw} y2={y} stroke={T.pale} strokeOpacity={0.07 - t * 0.02} strokeWidth="1.2" />;
+        })}
+        {[-1, 1].map(s => (
+          <line key={s} x1={800 + s * 120} y1={664} x2={800 + s * 900} y2={900} stroke={T.pale} strokeOpacity="0.06" strokeWidth="1.4" />
+        ))}
+        {/* 熔池在地面的倒影 */}
+        <rect x={720} y={660} width={240} height={140} fill={T.ember} opacity="0.14" filter={`url(#${uid}-blur)`} />
+        <rect x={790} y={664} width={90} height={90} fill={T.amber} opacity="0.16" filter={`url(#${uid}-blur)`} />
+
+        {/* 火花与数字粒子 */}
+        {Array.from({ length: 26 }, (_, i) => {
+          const x = 60 + rnd(i, 51) * 1480;
+          const y = 180 + rnd(i, 53) * 440;
+          const len = 10 + rnd(i, 55) * 34;
+          return (
+            <line key={i} x1={x} y1={y} x2={x - len * 0.3} y2={y + len}
+              stroke={rnd(i, 57) > 0.5 ? T.amber : T.pale} strokeWidth={0.8 + rnd(i, 59) * 1.2}
+              strokeOpacity={0.16 + rnd(i, 61) * 0.3} />
+          );
+        })}
+
+        <FogBand uid={uid} y={480} h={180} opacity={0.55} />
+        <Motes uid={uid} n={70} seed={15} color={T.pale} yMax={520} />
+      </g>
+
+      <rect x="0" y="700" width="1600" height="200" fill={`url(#${uid}-bottom)`} />
+    </g>
+  );
+}
+
 /* ───────────────────────── 其余场景：轻量变体 ───────────────────────── */
 
 function Variant({ uid, kind }: { uid: string; kind: 'dataport' | 'memory' | 'core' | 'terminal' }) {
@@ -1725,6 +1953,7 @@ export default function SceneArt({ bg }: { bg: SceneBg }) {
           {(bg === 'memory' || bg === 'core') && <Variant uid={uid} kind={bg} />}
           {bg === 'garden' && <Garden uid={uid} />}
           {bg === 'archive' && <Archive uid={uid} />}
+          {bg === 'workshop' && <Workshop uid={uid} />}
           {bg === 'terminal' && <Terminal uid={uid} />}
 
           {/* 暗角（电影感影调） */}
