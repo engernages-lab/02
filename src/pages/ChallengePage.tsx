@@ -10,6 +10,7 @@ import type { RunOutcomeShape } from '../game/types';
 import { levelById, levelsOfServer, serverById, type LevelDef } from '../game/levels';
 import { canEnterServer } from '../game/chapterFlow';
 import { milestone } from '../game/progression';
+import { riskStatusFor } from '../game/playerGrowthCore';
 import { formatDuration } from '../game/challengeSession';
 import { normalizeRewards } from '../game/rewards';
 import { buildHarness, checkUserCode, combineWithHarness, filterMarkerLines, judgeRun, parseMarker, type JudgeCheck, type JudgeVerdict, type ParsedError } from '../services/judge';
@@ -866,6 +867,7 @@ export default function ChallengePage() {
     ? activeSession.errors
     : (player.progress.failedAttempts[level.id] || 0);
   const tolLeft = Math.max(0, g.tolerance - tolUsed);
+  const risk = riskStatusFor({ consciousness: player.consciousness, level: player.level, failures: tolUsed, toleranceRemaining: tolLeft });
   const myRewards = normalizeRewards(player.rewards);
   const buffs = myRewards.buffs;
   const stars = player.progress.stars[level.id] || 0;
@@ -892,6 +894,7 @@ export default function ChallengePage() {
         </div>
         <span className="hud-chip">{stars > 0 ? '★'.repeat(stars) : '未通关'}</span>
         <span className="hud-chip cyan" title="剩余容错 / 本关容错上限">容错 {tolLeft}/{g.tolerance}</span>
+        <span className={'hud-chip risk-' + risk.level.toLowerCase()} title={risk.hint}>{risk.label}</span>
         <span className="hud-chip gold" title="贡献点（兑换中心货币）">◈ {myRewards.credits}</span>
         {buffs.shield > 0 && <span className="hud-chip" title="护盾：自动拦截下一次纠错者攻击">⛨ 护盾 {buffs.shield}</span>}
         {buffs.guard > 0 && <span className="hud-chip" title="容错护符：挡下一次超限攻击">◈ 护符 {buffs.guard}</span>}

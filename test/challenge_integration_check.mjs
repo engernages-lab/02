@@ -217,6 +217,20 @@ console.log('=== H. 存档版本未变（仍为 v10） ===');
   ok(v9.to === 10 && v9.notes.some(n => n.includes('v10')), 'v9→v10 迁移仍存在');
 }
 
+console.log('=== I. 账本回归：challenge 入账经标准化后不再丢失 ===');
+{
+  const Econ = L('src/game/economyConfig.ts');
+  const list = Econ.appendLedger([], { kind: 'challenge', ref: 'ind-timed', credits: 80, exp: 40, at: 123 });
+  ok(list.length === 1 && list[0].kind === 'challenge', 'challenge 可入账');
+  const norm = Econ.normalizeLedger(list);
+  ok(norm.length === 1 && norm[0].kind === 'challenge' && norm[0].ref === 'ind-timed', 'challenge 账本经 normalizeLedger 后保留（修复重载丢失）');
+  const mixed = Econ.normalizeLedger([
+    { kind: 'challenge', ref: 'x', credits: 1, exp: 1, at: 1 },
+    { kind: 'hacked', ref: 'y', credits: 1, exp: 1, at: 1 },
+  ]);
+  ok(mixed.length === 1 && mixed[0].kind === 'challenge', '非法 kind 仍被丢弃（白名单仍有效）');
+}
+
 console.log('=== 结果 ===');
 console.log('通过 ' + pass + ' / ' + total);
 process.exit(pass === total ? 0 : 1);

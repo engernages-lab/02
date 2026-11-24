@@ -12,6 +12,7 @@ import { bossRecordOf } from '../game/chapterFlow';
 import { difficultyMeta, DIFFICULTY_ORDER } from '../game/difficulty';
 import PlayerStatus from '../components/PlayerStatus';
 import { play } from '../services/sound';
+import { growthOverviewFor, RISK_META } from '../game/playerGrowthCore';
 
 export default function ProfilePage() {
   const g = useGame();
@@ -37,6 +38,11 @@ export default function ProfilePage() {
   const allLevels = levelsOfServer('training')
     .concat(levelsOfServer('syntax'), levelsOfServer('logs'), levelsOfServer('storage'), levelsOfServer('factory'), levelsOfServer('diag'), levelsOfServer('core'));
   const totalStars = allLevels.reduce((s, l) => s + (p.progress.stars[l.id] || 0), 0);
+  const growth = growthOverviewFor(p, allLevels.length);
+  const recentLedger = [...(p.rewards?.ledger || [])]
+    .filter(e => ['level', 'level-repeat', 'boss', 'chapter', 'difficulty', 'challenge', 'exploration'].includes(e.kind))
+    .sort((a, b) => (b.at || 0) - (a.at || 0))
+    .slice(0, 6);
 
   return (
     <div className="page page-anim">
@@ -51,6 +57,46 @@ export default function ProfilePage() {
         </div>
 
         <div className="pf-grid">
+          <div className="panel pf-growth-panel">
+            <div className="panel-title">成长总览<span className="panel-tag">GROWTH</span></div>
+            <div className="pf-growth-head">
+              <div>
+                <div className="pf-growth-title">Lv.{growth.level} · {growth.title}</div>
+                <div className="pf-growth-sub">容错上限 {growth.toleranceMax} 次 / 关 · MIRA Lv.{growth.miraLevel}</div>
+              </div>
+              <span className={'pf-risk risk-' + growth.risk.level} style={{ borderColor: RISK_META[growth.risk.level].color, color: RISK_META[growth.risk.level].color }}>
+                {growth.risk.label}
+              </span>
+            </div>
+            <div className="pf-xp-track"><i style={{ width: growth.pct + '%' }} /></div>
+            <div className="pf-growth-xp">
+              {growth.maxed ? '经验 MAX · Lv.' + growth.level : '经验 ' + growth.exp + ' · 下一等级还差 ' + Math.max(0, growth.need - growth.into) + '（Lv.' + Math.min(10, growth.level + 1) + '）'}
+            </div>
+            <div className="pf-growth-grid">
+              <span>已修复挑战 <b>{growth.completedChallenges} / {growth.totalChallenges}</b></span>
+              <span>累计星级 <b>{growth.totalStars} / {growth.totalChallenges * 3}</b></span>
+              <span>当前失误计数 <b>{growth.failedSubmissions}</b></span>
+              <span>已解锁区域 <b>{growth.regionsUnlocked} / 7</b></span>
+              <span>已完成区域 <b>{growth.regionsCompleted}</b></span>
+              <span>探索节点 <b>{growth.nodesCompleted} · {growth.explorePct}%</b></span>
+              <span>已解锁成就 <b>{growth.achievementCount}</b></span>
+              <span>风险状态 <b style={{ color: RISK_META[growth.risk.level].color }}>{growth.risk.level}</b></span>
+            </div>
+            <div className="pf-risk-hint">{growth.risk.hint}</div>
+            <div className="pf-recent">
+              <div className="panel-title" style={{ fontSize: 13, marginTop: 8 }}>最近成长 / 奖励</div>
+              {recentLedger.length === 0 && <div className="dim" style={{ fontSize: 12 }}>还没有成长记录。</div>}
+              {recentLedger.map(e => (
+                <div key={e.kind + ':' + e.ref + ':' + e.at} className="pf-recent-row">
+                  <span className="pr-kind">{e.kind}</span>
+                  <b>{e.ref}</b>
+                  <span>+{e.credits} 贡献{e.exp ? ' · +' + e.exp + ' XP' : ''}</span>
+                  <em>{new Date(e.at).toLocaleString()}</em>
+                </div>
+              ))}
+            </div>
+          </div>
+
           <div className="panel">
             <div className="panel-title">身份信息<span className="panel-tag">IDENTITY</span></div>
             <PlayerStatus />
@@ -104,6 +150,8 @@ export default function ProfilePage() {
           <div className="panel">
             <div className="panel-title">意识记录</div>
             <div className="pf-kv"><span className="k">意识完整度</span><span className="v">{p.consciousness}%</span></div>
+            <div className="pf-kv"><span className="k">当前风险状态</span><span className="v" style={{ color: RISK_META[growth.risk.level].color }}>{growth.risk.label}</span></div>
+            <div className="pf-kv"><span className="k">当前容错状态</span><span className="v">剩余 {growth.risk.toleranceRemaining} / {growth.risk.toleranceMax}</span></div>
             <div className="pf-kv"><span className="k">累计死亡次数</span><span className="v">{p.meta.deaths}</span></div>
             <div className="pf-kv"><span className="k">意识重组次数</span><span className="v">{p.meta.rebirths}</span></div>
             <div className="pf-kv"><span className="k">最近死亡关卡</span><span className="v">{p.meta.lastDeathLevel ? levelById(p.meta.lastDeathLevel)?.title || p.meta.lastDeathLevel : '无记录'}</span></div>

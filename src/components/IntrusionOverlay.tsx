@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useGame } from '../store/gameStore';
 import {
   UNKNOWN_INTRUSION_ID, INTRUSION_PHASES, INTRUSION_RECOVER_STEPS, INTRUSION_MAX_MISSES,
@@ -64,6 +64,13 @@ export default function IntrusionOverlay() {
   }, [ev?.status]);
 
   const seq = useMemo(() => permFor(ev?.id || 'seed', NODE_LABELS.length), [ev?.id]);
+
+  // DEV 专用：覆盖层覆盖了挑战大厅的 DEV 面板，因此把「重复触发 / 异常恢复」放到覆盖层内，便于真实浏览器验收
+  const [devMsg, setDevMsg] = useState('');
+  const dev = (() => {
+    try { return localStorage.getItem('nexus_dev_tools') === '1' || new URLSearchParams(window.location.search).has('dev'); }
+    catch { return false; }
+  })();
 
   if (!ev || ev.defId !== UNKNOWN_INTRUSION_ID) return null;
 
@@ -162,6 +169,20 @@ export default function IntrusionOverlay() {
                 </span>
               )}
             </div>
+            {dev && (
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 10, paddingTop: 8, borderTop: '1px dashed rgba(243,183,92,0.4)', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 11, color: '#F3B75C' }}>DEV</span>
+                <button className="nxbtn small ghost" onClick={() => {
+                  const r = g.triggerDynamicEvent(UNKNOWN_INTRUSION_ID);
+                  setDevMsg(r.ok ? 'DEV：已触发（不应发生）' : 'DEV：重复触发被拒绝（' + r.reason + '）');
+                }}>DEV 重复触发</button>
+                <button className="nxbtn small ghost" onClick={() => {
+                  g.recoverDynamicEvent();
+                  setDevMsg('DEV：已执行异常恢复');
+                }}>DEV 模拟异常</button>
+                {devMsg && <span style={{ fontSize: 11, color: '#F3B75C' }}>{devMsg}</span>}
+              </div>
+            )}
           </>
         )}
       </div>

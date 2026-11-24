@@ -1,0 +1,261 @@
+{
+  "version": 10,
+  "updatedAt": 1795424334556,
+  "player": {
+    "name": "R-07",
+    "identity": {
+      "displayName": "R-07",
+      "originCode": "R-07",
+      "renamed": false,
+      "createdAt": 1
+    },
+    "level": 1,
+    "exp": 70,
+    "consciousness": 100,
+    "meta": {
+      "deaths": 0,
+      "rebirths": 0,
+      "lastDeathLevel": null,
+      "lastDeathReason": null,
+      "memoryFragments": [],
+      "memoryLogs": [],
+      "fragmentLog": {},
+      "backupLevel": 1,
+      "bugCodex": {}
+    },
+    "progress": {
+      "completedLevels": [],
+      "stars": {},
+      "unlockedServers": [
+        "training"
+      ],
+      "currentLevelId": null,
+      "failedAttempts": {},
+      "hintLevels": {},
+      "achievements": [],
+      "knowledge": [],
+      "storySeen": {
+        "bossIntro_gate-01": true
+      },
+      "story": {
+        "unlocked": [],
+        "seen": {
+          "bossIntro_gate-01": 1
+        },
+        "choices": {},
+        "lastEventId": null
+      },
+      "vault": {
+        "read": [],
+        "finalSeen": false,
+        "lastOpened": null
+      },
+      "challengeSessions": {},
+      "challengeRuns": {},
+      "dynamicEvent": null,
+      "eventCooldowns": {},
+      "endings": [],
+      "ending": null,
+      "flags": {
+        "prologueDone": true,
+        "tutorialCinematicShown": true,
+        "chapter1ArrivalSeen": true,
+        "chapter1RestoreSeen": true
+      },
+      "bossesDone": [],
+      "bossBattles": {},
+      "bossBattleHistory": [],
+      "bossPhaseProgress": {},
+      "bossAttacks": {},
+      "bossWeaknesses": {},
+      "bossBattleStats": {
+        "active": null,
+        "history": []
+      },
+      "bossBattleRatings": {
+        "history": []
+      },
+      "bossBattleRewards": {
+        "history": [],
+        "grantedBattleIds": [],
+        "totalGranted": {
+          "xp": 0,
+          "contribution": 0,
+          "fragments": 0
+        }
+      },
+      "bossAchievements": {
+        "unlocked": [],
+        "progress": [],
+        "rewardHistory": [],
+        "eventDeduplication": []
+      },
+      "bossBattleArchive": {
+        "version": 1,
+        "records": [],
+        "archivedBattleIds": [],
+        "totals": {
+          "totalBattles": 0,
+          "victories": 0,
+          "defeats": 0,
+          "retreats": 0,
+          "totalDuration": 0,
+          "totalXP": 0,
+          "totalContribution": 0,
+          "totalCredits": 0,
+          "totalFragments": 0,
+          "ratingCount": 0,
+          "ratingScoreSum": 0,
+          "gradeCounts": {
+            "S": 0,
+            "A": 0,
+            "B": 0,
+            "C": 0,
+            "D": 0
+          },
+          "bestScore": null,
+          "bestGrade": null,
+          "fastestVictory": null,
+          "longestBattle": null,
+          "currentWinStreak": 0,
+          "bestWinStreak": 0,
+          "updatedAt": null
+        },
+        "bossTotals": {},
+        "difficultyTotals": {},
+        "updatedAt": null
+      },
+      "exploration": {
+        "version": 1,
+        "events": {},
+        "ruins": {},
+        "hidden": {},
+        "rewardsClaimed": [],
+        "discoveredRegions": [],
+        "pendingChallenge": null,
+        "archive": [],
+        "updatedAt": 1
+      },
+      "currentBossId": null,
+      "pendingRebirth": false,
+      "chapters": {
+        "ch1": {
+          "bossDefeated": false,
+          "bossFirstClearAt": null,
+          "bossClearSource": null,
+          "fragmentId": "frag-01",
+          "fragmentGrantedAt": null,
+          "completed": false,
+          "completedAt": null,
+          "unlockedAt": 0
+        },
+        "ch2": {
+          "bossDefeated": false,
+          "bossFirstClearAt": null,
+          "bossClearSource": null,
+          "fragmentId": "frag-02",
+          "fragmentGrantedAt": null,
+          "completed": false,
+          "completedAt": null,
+          "unlockedAt": null
+        },
+        "ch3": {
+          "bossDefeated": false,
+          "bossFirstClearAt": null,
+          "bossClearSource": null,
+          "fragmentId": "frag-03",
+          "fragmentGrantedAt": null,
+          "completed": false,
+          "completedAt": null,
+          "unlockedAt": null
+        },
+        "ch4": {
+          "bossDefeated": false,
+          "bossFirstClearAt": null,
+          "bossClearSource": null,
+          "fragmentId": "frag-04",
+          "fragmentGrantedAt": null,
+          "completed": false,
+          "completedAt": null,
+          "unlockedAt": null
+        },
+        "ch5": {
+          "bossDefeated": false,
+          "bossFirstClearAt": null,
+          "bossClearSource": null,
+          "fragmentId": "frag-05",
+          "fragmentGrantedAt": null,
+          "completed": false,
+          "completedAt": null,
+          "unlockedAt": null
+        },
+        "ch6": {
+          "bossDefeated": false,
+          "bossFirstClearAt": null,
+          "bossClearSource": null,
+          "fragmentId": "frag-06",
+          "fragmentGrantedAt": null,
+          "completed": false,
+          "completedAt": null,
+          "unlockedAt": null
+        }
+      },
+      "bossRecords": {},
+      "originCore": {
+        "enteredAt": null,
+        "clearedAt": null
+      }
+    },
+    "rewards": {
+      "credits": 0,
+      "trust": 10,
+      "items": {},
+      "skins": [],
+      "equipped": {},
+      "chapterRewards": [],
+      "cleared": {},
+      "archiveRead": [],
+      "bossRewards": [],
+      "unlocks": [],
+      "badges": [],
+      "difficultyRewards": [],
+      "transactions": [],
+      "purchases": {},
+      "buffs": {
+        "shield": 0,
+        "guard": 0,
+        "barrier": 0,
+        "hintTicket": 0,
+        "expBoost": null
+      },
+      "ledger": []
+    },
+    "settings": {
+      "musicVolume": 0.35,
+      "sfxVolume": 0.6,
+      "animations": true,
+      "animLevel": "high",
+      "typewriterMs": 26,
+      "fullscreen": false,
+      "voice": {
+        "enabled": true,
+        "autoRead": false,
+        "rate": 1,
+        "pitch": 1,
+        "volume": 0.9,
+        "lang": "zh-CN",
+        "roleVoices": {}
+      },
+      "lang": "zh"
+    },
+    "mira": {
+      "level": 1,
+      "exp": 0,
+      "stage": "initial",
+      "eventLog": [],
+      "memories": {},
+      "lastScene": {},
+      "updatedAt": 1
+    }
+  }
+}

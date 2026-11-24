@@ -12,6 +12,22 @@ import { normalizeChapterProgress } from '../game/chapterFlow';
 import { normalizeSessions } from '../game/challengeSession';
 import { normalizeChallengeRuns } from '../game/challengeEngine';
 import { normalizeEventState, normalizeCooldowns } from '../game/eventEngine';
+import {
+  normalizeBossPhaseRuns, normalizeBossBattleHistory, normalizeBossPhaseProgress,
+  reconcileBossPhaseRun, isTerminalStatus,
+} from '../game/bossPhaseEngine';
+import { normalizeBossAttackState, type BossAttackState } from '../game/bossAttackEngine';
+import { normalizeWeaknessRun, type BossWeaknessRunState } from '../game/bossWeaknessEngine';
+import { weaknessDefinitionsFor } from '../game/bossWeaknessCatalog';
+import { normalizeCombatArbiter } from '../game/combatEventArbiter';
+import { normalizeBossBattleStatsStore } from '../game/bossBattleStats';
+import { normalizeBossBattleRatingStore } from '../game/bossBattleRating';
+import { normalizeBossBattleRewardStore } from '../game/bossBattleReward';
+import { normalizeBossAchievementStore, emptyBossAchievementStore } from '../game/bossAchievementStore';
+import { normalizeBossBattleArchiveStore, emptyBossBattleArchiveStore } from '../game/bossBattleArchive';
+import { defaultMiraState, normalizeMiraState } from '../game/miraCore';
+import { defaultExplorationState, normalizeExplorationState } from '../game/explorationCore';
+import { buildBossPhasePlan } from '../game/bossPhasePlans';
 import { registerUnknownIntrusion } from '../game/events/unknownIntrusion';
 import { LEVELS, SERVERS } from '../game/levels';
 import { ACHIEVEMENTS } from '../game/achievements';
@@ -107,6 +123,18 @@ export function defaultState(): PlayerState {
       ending: null,
       flags: {},
       bossesDone: [],
+      bossBattles: {},
+      bossBattleHistory: [],
+      bossPhaseProgress: {},
+      bossAttacks: {},
+      bossWeaknesses: {},
+      combatArbiter: undefined,
+      bossBattleStats: { active: null, history: [] },
+      bossBattleRatings: { history: [] },
+      bossBattleRewards: { history: [], grantedBattleIds: [], totalGranted: { xp: 0, contribution: 0, fragments: 0 } },
+      bossAchievements: emptyBossAchievementStore(),
+      bossBattleArchive: emptyBossBattleArchiveStore(),
+      exploration: defaultExplorationState(),
       currentBossId: null,
       pendingRebirth: false,
     },
@@ -121,6 +149,7 @@ export function defaultState(): PlayerState {
       voice: { ...DEFAULT_VOICE, roleVoices: {} },
       lang: 'zh',
     },
+    mira: defaultMiraState(),
   };
 }
 
@@ -146,8 +175,82 @@ function isValidSave(x: unknown): x is PlayerState {
  * fromVersion 用于旧存档的「历史进度继承」审计（V1.1.1 章节主线）。
  */
 export function normalizePlayerState(raw: PlayerState, fromVersion?: number): PlayerState {
+  const now = Date.now();
   const identity = normalizeIdentity((raw as Partial<PlayerState>).identity, raw.name);
   const progress = (raw.progress && typeof raw.progress === 'object' ? raw.progress : {}) as PlayerState['progress'];
+  // 多阶段运行状态与真实战斗血量对齐（刷新恢复的唯一入口；纯自愈，不产生奖励）
+  const bossBattles = normalizeBossPhaseRuns(progress.bossBattles, buildBossPhasePlan, now);
+  for (const [bossId, run] of Object.entries(bossBattles)) {
+    const battleRaw = (progress.battles || {})[bossId] as unknown;
+    if (!battleRaw || typeof battleRaw !== 'object') continue;
+    const hp = Number((battleRaw as { hp?: unknown }).hp);
+    const maxHp = Number((battleRaw as { maxHp?: unknown }).maxHp);
+    if (!Number.isFinite(hp)) continue;
+    const plan = buildBossPhasePlan(bossId, run.difficulty);
+    if (!plan) continue;
+    bossBattles[bossId] = reconcileBossPhaseRun(
+      run, plan, { hp, maxHp: Number.isFinite(maxHp) ? maxHp : plan.totalHp }, now,
+    );
+  }
+  // 弱点状态：仅保留进行中战斗；阶段/战斗 ID 不匹配时安全重建
+  const bossWeaknesses: Record<string, BossWeaknessRunState> = {};
+  for (const [bossId, run] of Object.entries(bossBattles)) {
+    if (isTerminalStatus(run.status)) continue;
+    const plan = buildBossPhasePlan(bossId, run.difficulty);
+    const phase = plan ? plan.phases[run.currentPhaseIndex] : undefined;
+    if (!phase) continue;
+    const defs = weaknessDefinitionsFor(bossId, run.difficulty);
+    if (defs.length === 0) continue;
+    bossWeaknesses[bossId] = normalizeWeaknessRun(
+      (progress.bossWeaknesses || {})[bossId],
+      defs,
+      { bossId, battleId: run.battleId, phaseId: phase.phaseId, phaseIndex: run.currentPhaseIndex, now },
+    );
+  }
+  const bossAttacks: Record<string, BossAttackState> = {};
+  if (progress.bossAttacks && typeof progress.bossAttacks === 'object') {
+    for (const [bossId, raw] of Object.entries(progress.bossAttacks as Record<string, unknown>)) {
+      const run = bossBattles[bossId];
+      if (!run || isTerminalStatus(run.status)) continue;
+      const plan = buildBossPhasePlan(bossId, run.difficulty);
+      const phase = plan ? plan.phases[run.currentPhaseIndex] : undefined;
+      if (!phase) continue;
+      const state = normalizeBossAttackState(raw, {
+        bossId, phaseId: phase.phaseId, phaseIndex: run.currentPhaseIndex, battleId: run.battleId, now,
+      });
+      if (state) bossAttacks[bossId] = state;
+    }
+  }
+  // 战斗仲裁：只保留进行中 Boss 战；活动锁/队列属于瞬态，刷新后清空，记录与幂等 ID 保留
+  const liveBossId = (progress.currentBossId && bossBattles[progress.currentBossId] && !isTerminalStatus(bossBattles[progress.currentBossId].status))
+    ? progress.currentBossId
+    : Object.keys(bossBattles).find(id => !isTerminalStatus(bossBattles[id].status));
+  let combatArbiter: ReturnType<typeof normalizeCombatArbiter> | undefined;
+  if (liveBossId) {
+    const run = bossBattles[liveBossId];
+    const plan = buildBossPhasePlan(liveBossId, run.difficulty);
+    const phase = plan ? plan.phases[run.currentPhaseIndex] : undefined;
+    if (phase) {
+      combatArbiter = normalizeCombatArbiter(progress.combatArbiter, {
+        battleId: run.battleId, bossId: liveBossId, phaseId: phase.phaseId, now,
+      });
+    }
+  }
+  const activeStatsBattleId = progress.bossBattleStats && progress.bossBattleStats.active
+    ? progress.bossBattleStats.active.battleId
+    : null;
+  const statsBossId = activeStatsBattleId
+    ? Object.keys(bossBattles).find(id => bossBattles[id].battleId === activeStatsBattleId) || null
+    : (progress.currentBossId && bossBattles[progress.currentBossId] ? progress.currentBossId : Object.keys(bossBattles)[0] || null);
+  const liveStatsRun = statsBossId ? bossBattles[statsBossId] : null;
+  const liveStatsResult = liveStatsRun
+    ? (liveStatsRun.status === 'victory' ? 'victory'
+      : liveStatsRun.status === 'defeat' ? 'defeat'
+        : liveStatsRun.status === 'interrupted' ? 'interrupted' : null)
+    : null;
+  const bossBattleStats = normalizeBossBattleStatsStore(
+    progress.bossBattleStats, liveStatsRun ? liveStatsRun.battleId : null, liveStatsResult,
+  );
   const storySeen = progress.storySeen && typeof progress.storySeen === 'object' ? progress.storySeen : {};
   const normalized: PlayerState = {
     ...raw,
@@ -192,14 +295,28 @@ export function normalizePlayerState(raw: PlayerState, fromVersion?: number): Pl
       flags: normalizeStoryVars(progress.flags),
       challengeSessions: normalizeSessions(progress.challengeSessions),
       challengeRuns: normalizeChallengeRuns(progress.challengeRuns),
+      // V1.3-B.1：多阶段 Boss 战斗状态（旧存档缺失即补空对象，绝不升级存档版本）
+      bossBattles,
+      bossBattleHistory: normalizeBossBattleHistory(progress.bossBattleHistory, buildBossPhasePlan, now),
+      bossPhaseProgress: normalizeBossPhaseProgress(progress.bossPhaseProgress),
+      bossAttacks,
+      bossWeaknesses,
+      combatArbiter,
+      bossBattleStats,
+      bossBattleRatings: normalizeBossBattleRatingStore(progress.bossBattleRatings),
+      bossBattleRewards: normalizeBossBattleRewardStore(progress.bossBattleRewards),
+      bossAchievements: normalizeBossAchievementStore(progress.bossAchievements),
+      bossBattleArchive: normalizeBossBattleArchiveStore(progress.bossBattleArchive),
       dynamicEvent: normalizeEventState(progress.dynamicEvent, Date.now()),
       eventCooldowns: normalizeCooldowns(progress.eventCooldowns),
+      exploration: normalizeExplorationState(progress.exploration, now),
     },
     rewards: normalizeRewards((raw as Partial<PlayerState>).rewards),
     settings: {
       ...raw.settings,
       voice: normalizeVoice((raw.settings as { voice?: unknown })?.voice),
     },
+    mira: normalizeMiraState((raw as Partial<PlayerState>).mira, now),
   };
   return normalizeChapterProgress(normalized, typeof fromVersion === 'number' ? fromVersion : 1);
 }

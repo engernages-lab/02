@@ -1,5 +1,6 @@
 import type { PlayerState } from './types';
 import { levelsOfServer } from './levels';
+import { normalizeExplorationState, explorationRegionDefs, regionCompleted } from './explorationCore';
 
 export interface AchievementDef {
   id: string;
@@ -33,6 +34,9 @@ export const ACHIEVEMENTS: AchievementDef[] = [
   { id: 'fragment', name: '记忆碎片', desc: '收集到第一块创世主记忆碎片', icon: '◇' },
   { id: 'level5', name: '中级修复师', desc: '达到 Lv.5', icon: '★' },
   { id: 'level10', name: '原初继承者', desc: '达到 Lv.10', icon: '★', hidden: true },
+  { id: 'explorer_first', name: '探索者', desc: '完成一个服务器区域的主要探索内容', icon: '◎' },
+  { id: 'hidden_signal', name: '数据追踪者', desc: '发现并归档一段隐藏数据回声', icon: '◈', hidden: true },
+  { id: 'crisis_handler', name: '危机处理者', desc: '完成一次真实动态危机隔离', icon: '⚠' },
 ];
 
 export const achievementById = (id: string): AchievementDef | undefined => ACHIEVEMENTS.find(a => a.id === id);
@@ -73,5 +77,9 @@ export function recalcAchievements(p: PlayerState): string[] {
   if (p.meta.memoryFragments.length > 0) add('fragment');
   if (p.level >= 5) add('level5');
   if (p.level >= 10) add('level10');
+  const exploration = normalizeExplorationState(p.progress.exploration);
+  if (explorationRegionDefs().some(r => regionCompleted(exploration, r.id))) add('explorer_first');
+  if (Object.keys(exploration.hidden).length > 0) add('hidden_signal');
+  if (p.mira?.memories?.['mira-major-crisis']) add('crisis_handler');
   return [...got];
 }

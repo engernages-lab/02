@@ -46,9 +46,12 @@ export default function MainMenu() {
     { id: 'archive', label: '剧情档案', icon: '◎', onClick: () => { play('click'); g.nav('archive'); } },
     { id: 'endings', label: '结局档案', icon: '✧', onClick: () => { play('click'); g.nav('endings'); } },
     { id: 'journal', label: '探索档案', icon: '▤', onClick: () => { play('click'); g.nav('journal'); } },
+    { id: 'battlearchive', label: '战斗档案馆', icon: '⌖', onClick: () => { play('click'); g.nav('battlearchive'); } },
     { id: 'vault', label: '创世主记忆档案馆', icon: '◇', onClick: () => { play('click'); g.nav('vault'); }, badge: frag.owned + '/' + frag.total },
   ];
   const grow: NavItem[] = [
+    { id: 'explore', label: '数字世界探索', icon: '◎', onClick: () => { play('click'); g.nav('explore'); } },
+    { id: 'mira', label: 'MIRA 核心', icon: '◉', onClick: () => { play('click'); g.nav('mira'); } },
     { id: 'knowledge', label: 'Python 知识库', icon: '◈', onClick: () => { play('click'); g.nav('knowledge'); } },
     { id: 'lab', label: '编程实验室', icon: '⌬', locked: !tutDone, onClick: () => { play('click'); if (tutDone) g.nav('lab'); else g.toast('warn', '编程实验室将在你完成新人训练终端后开放。'); } },
     { id: 'challenges', label: '独立挑战', icon: '⚔', onClick: () => { play('click'); g.nav('challengehub'); } },

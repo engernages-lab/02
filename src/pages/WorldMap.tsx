@@ -221,6 +221,7 @@ export default function WorldMap() {
               </button>
             );
           })()}
+          <button className="nxbtn small" onClick={() => { play('click'); g.nav('explore'); }}>◎ 数字世界探索</button>
           <button className="nxbtn small ghost" onClick={() => { play('click'); g.nav('menu'); }}>◀ 主菜单</button>
         </div>
 

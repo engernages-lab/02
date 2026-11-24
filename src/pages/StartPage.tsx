@@ -25,14 +25,15 @@ export default function StartPage() {
   );
 
   useEffect(() => {
-    if (!g.player.settings.animations) { setStep(lines.length); setCh(0); return; }
+    const reduced = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!g.player.settings.animations || reduced) { setStep(lines.length); setCh(0); return; }
     const iv = window.setInterval(() => {
       setCh(c => {
         const target = lines[step] || '';
-        if (c < target.length) return c + 2;
+        if (c < target.length) return Math.min(target.length, c + 3);
         return c;
       });
-    }, 24);
+    }, 16);
     return () => window.clearInterval(iv);
   }, [step, g.player.settings.animations, lines]);
 
@@ -40,7 +41,7 @@ export default function StartPage() {
     if (step >= lines.length) { setReady(true); return; }
     const target = lines[step] || '';
     if (ch >= target.length) {
-      const t = window.setTimeout(() => setStep(s => s + 1), 260);
+      const t = window.setTimeout(() => setStep(s => s + 1), 180);
       return () => window.clearTimeout(t);
     }
   }, [ch, step, lines]);

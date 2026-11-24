@@ -1,0 +1,24 @@
+{
+  "level": 5,
+  "exp": 730,
+  "achievements": 5,
+  "miraExp": 88,
+  "miraLevel": 3,
+  "regions": {
+    "signal:training": {
+      "status": "completed",
+      "discoveredAt": 1795424334556,
+      "completedAt": 1795424334556
+    },
+    "terminal:training": {
+      "status": "completed",
+      "discoveredAt": 1795424334556,
+      "completedAt": 1795424334556
+    }
+  },
+  "services": [
+    "training",
+    "syntax",
+    "logs"
+  ]
+}

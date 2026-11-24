@@ -8,11 +8,22 @@ import type { BossDifficulty } from './difficulty';
 import type { ChallengeSession } from './challengeSession';
 import type { ChallengeRunState } from './challengeEngine';
 import type { DynamicEventState } from './eventEngine';
+import type { BossBattleRunState, BossBattleRecord, BossPhaseProgress } from './bossPhaseEngine';
+import type { BossAttackState } from './bossAttackEngine';
+import type { BossWeaknessRunState } from './bossWeaknessEngine';
+import type { CombatArbiterState } from './combatEventArbiter';
+import type { BossBattleStatsStore } from './bossBattleStats';
+import type { BossBattleRatingStore } from './bossBattleRating';
+import type { BossBattleRewardStore } from './bossBattleReward';
+import type { BossAchievementStore } from './bossAchievementStore';
+import type { BossBattleArchiveStore } from './bossBattleArchive';
+import type { MiraState } from './miraCore';
+import type { ExplorationState } from './explorationCore';
 
 export type Screen =
   | 'boot' | 'menu' | 'story' | 'map' | 'challenge'
   | 'challengehub' | 'challengeplay'
-  | 'profile' | 'settings' | 'knowledge' | 'achievements' | 'archive' | 'vault' | 'journal' | 'endings' | 'lab' | 'boss' | 'shop';
+  | 'profile' | 'settings' | 'knowledge' | 'achievements' | 'archive' | 'vault' | 'journal' | 'endings' | 'lab' | 'boss' | 'shop' | 'battlearchive' | 'mira' | 'explore';
 
 export interface GameSettings {
   musicVolume: number;       // 0..1
@@ -130,6 +141,28 @@ export interface Progress {
   bossesDone: string[];                      // 已击破的章节 Boss（兼容旧字段）
   /** Boss 战进度（v4 起；旧存档由迁移补齐） */
   battles?: Record<string, BossBattleState>;
+  /** 多阶段 Boss 战斗运行状态（V1.3-B.1 起）：bossId → 当前 / 最近一场 */
+  bossBattles?: Record<string, BossBattleRunState>;
+  /** 多阶段 Boss 战斗历史（最多 20 条，供 B.5 评价系统读取） */
+  bossBattleHistory?: BossBattleRecord[];
+  /** 玩家跨场次的 Boss 阶段进度 */
+  bossPhaseProgress?: Record<string, BossPhaseProgress>;
+  /** Boss 主动攻击状态（V1.3-B.2 起）：bossId → 当前攻击 / 冷却 */
+  bossAttacks?: Record<string, BossAttackState>;
+  /** Boss 弱点状态（V1.3-B.3 起）：bossId → 线索 / 破解 / 暴露 */
+  bossWeaknesses?: Record<string, BossWeaknessRunState>;
+  /** 战斗事件仲裁状态（V1.3-B.4 起）：活动锁 / 队列 / 记录 / 幂等 ID */
+  combatArbiter?: CombatArbiterState;
+  /** Boss 战斗统计（V1.3-B.5.1 起）：活动统计 + 最多 50 场只读快照 */
+  bossBattleStats?: BossBattleStatsStore;
+  /** Boss 战斗评价（V1.3-B.5.2 起）：最多 50 份评分，正式评分按 battleId 唯一 */
+  bossBattleRatings?: BossBattleRatingStore;
+  /** Boss 战斗奖励（V1.3-B.5.3 起）：最多 50 条记录，按 battleId 幂等 */
+  bossBattleRewards?: BossBattleRewardStore;
+  /** Boss 隐藏成就（V1.3-B.5.4 起）：永久解锁、进度、奖励与事件去重 */
+  bossAchievements?: BossAchievementStore;
+  /** Boss 战斗历史归档（V1.3-B.5.6 起）：最多 200 场 + 累计统计 */
+  bossBattleArchive?: BossBattleArchiveStore;
   /** 章节主线状态（V1.1.1 起；统一由 chapterFlow 读写，旧存档自愈继承） */
   chapters?: ChapterProgressMap;
   /** 旧存档进度继承审计 */
@@ -148,6 +181,8 @@ export interface Progress {
   dynamicEvent?: DynamicEventState | null;
   /** 动态事件冷却表：defId → 最近触发时间（毫秒） */
   eventCooldowns?: Record<string, number>;
+  /** V1.3-D：数字世界探索状态（可选；旧存档由 normalizeExplorationState 自愈） */
+  exploration?: ExplorationState;
   /** 已解锁的结局 id（第九阶段） */
   endings?: string[];
   /** 玩家最终选择的结局 */
@@ -169,6 +204,8 @@ export interface PlayerState {
   settings: GameSettings;
   /** 奖励系统数据（v1.1 起；旧存档由 loadGame 补齐，不影响原有经验/等级） */
   rewards?: RewardState;
+  /** V1.3-C：MIRA 成长 / 记忆 / 交互（可选；旧存档由 normalizeMiraState 安全补齐） */
+  mira?: MiraState;
 }
 
 export interface SaveData {

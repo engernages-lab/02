@@ -1,33 +1,44 @@
-import { useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
 import { GameProvider, useGame } from './store/gameStore';
+import ErrorBoundary, { CrashProbe } from './components/ErrorBoundary';
+import ModuleLoading from './components/ModuleLoading';
 import StartPage from './pages/StartPage';
 import MainMenu from './pages/MainMenu';
-import StoryPage from './pages/StoryPage';
-import WorldMap from './pages/WorldMap';
-import ChallengePage from './pages/ChallengePage';
-import ProfilePage from './pages/ProfilePage';
-import SettingsPage from './pages/SettingsPage';
-import KnowledgePage from './pages/KnowledgePage';
-import AchievementsPage from './pages/AchievementsPage';
-import ArchivePage from './pages/ArchivePage';
-import VaultPage from './pages/VaultPage';
-import JournalPage from './pages/JournalPage';
-import EndingsPage from './pages/EndingsPage';
-import LabPage from './pages/LabPage';
-import BossPage from './pages/BossPage';
-import RewardCenterPage from './pages/RewardCenterPage';
-import ChallengeHubPage from './pages/ChallengeHubPage';
-import ChallengePlayPage from './pages/ChallengePlayPage';
 import AttackOverlay from './components/AttackOverlay';
 import RebirthOverlay from './components/RebirthOverlay';
 import IntrusionOverlay from './components/IntrusionOverlay';
 import { initAudio, startMusic, isMusicOn } from './services/sound';
 import { warmUp, onPyStatus, resetEngine, type PyState } from './services/pythonRunner';
 
+const StoryPage = lazy(() => import('./pages/StoryPage'));
+const WorldMap = lazy(() => import('./pages/WorldMap'));
+const ChallengePage = lazy(() => import('./pages/ChallengePage'));
+const ProfilePage = lazy(() => import('./pages/ProfilePage'));
+const SettingsPage = lazy(() => import('./pages/SettingsPage'));
+const KnowledgePage = lazy(() => import('./pages/KnowledgePage'));
+const AchievementsPage = lazy(() => import('./pages/AchievementsPage'));
+const ArchivePage = lazy(() => import('./pages/ArchivePage'));
+const VaultPage = lazy(() => import('./pages/VaultPage'));
+const JournalPage = lazy(() => import('./pages/JournalPage'));
+const EndingsPage = lazy(() => import('./pages/EndingsPage'));
+const LabPage = lazy(() => import('./pages/LabPage'));
+const BossPage = lazy(() => import('./pages/BossPage'));
+const RewardCenterPage = lazy(() => import('./pages/RewardCenterPage'));
+const ChallengeHubPage = lazy(() => import('./pages/ChallengeHubPage'));
+const ChallengePlayPage = lazy(() => import('./pages/ChallengePlayPage'));
+const BossBattleArchivePage = lazy(() => import('./pages/BossBattleArchivePage'));
+const MiraPage = lazy(() => import('./pages/MiraPage'));
+const ExplorePage = lazy(() => import('./pages/ExplorePage'));
+
 function Shell() {
   const g = useGame();
   const { screen, event } = g;
   const audioReady = useRef(false);
+  const [crashProbe, setCrashProbe] = useState(() => import.meta.env?.DEV === true && new URLSearchParams(window.location.search).get('crash') === '1');
+  const clearCrashProbe = () => {
+    setCrashProbe(false);
+    if (window.location.search) window.history.replaceState(null, '', window.location.pathname);
+  };
 
   // 游戏启动即在后台预加载 Python 引擎：用户看启动动画/序章的时间足够完成初始化
   useEffect(() => {
@@ -72,24 +83,39 @@ function Shell() {
       <div className="grid-bg" />
       <div className="vignette" />
       <div className="scanlines" />
-      {screen === 'boot' && <StartPage />}
-      {screen === 'menu' && <MainMenu />}
-      {screen === 'story' && <StoryPage />}
-      {screen === 'map' && <WorldMap />}
-      {screen === 'challenge' && <ChallengePage />}
-      {screen === 'profile' && <ProfilePage />}
-      {screen === 'settings' && <SettingsPage />}
-      {screen === 'knowledge' && <KnowledgePage />}
-      {screen === 'achievements' && <AchievementsPage />}
-      {screen === 'archive' && <ArchivePage />}
-      {screen === 'vault' && <VaultPage />}
-      {screen === 'journal' && <JournalPage />}
-      {screen === 'endings' && <EndingsPage />}
-      {screen === 'lab' && <LabPage />}
-      {screen === 'boss' && <BossPage />}
-      {screen === 'shop' && <RewardCenterPage />}
-      {screen === 'challengehub' && <ChallengeHubPage />}
-      {screen === 'challengeplay' && <ChallengePlayPage />}
+      <ErrorBoundary
+        scope="page"
+        onRetry={clearCrashProbe}
+        onReturnMenu={() => { clearCrashProbe(); g.nav('menu'); }}
+      >
+        <Suspense fallback={<ModuleLoading />}>
+          {crashProbe ? <CrashProbe /> : (
+            <>
+              {screen === 'boot' && <StartPage />}
+              {screen === 'menu' && <MainMenu />}
+              {screen === 'story' && <StoryPage />}
+              {screen === 'map' && <WorldMap />}
+              {screen === 'challenge' && <ChallengePage />}
+              {screen === 'profile' && <ProfilePage />}
+              {screen === 'settings' && <SettingsPage />}
+              {screen === 'knowledge' && <KnowledgePage />}
+              {screen === 'achievements' && <AchievementsPage />}
+              {screen === 'archive' && <ArchivePage />}
+              {screen === 'vault' && <VaultPage />}
+              {screen === 'journal' && <JournalPage />}
+              {screen === 'endings' && <EndingsPage />}
+              {screen === 'lab' && <LabPage />}
+              {screen === 'boss' && <BossPage />}
+              {screen === 'battlearchive' && <BossBattleArchivePage />}
+              {screen === 'mira' && <MiraPage />}
+              {screen === 'explore' && <ExplorePage />}
+              {screen === 'shop' && <RewardCenterPage />}
+              {screen === 'challengehub' && <ChallengeHubPage />}
+              {screen === 'challengeplay' && <ChallengePlayPage />}
+            </>
+          )}
+        </Suspense>
+      </ErrorBoundary>
       {(py.status === 'loading' || py.status === 'error') && (
         <div
           className={'engine-badge ' + py.status}
@@ -115,8 +141,10 @@ function Shell() {
 
 export default function App() {
   return (
-    <GameProvider>
-      <Shell />
-    </GameProvider>
+    <ErrorBoundary scope="app">
+      <GameProvider>
+        <Shell />
+      </GameProvider>
+    </ErrorBoundary>
   );
 }

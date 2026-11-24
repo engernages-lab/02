@@ -55,7 +55,7 @@ export function safeExp(v: unknown): number {
 
 // ---------- 奖励账本：每次入账都有唯一标识 ----------
 
-export type LedgerKind = 'level' | 'level-repeat' | 'boss' | 'chapter' | 'difficulty' | 'challenge';
+export type LedgerKind = 'level' | 'level-repeat' | 'boss' | 'chapter' | 'difficulty' | 'challenge' | 'exploration';
 
 export interface RewardLedgerEntry {
   id: string;
@@ -111,7 +111,7 @@ export function normalizeLedger(raw: unknown): RewardLedgerEntry[] {
     if (!item || typeof item !== 'object') continue;
     const e = item as Partial<RewardLedgerEntry>;
     const kind = e.kind;
-    if (kind !== 'level' && kind !== 'level-repeat' && kind !== 'boss' && kind !== 'chapter' && kind !== 'difficulty') continue;
+    if (kind !== 'level' && kind !== 'level-repeat' && kind !== 'boss' && kind !== 'chapter' && kind !== 'difficulty' && kind !== 'challenge' && kind !== 'exploration') continue;
     if (typeof e.ref !== 'string' || !e.ref) continue;
     if (ONE_TIME_KINDS.includes(kind) && out.some(x => x.kind === kind && x.ref === e.ref)) continue;
     const at = Math.max(0, Math.floor(Number(e.at) || 0));

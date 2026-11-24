@@ -3,12 +3,24 @@ import { useGame } from '../store/gameStore';
 import { play } from '../services/sound';
 import { DEFAULT_VOICE, normalizeVoice, ROLE_PROFILES, speech, type VoiceRole } from '../services/voice';
 import { SAVE_VERSION } from '../services/save';
+import {
+  DEFAULT_VISUAL_INTENSITY, VISUAL_INTENSITY_STORAGE_KEY, PERFORMANCE_MODE_STORAGE_KEY,
+  saveVisualIntensity, savePerformanceMode, performanceModeFromStorage,
+  type VisualIntensity, type VisualPerformanceMode,
+} from '../game/bossBattleVisualConfig';
+import { visualIntensityFromStorage } from '../game/bossBattleVisualEngine';
 
 export default function SettingsPage() {
   const g = useGame();
   const s = g.player.settings;
   const [confirmReset, setConfirmReset] = useState(false);
   const [saveMsg, setSaveMsg] = useState('');
+  const [visualIntensity, setVisualIntensity] = useState<VisualIntensity>(() => {
+    try { return visualIntensityFromStorage(localStorage.getItem(VISUAL_INTENSITY_STORAGE_KEY)); } catch { return DEFAULT_VISUAL_INTENSITY; }
+  });
+  const [perfMode, setPerfMode] = useState<VisualPerformanceMode>(() => {
+    try { return performanceModeFromStorage(localStorage.getItem(PERFORMANCE_MODE_STORAGE_KEY)); } catch { return 'AUTO'; }
+  });
   const fileRef = useRef<HTMLInputElement>(null);
 
   const doExport = () => {
@@ -94,6 +106,26 @@ export default function SettingsPage() {
             <input type="range" className="nx-range" min={0} max={1} step={1} value={s.animLevel === 'high' ? 1 : 0}
               onChange={e => g.patchSettings({ animLevel: Number(e.target.value) === 1 ? 'high' : 'low' })} />
             <span className="mono dim" style={{ width: 60, textAlign: 'right' }}>{s.animLevel === 'high' ? '高' : '低'}</span>
+          </div>
+          <div className="set-row">
+            <span className="set-label">Boss 视觉强度<span className="set-desc">LOW / MEDIUM / HIGH / CINEMATIC，影响 Boss 战粒子与演出强度</span></span>
+            <select className="nx-select" value={visualIntensity} onChange={e => {
+              const v = e.target.value as VisualIntensity;
+              setVisualIntensity(v);
+              saveVisualIntensity(v);
+            }}>
+              {(['LOW', 'MEDIUM', 'HIGH', 'CINEMATIC'] as VisualIntensity[]).map(v => <option key={v} value={v}>{v}</option>)}
+            </select>
+          </div>
+          <div className="set-row">
+            <span className="set-label">视觉性能模式<span className="set-desc">AUTO 根据 FPS 自动降级；也可强制 NORMAL / REDUCED / LOW / CRITICAL</span></span>
+            <select className="nx-select" value={perfMode} onChange={e => {
+              const v = e.target.value as VisualPerformanceMode;
+              setPerfMode(v);
+              savePerformanceMode(v);
+            }}>
+              {(['AUTO', 'NORMAL', 'REDUCED', 'LOW', 'CRITICAL'] as VisualPerformanceMode[]).map(v => <option key={v} value={v}>{v}</option>)}
+            </select>
           </div>
           <div className="set-row">
             <span className="set-label">打字机速度<span className="set-desc">剧情文本逐字显示的速度</span></span>
