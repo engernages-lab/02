@@ -57,6 +57,7 @@ export default function WorldMap() {
   const [statusFilter, setStatusFilter] = useState<Record<string, boolean>>({ online: true, restored: true, damaged: true, locked: true, sealed: true });
   const [corePulse, setCorePulse] = useState(0);
   const prevStatusRef = useRef<Record<string, NodeStatus>>({});
+  const mapWrapRef = useRef<HTMLDivElement | null>(null);
 
   const tutDone = p.completedLevels.includes('tut-1');
   const ch1Done = p.flags.chapter1Done === true;
@@ -184,6 +185,12 @@ export default function WorldMap() {
   const selLevels = sel ? levelsOfServer(sel) : [];
 
   /** 章节卡片：未解锁时明确提示解锁条件（全部来自真实状态） */
+  const scrollToMap = () => {
+    const reduce = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    window.setTimeout(() => mapWrapRef.current?.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'start' }), 60);
+  };
+
+  /** 章节卡片：未解锁时明确提示解锁条件（全部来自真实状态），并始终滑到地图中枢。 */
   const focusChapter = (serverId: string) => {
     const access = canEnterServer(g.player, serverId);
     if (!access.ok) {
@@ -191,11 +198,13 @@ export default function WorldMap() {
       setShakeId(serverId);
       window.setTimeout(() => setShakeId(null), 450);
       g.toast('warn', access.reason);
+      scrollToMap();
       return;
     }
     play('click');
     setSel(serverId);
     if (!g.player.progress.flags['brief_' + serverId]) setBriefServer(serverId);
+    scrollToMap();
   };
 
   return (
@@ -307,7 +316,7 @@ export default function WorldMap() {
           </div>
         </div>
 
-        <div className="map-wrap">
+        <div className="map-wrap" ref={mapWrapRef}>
           <div className="map-toolbar">
             <button className="mt-btn" onClick={() => { play('click'); setZoom(z => Math.min(1.8, +(z + 0.15).toFixed(2))); }} title="放大">＋</button>
             <button className="mt-btn" onClick={() => { play('click'); setZoom(z => Math.max(0.65, +(z - 0.15).toFixed(2))); }} title="缩小">－</button>

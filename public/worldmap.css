@@ -185,3 +185,6 @@
 @media (prefers-reduced-motion: reduce) {
   .map-panel .enter-btn { animation: none; }
 }
+
+/* V1.3-F.4 热修 · 章节卡片跳转到地图中枢 */
+.map-wrap { scroll-margin-top: 8px; }
